@@ -1,0 +1,37 @@
+# === Python cache and compiled files ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# === VSCode project settings ===
+.vscode/
+
+# === Logs ===
+logs/
+*.log
+
+# === Runtime Outputs (Excel, CSV, etc.) ===
+outputs/
+*.xlsx
+*.csv
+
+# === Environment Files ===
+.env
+*.env
+API.env
+
+# === Debug/Test Data ===
+data/DEBUG_*.csv
+
+# === Jupyter Notebooks ===
+*.ipynb
+.ipynb_checkpoints/
+
+# === System Files ===
+.DS_Store
+Thumbs.db
+
+# === Python Virtual Environments ===
+.venv/
+venv/
