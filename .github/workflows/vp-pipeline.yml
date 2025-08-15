@@ -95,8 +95,9 @@ jobs:
         run: |
           set -e
           TS=$(date -u +'%Y%m%dT%H%M%SZ')
-          git clone "https://x-access-token:${TOKEN}@github.com/${REPO}.git" data
-          cd data
+          rm -rf data-repo
+          git clone "https://x-access-token:${TOKEN}@github.com/${REPO}.git" data-repo
+          cd data-repo
           if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
             git checkout data
           else
