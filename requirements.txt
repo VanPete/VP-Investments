@@ -17,6 +17,8 @@ tqdm
 pytrends
 Jinja2
 RapidFuzz
+pytz
+prometheus-client
 
 # ChatGPT Integration
 openai>=1.0.0

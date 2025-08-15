@@ -15,7 +15,7 @@ import praw
 import prawcore
 from praw.models import Submission
 from tqdm import tqdm
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
 import warnings
 from config.config import AI_FEATURES
@@ -36,17 +36,24 @@ setup_logging()
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", message=".*comment_sort.*already been fetched.*")
 
-reddit = praw.Reddit(
-    client_id=os.getenv("REDDIT_CLIENT_ID"),
-    client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
-    user_agent=os.getenv("REDDIT_USER_AGENT")
-)
+_RID = os.getenv("REDDIT_CLIENT_ID", "").strip()
+_RSEC = os.getenv("REDDIT_CLIENT_SECRET", "").strip()
+_RUA = os.getenv("REDDIT_USER_AGENT", "").strip()
+reddit = None
+if _RID and _RSEC and _RUA:
+    try:
+        reddit = praw.Reddit(client_id=_RID, client_secret=_RSEC, user_agent=_RUA)
+    except Exception as e:
+        logger.warning("Reddit client init failed: %s", e)
+        reddit = None
+else:
+    logger.info("Reddit credentials not set; Reddit scraping will be skipped.")
 
 
 try:
     vader = SentimentIntensityAnalyzer()
 except Exception as e:
-    logger.error("VADER sentiment analyzer failed to initialize.")
+    logger.error("VADER sentiment analyzer failed to initialize: %s", e)
     raise e
 
 
@@ -244,6 +251,9 @@ def tag_threads(df: pd.DataFrame) -> pd.Series:
 def fetch_reddit_data(enable_scrape: bool = True) -> pd.DataFrame:
     if not ENABLE_REDDIT_SCRAPE or not enable_scrape:
         logger.info("🔕 Reddit scraping disabled.")
+        return pd.DataFrame()
+    if reddit is None:
+        logger.info("🔕 Reddit API is not configured. Skipping scrape.")
         return pd.DataFrame()
 
     if not FEATURE_TOGGLES.get("Reddit Sentiment", True):

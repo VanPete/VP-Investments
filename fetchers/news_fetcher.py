@@ -24,7 +24,7 @@ from config.config import (
 )
 from utils.ai_cache import get as ai_get, set as ai_set
 from processors.chatgpt_integrator import ChatGPTIntegrator
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from bs4 import BeautifulSoup
 from utils.http_client import build_session
 

@@ -201,7 +201,7 @@ Reddit/News/Trends → Signal Detection → Financial Validation → ML Scoring 
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
-- Python 3.13+
+- Python 3.12+
 - Node.js 18+ (for web dashboard)
 - Reddit API credentials
 - Financial data API keys (optional)
@@ -239,6 +239,12 @@ python "VP Investments.py"
 set SCHED_ENABLED=1
 set SCHED_EVERY_MINUTES=30
 python run_all.py
+```
+
+### Run Once (immediate)
+
+```bash
+python run_all.py --once --stream --timeout 1800
 ```
 
 ### Start Web Dashboard

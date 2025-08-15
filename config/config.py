@@ -50,7 +50,8 @@ def _env_bool(name: str, default: bool) -> bool:
     return val not in {"0", "false", "False"}
 
 # === External API Keys / Providers ===
-FMP_API_KEY = _env("FMP_API_KEY", "MISSING")
+# Always read secrets directly from environment (dotenv is loaded above)
+FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 
 # === OpenAI Settings ===
 # Always read secrets from environment; .env is loaded above
@@ -84,10 +85,10 @@ REDDIT_SUBREDDITS = [
     "economics", "quant"
 ]
 REDDIT_LIMITS = {
-    "hot": 5,
-    "new": 5,
-    "top": 5,
-    "rising": 5
+    "hot": 2,
+    "new": 2,
+    "top": 2,
+    "rising": 2
 }
 
 REDDIT_TICKER_PATTERN = r'\b[A-Z]{1,5}\b'
