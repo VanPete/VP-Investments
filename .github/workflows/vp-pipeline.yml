@@ -3,19 +3,17 @@ name: VP Investments Pipeline
 on:
   workflow_dispatch:
   schedule:
-  # Dual crons to cover DST changes for exact 08:30 and 17:00 ET, Mon-Fri
-  # 08:30 ET → 12:30 (EDT) and 13:30 (EST)
-  - cron: '30 12 * * 1-5'
-  - cron: '30 13 * * 1-5'
-  # 17:00 ET → 21:00 (EDT) and 22:00 (EST)
-  - cron: '0 21 * * 1-5'
-  - cron: '0 22 * * 1-5'
+    # 08:30 ET year-round (EDT/EST)
+    - cron: '30 12 * * 1-5'   # 08:30 EDT
+    - cron: '30 13 * * 1-5'   # 08:30 EST
+    # 17:00 ET year-round (EDT/EST)
+    - cron: '0 21 * * 1-5'    # 17:00 EDT
+    - cron: '0 22 * * 1-5'    # 17:00 EST
 
 permissions:
   contents: write
   pages: write
   id-token: write
-  issues: write
 
 concurrency:
   group: vp-pipeline
@@ -24,9 +22,28 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      TZ: America/New_York
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Optional guard (applies only to schedule; manual dispatch bypasses)
+      - name: Gate exact ET windows
+        if: github.event_name == 'schedule'
+        run: |
+          python - << 'PY'
+          import sys, datetime, zoneinfo
+          ny = zoneinfo.ZoneInfo("America/New_York")
+          now = datetime.datetime.now(ny)
+          hhmm = now.strftime("%H:%M")
+          if hhmm in ("08:30","17:00"):
+              sys.exit(0)
+          print(f"Out of allowed ET windows, now={hhmm} ET; skipping.")
+          sys.exit(1)
+          PY
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -39,96 +56,63 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Gate on ET 08:30/17:00 windows (skip otherwise)
-        if: ${{ github.event_name == 'schedule' }}
-        run: |
-          python - << 'PY'
-          from datetime import datetime, time, timedelta
-          import pytz
-          et = pytz.timezone('US/Eastern')
-          now = datetime.now(et)
-          targets = [time(8,30), time(17,0)]  # 08:30 and 17:00 ET
-          window = timedelta(minutes=15)
-          ok = any(abs((now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0) - now)) <= window for t in targets)
-          if not ok:
-              print(f"Skipping run at {now.isoformat()} (outside ET 08:30/17:00 ±15m window)")
-              raise SystemExit(78)  # neutral exit
-          print(f"Proceeding: within allowed ET window at {now.strftime('%H:%M %Z')}")
-          PY
-
       - name: Run pipeline (once)
         env:
-          USE_ENV_CONFIG: '1'
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
         run: |
-          python run_all.py --once --stream --timeout 1800
+          python "run_all.py" --once --stream --timeout 1800
 
-      - name: Prepare Pages index redirect
+      - name: Prepare Pages index
         run: |
           mkdir -p outputs
           echo '<meta http-equiv="refresh" content="0; url=dashboard/dashboard.html">' > outputs/index.html
 
-      - name: Upload outputs as artifact
+      - name: Upload outputs artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: vp-outputs-${{ github.run_number }}
           path: outputs
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Upload logs as artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload logs artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: vp-logs-${{ github.run_number }}
           path: outputs/logs
           if-no-files-found: warn
+          retention-days: 30
+
+      - name: Persist outputs to data branch (cumulative)
+        env:
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TS=$(date -u +'%Y%m%dT%H%M%SZ')
+          git clone "https://x-access-token:${TOKEN}@github.com/${REPO}.git" data
+          cd data
+          if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
+            git checkout data
+          else
+            git checkout --orphan data
+            git commit --allow-empty -m "Initialize data branch"
+            git push origin data
+          fi
+          mkdir -p "runs/${TS}"
+          rsync -a --delete ../outputs/ "runs/${TS}/"
+          git add runs
+          git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "Add run ${TS}" || echo "No changes to commit"
+          git push origin data
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: outputs
-
-      - name: Persist outputs to data branch (cumulative)
-        run: |
-          set -e
-          REPO="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          git clone --depth 1 --branch data "$REPO" data-repo || (
-            git clone --depth 1 "$REPO" data-repo && cd data-repo && git checkout --orphan data && git rm -rf . || true
-          )
-          cd data-repo
-          STAMP=$(date -u +%Y-%m-%d_%H-%M-%S)
-          mkdir -p "runs/$STAMP"
-          cp -r ../outputs/* "runs/$STAMP/"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Add outputs for run ${{ github.run_number }} at $STAMP"
-          git push "$REPO" HEAD:data
-
-      - name: Create issue on failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = `VP pipeline failed: run #${{ github.run_number }}`;
-            const body = `The scheduled run failed.\n\n- Workflow: ${process.env.GITHUB_WORKFLOW}\n- Run: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}\n\nArtifacts (if any) and logs are available in the workflow run.`;
-            const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body,
-              labels: ["ci-failure"]
-            });
-            core.info(`Created issue #${issue.number}`);
 
   deploy:
     needs: run

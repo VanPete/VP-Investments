@@ -12,8 +12,11 @@ def run(cmd: list[str]):
 
 def main():
     repo_url = os.environ.get("VP_REPO_URL")
+    # Allow overriding destination
+    dest = os.environ.get("VP_SYNC_DEST")
+    target = Path(dest) if dest else TARGET
+    # resolve origin when not provided
     if not repo_url:
-        # default to origin
         try:
             out = subprocess.check_output(["git", "remote", "get-url", "origin"], cwd=str(ROOT), text=True).strip()
             repo_url = out
@@ -33,17 +36,16 @@ def main():
     if not stamps:
         raise SystemExit("No runs in data branch")
     latest = runs_dir / stamps[-1]
-    TARGET.mkdir(parents=True, exist_ok=True)
-    # Copy latest
+    target.mkdir(parents=True, exist_ok=True)
     for child in latest.iterdir():
-        dst = TARGET / child.name
+        dst = target / child.name
         if child.is_dir():
             if dst.exists():
                 shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(child, dst)
         else:
-            shutil.copy2(child, TARGET)
-    print(f"Synced latest run {latest.name} to {TARGET}")
+            shutil.copy2(child, target)
+    print(f"Synced latest run {latest.name} to {target}")
 
 if __name__ == "__main__":
     main()
