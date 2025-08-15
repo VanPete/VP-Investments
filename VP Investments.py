@@ -31,6 +31,38 @@ from config.config import SLACK_WEBHOOK_URL
 setup_logging()
 warnings.filterwarnings("ignore", message=".*Downcasting object dtype arrays on .*fillna.* is deprecated.*")
 
+# Ensure DB schema exists even if no signals are generated in this run
+def _ensure_db_tables() -> None:
+    try:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        with sqlite3.connect(DB_PATH) as conn:
+            # Minimal schema; columns will be extended dynamically as needed elsewhere
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    "Ticker" TEXT,
+                    "Run Datetime" TEXT,
+                    "Weighted Score" REAL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS run_metadata (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    "Run ID" TEXT,
+                    timestamp TEXT,
+                    feature_toggles TEXT,
+                    hash TEXT,
+                    notes TEXT
+                )
+                """
+            )
+    except Exception:
+        # Non-fatal; downstream code handles missing tables conservatively
+        pass
+
 def initialize_run_directory() -> Tuple[str, str]:
     now = datetime.now()
     run_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -232,6 +264,7 @@ def clean_and_validate_df(df: pd.DataFrame) -> pd.DataFrame:
 # (all imports unchanged)
 
 def process_data() -> Tuple[Optional[pd.DataFrame], str]:
+    _ensure_db_tables()
     run_datetime, run_dir = initialize_run_directory()
     reddit_df = fetch_reddit_data(enable_scrape=True)
     if reddit_df.empty:
