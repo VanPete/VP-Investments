@@ -20,6 +20,7 @@ outputs/
 .env
 *.env
 API.env
+.env.example
 
 # === Debug/Test Data ===
 data/DEBUG_*.csv
