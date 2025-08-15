@@ -2,6 +2,7 @@ import glob
 import logging
 from datetime import datetime, timezone
 from typing import Optional, NamedTuple, Dict, List, Tuple
+from collections import defaultdict
 
 import pandas as pd
 
@@ -73,7 +74,11 @@ def calculate_post_recency(df: pd.DataFrame) -> pd.Series:
 
 class SignalScorer:
     def __init__(self, profile_name: str = CURRENT_SIGNAL_PROFILE):
-        base = SIGNAL_WEIGHT_PROFILES[profile_name]
+        # Graceful fallback if requested profile does not exist
+        if profile_name not in SIGNAL_WEIGHT_PROFILES:
+            logging.warning(f"[SCORING] Profile '{profile_name}' not found; using 'default' weights")
+            profile_name = "default"
+        base = SIGNAL_WEIGHT_PROFILES.get(profile_name, SIGNAL_WEIGHT_PROFILES.get("default", {}))
         enabled = {k for k in base if FEATURE_TOGGLES.get(k, True)}
         reddit = {k for k in enabled if "Reddit" in GROUP_LABELS.get(k, "")}
         financial = enabled - reddit
@@ -84,8 +89,12 @@ class SignalScorer:
             **{k: REDDIT_FINANCIAL_WEIGHT_RATIO * base[k] / r_total for k in reddit},
             **{k: (1 - REDDIT_FINANCIAL_WEIGHT_RATIO) * base[k] / f_total for k in financial}
         }
+        # Normalization stats
         self.normalization_means = {}
         self.normalization_stds = {}
+        # Track missing feature occurrences for concise logging later
+        self._missing_counts = defaultdict(int)
+        self._missing_examples = defaultdict(list)
 
     def fit_normalization(self, df: pd.DataFrame) -> None:
         if not FEATURE_NORMALIZATION:
@@ -154,7 +163,11 @@ class SignalScorer:
                 continue
             val = 1.0 if key in ["ETF Flow Signal", "Insider Signal"] and str(row.get(key)).strip().lower() == "yes" else safe_float(row.get(key))
             if pd.isna(val):
-                logging.warning(f"Missing value for '{key}' on ticker '{row.get('Ticker')}'")
+                # Aggregate missing feature noise; sample up to 3 tickers per key
+                self._missing_counts[key] += 1
+                tkr = str(row.get('Ticker') or '')
+                if len(self._missing_examples[key]) < 3 and tkr not in self._missing_examples[key]:
+                    self._missing_examples[key].append(tkr)
                 val = 0.0
             val = self.normalize(key, val)
             val = min(val, SOFT_CAPS.get(key, val))
@@ -224,6 +237,20 @@ class SignalScorer:
             ", ".join(flags) if flags else None, risk_lvl, risk_tags, signal_type,
             round(reddit_score, 4), round(financial_score, 4), round(news_score, 4)
         )
+
+    def log_missing_summary(self) -> None:
+        if not self._missing_counts:
+            return
+        # Sort by frequency and emit a compact summary
+        items = sorted(self._missing_counts.items(), key=lambda x: x[1], reverse=True)
+        top_lines = []
+        for key, cnt in items[:10]:
+            examples = ", ".join(self._missing_examples.get(key, []))
+            ex_str = f" (e.g., {examples})" if examples else ""
+            top_lines.append(f"- {key}: {cnt}{ex_str}")
+        if len(items) > 10:
+            top_lines.append(f"… and {len(items) - 10} more fields with missing values")
+        logging.info("[SCORING] Missing feature summary:\n" + "\n".join(top_lines))
 
 
 def detect_new_signals(current_df: pd.DataFrame, run_dir: str) -> None:

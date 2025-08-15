@@ -12,16 +12,21 @@ from typing import List, Dict
 
 import pandas as pd
 import praw
+import prawcore
 from praw.models import Submission
 from tqdm import tqdm
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
 import warnings
+from config.config import AI_FEATURES
+from utils.ai_cache import get as ai_get, set as ai_set
+from processors.chatgpt_integrator import ChatGPTIntegrator
 
 from config.config import (
     REDDIT_SUBREDDITS, REDDIT_LIMITS, ENABLE_REDDIT_SCRAPE, DEBUG_REDDIT_SCRAPE,
     REDDIT_TICKER_PATTERN, SUBREDDIT_WEIGHTS, KEYWORD_BOOSTS, FLAIR_BOOSTS,
-    FLAIR_ALIASES, MIN_AUTHOR_KARMA, TITLE_COMMENT_BLEND, COMMENT_WEIGHT_SCALING, EXCLUDED_TICKERS, FEATURE_TOGGLES
+    FLAIR_ALIASES, MIN_AUTHOR_KARMA, TITLE_COMMENT_BLEND, COMMENT_WEIGHT_SCALING, EXCLUDED_TICKERS, FEATURE_TOGGLES,
+    MEME_TICKER_TERMS
 )
 from utils.logger import setup_logging
 
@@ -36,6 +41,7 @@ reddit = praw.Reddit(
     client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
     user_agent=os.getenv("REDDIT_USER_AGENT")
 )
+
 
 try:
     vader = SentimentIntensityAnalyzer()
@@ -68,8 +74,11 @@ def get_sentiment_score(text: str) -> float:
 # === Sentiment Weighting ===
 def get_top_comment_sentiment(post: Submission, limit: int = 3) -> float:
     try:
-        if not post.comments:
+        # Set sort before any comments access to avoid UserWarning from PRAW
+        try:
             post.comment_sort = "top"
+        except Exception:
+            pass
         post.comments.replace_more(limit=0)
         comments = [c.body for c in post.comments[:limit] if not c.stickied and c.body != "[deleted]"]
         if not comments:
@@ -109,8 +118,11 @@ def score_summary_candidate(text: str, base_sentiment: float = 0.0) -> float:
 
 def generate_reddit_summary(post: Submission, max_comments: int = 6) -> str:
     try:
-        if not post.comments:
+        # Ensure we set sort before fetching comments to prevent warnings
+        try:
             post.comment_sort = "top"
+        except Exception:
+            pass
         post.comments.replace_more(limit=0)
         base_sent = get_sentiment_score(post.title)
         candidates = [post.title.strip()]
@@ -146,10 +158,13 @@ def process_submission(post: Submission, sub: str, now: datetime.datetime) -> Li
 
         tickers = extract_tickers(post.title + " " + post.selftext)
         tickers = [t for t in tickers if t not in EXCLUDED_TICKERS]
+        # Drop obvious meme/symbolic non-tickers seen in top lists
+        tickers = [t for t in tickers if all(term not in t for term in MEME_TICKER_TERMS)]
         if not tickers:
             return []
 
         results = []
+        integrator = ChatGPTIntegrator() if AI_FEATURES.get("ENABLED") and AI_FEATURES.get("REDDIT_SUMMARY") else None
         for ticker in tickers:
             comment_sent = get_top_comment_sentiment(post)
             flair = normalize_flair(post.link_flair_text or "")
@@ -161,6 +176,18 @@ def process_submission(post: Submission, sub: str, now: datetime.datetime) -> Li
                 comment_count=post.num_comments
             )
             summary = generate_reddit_summary(post)
+            ai_summary = ""
+            if integrator:
+                cache_key = f"reddit_ai_summary::{ticker}::{post.id}::{round(sentiment,3)}"
+                cached = ai_get(cache_key)
+                if cached:
+                    ai_summary = cached
+                else:
+                    try:
+                        ai_summary = integrator.enhance_reddit_summary(ticker, summary, sentiment)
+                        ai_set(cache_key, ai_summary)
+                    except Exception:
+                        ai_summary = ""
             results.append({
                 "Ticker": ticker,
                 "Subreddit": sub,
@@ -169,10 +196,22 @@ def process_submission(post: Submission, sub: str, now: datetime.datetime) -> Li
                 "created": created_time,
                 "Reddit Sentiment": sentiment,
                 "Reddit Summary": summary,
+                "AI Reddit Summary": ai_summary,
                 "Author": str(author),
                 "Post URL": f"https://reddit.com{post.permalink}"
             })
         return results
+    except (prawcore.exceptions.NotFound, prawcore.exceptions.Forbidden) as e:
+        # Post deleted/removed or forbidden; treat as expected and skip
+        logger.info(f"Post skipped ({getattr(post, 'id', 'unknown')}): {e}")
+        return []
+    except prawcore.exceptions.ResponseException as e:
+        status = getattr(getattr(e, 'response', None), 'status_code', None)
+        if status == 404:
+            logger.info(f"Post skipped ({getattr(post, 'id', 'unknown')}): 404 Not Found")
+            return []
+        logger.warning(f"Post process failed: {getattr(post, 'id', 'unknown')} → HTTP {status}")
+        return []
     except Exception as e:
         logger.warning(f"Post process failed: {getattr(post, 'id', 'unknown')} → {e}")
         return []

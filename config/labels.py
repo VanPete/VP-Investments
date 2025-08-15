@@ -38,7 +38,7 @@ FINAL_COLUMN_ORDER = [
     "Next Earnings Date", "Earnings Gap %",
 
     # === Trend ===
-    "Trend Spike", "Google Interest",
+    "Trend Spike", "Google Interest", "AI News Summary", "AI Trends Commentary", "AI Commentary", "Score Explanation", "Risk Assessment",
 
     # === Scoring Metadata ===
     "Weighted Score", "Run Datetime", "Signal Type", "Source",
@@ -123,6 +123,11 @@ COLUMN_FORMAT_HINTS = {
 
     # === Trend ===
     "Google Interest": "float",
+    "AI News Summary": "string",
+    "AI Trends Commentary": "string",
+    "AI Commentary": "string",
+    "Score Explanation": "string",
+    "Risk Assessment": "string",
 
     # === Scoring Metadata ===
     "Weighted Score": "float",

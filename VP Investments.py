@@ -14,14 +14,19 @@ from fetchers.reddit_scraper import fetch_reddit_data
 from fetchers.finance_fetcher import fetch_yf_data, load_company_data
 from fetchers.news_fetcher import fetch_news_for_tickers, summarize_news_sentiment
 from fetchers.google_trends_fetcher import fetch_google_trends
+from fetchers.universe_fetcher import build_trending_universe
 from processors.backtest import FUTURE_PROOF_COLS
 from processors.signal_scoring import SignalScorer, calculate_post_recency, detect_new_signals
-from processors.reports import export_excel_report, generate_html_dashboard
+from processors.reports import export_excel_report, export_csv_report, generate_html_dashboard, export_picks, write_run_readme
+# ChatGPT Integration
+from processors.chatgpt_integrator import enhance_dataframe_with_chatgpt, generate_executive_summary
 from config.config import (
-    MIN_MENTIONS, MIN_UPVOTES, SUBREDDIT_WEIGHTS, FEATURE_TOGGLES, DB_PATH
+    MIN_MENTIONS, MIN_UPVOTES, SUBREDDIT_WEIGHTS, FEATURE_TOGGLES, DB_PATH, OUTPUTS_DIR_FORMAT,
+    LIQUIDITY_WARNING_ADV, CURRENT_SIGNAL_PROFILE, OUTPUTS_DIR
 )
 from config.labels import FINAL_COLUMN_ORDER
 from utils.logger import setup_logging
+from config.config import SLACK_WEBHOOK_URL
 
 setup_logging()
 warnings.filterwarnings("ignore", message=".*Downcasting object dtype arrays on .*fillna.* is deprecated.*")
@@ -29,7 +34,7 @@ warnings.filterwarnings("ignore", message=".*Downcasting object dtype arrays on 
 def initialize_run_directory() -> Tuple[str, str]:
     now = datetime.now()
     run_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-    run_dir = os.path.join("outputs", now.strftime("(%d %B %y, %H_%M_%S)"))
+    run_dir = os.path.join(OUTPUTS_DIR, now.strftime(OUTPUTS_DIR_FORMAT))
     os.makedirs(run_dir, exist_ok=True)
     return run_datetime, run_dir
 
@@ -62,17 +67,33 @@ def merge_with_optional_sources(df: pd.DataFrame, tickers: set) -> pd.DataFrame:
         trends = fetch_google_trends(sorted(tickers), use_cache=False)
         if isinstance(trends, pd.DataFrame) and "Ticker" in trends.columns:
             trends["Ticker"] = trends["Ticker"].str.upper()
-            merge_cols = [col for col in ["Ticker", "Trend Spike", "Google Interest", "Source"] if col in trends.columns]
+            merge_cols = [col for col in ["Ticker", "Trend Spike", "Google Interest", "AI Trends Commentary", "Source"] if col in trends.columns]
             df = df.merge(trends[merge_cols], on="Ticker", how="left")
             if "Source" not in df.columns:
                 df["Source"] = "n/a"
+    else:
+        # Ensure columns exist even when trends disabled
+        if "Trend Spike" not in df.columns:
+            df["Trend Spike"] = 0.0
+        if "Google Interest" not in df.columns:
+            df["Google Interest"] = 0.0
+        if "AI Trends Commentary" not in df.columns:
+            df["AI Trends Commentary"] = ""
     return df
 
 def apply_ranking_and_scoring(df: pd.DataFrame, reddit_df: pd.DataFrame, run_datetime: str, summary_lookup: pd.DataFrame) -> pd.DataFrame:
     df = df.merge(summary_lookup, on="Ticker", how="left")
-    scorer = SignalScorer(profile_name="default")
+    # Prefer AI-enhanced Reddit summary when present
+    if "AI Reddit Summary" in df.columns:
+        df["Reddit Summary"] = df.apply(lambda r: r.get("AI Reddit Summary") if isinstance(r.get("AI Reddit Summary"), str) and r.get("AI Reddit Summary").strip() else r.get("Reddit Summary"), axis=1)
+    scorer = SignalScorer(profile_name=CURRENT_SIGNAL_PROFILE)
     scorer.fit_normalization(df)
     scores = df.apply(lambda row: scorer.score_row(row, debug=True), axis=1)
+    # Compact summary of missing feature values across all rows
+    try:
+        scorer.log_missing_summary()
+    except Exception:
+        pass
 
     df["Weighted Score"] = scores.map(lambda x: x.weighted_score)
     df["Trade Type"] = scores.map(lambda x: x.trade_type)
@@ -97,10 +118,44 @@ def apply_ranking_and_scoring(df: pd.DataFrame, reddit_df: pd.DataFrame, run_dat
             z_col = col + " Z"
             df[z_col] = ((df[col] - mean) / std).round(2)
 
-    # Flag low liquidity
-    df["Low Liquidity Flag"] = df["Avg Daily Value Traded"].apply(
-        lambda x: "Yes" if pd.notna(x) and x < 1_000_000 else "No"
+    # Additional Z-Score fields needed in report
+    z_map = {
+        "Market Cap": "Z-Score: Market Cap",
+        "Avg Daily Value Traded": "Z-Score: Avg Daily Value",
+        "Mentions": "Z-Score: Reddit Activity"
+    }
+    for src, dest in z_map.items():
+        if src in df.columns:
+            m, s = df[src].mean(), df[src].std()
+            df[dest] = ((df[src] - m) / s).round(2) if pd.notna(s) and s != 0 else 0.0
+        else:
+            df[dest] = 0.0
+
+    # Standardized Liquidity Flags
+    df["Liquidity Flags"] = df["Avg Daily Value Traded"].apply(
+        lambda x: "Low Liquidity" if pd.notna(x) and x < LIQUIDITY_WARNING_ADV else ""
     )
+
+    # Ensure Squeeze Signal exists if not set by scorer
+    if "Squeeze Signal" not in df.columns or df["Squeeze Signal"].isna().all():
+        def _squeeze_rule(r):
+            spf = pd.to_numeric(r.get("Short Percent Float", 0), errors="coerce")
+            sr = pd.to_numeric(r.get("Short Ratio", 0), errors="coerce")
+            spf_ok = (pd.notna(spf) and float(spf) > 20)
+            sr_ok = (pd.notna(sr) and float(sr) > 3)
+            return "Yes" if (spf_ok and sr_ok) else "No"
+        df["Squeeze Signal"] = df.apply(_squeeze_rule, axis=1)
+
+    # Sentiment Spike (relative to median Reddit Sentiment)
+    if "Reddit Sentiment" in df.columns:
+        med = df["Reddit Sentiment"].median()
+        df["Sentiment Spike"] = (df["Reddit Sentiment"] - med).round(3)
+    else:
+        df["Sentiment Spike"] = 0.0
+
+    # Twitter Mentions default to 0 when missing
+    if "Twitter Mentions" not in df.columns:
+        df["Twitter Mentions"] = 0.0
 
     return df
 
@@ -200,23 +255,34 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     detect_new_signals(reddit_filtered.reset_index(), run_dir)
 
     tickers = set(reddit_agg.index)
+    # Expand universe with external trending sources (FMP/Stocktwits/Yahoo)
+    try:
+        extra = build_trending_universe()
+        if extra:
+            tickers |= {t for t in extra if t in valid_tickers}
+            logging.info(f"[UNIVERSE] Added {len(extra)} trending tickers; total universe: {len(tickers)}")
+    except Exception as e:
+        logging.warning(f"[UNIVERSE] Failed to build trending universe: {e}")
     feature_matrix = reddit_agg.reset_index()
+    logging.info(f"[PIPELINE] Merging optional sources (news/trends) for {len(tickers)} tickers…")
     feature_matrix = merge_with_optional_sources(feature_matrix, tickers)
+    logging.info("[PIPELINE] Optional sources merge complete.")
 
     # === PATCHED SECTION START ===
     yf_data = fetch_yf_data(sorted(tickers))
-    logging.info(f"[DEBUG] fetch_yf_data received {len(tickers)} tickers.")
-    logging.info(f"[DEBUG] fetch_yf_data returned {len(yf_data)} rows.")
+    logging.info(f"[YF] Requested: {len(tickers)} tickers; Received: {len(yf_data)} rows")
     if isinstance(yf_data, pd.DataFrame):
         missing_yf = set(tickers) - set(yf_data["Ticker"].unique())
         if missing_yf:
-            logging.warning(f"[WARNING] Tickers missing from YF data: {sorted(missing_yf)}")
+            some = sorted(list(missing_yf))[:10]
+            more = f" …(+{len(missing_yf)-10})" if len(missing_yf) > 10 else ""
+            logging.info(f"[YF] Missing from YF data ({len(missing_yf)}): {some}{more}")
         feature_matrix = feature_matrix.merge(yf_data, on="Ticker", how="left")
 
         for col in ["Market Cap", "Price 1D %", "EPS Growth", "Avg Daily Value Traded"]:
             if col in feature_matrix.columns:
                 null_rate = feature_matrix[col].isna().mean()
-                logging.info(f"[INFO] Null rate for {col}: {null_rate:.1%}")
+                logging.info(f"[YF] Null rate for {col}: {null_rate:.1%}")
             else:
                 logging.warning(f"[WARNING] Column {col} missing after YF merge.")
     else:
@@ -228,6 +294,12 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
             rank_col = col.replace(" %", "").replace(" ", "") + "Rank"
             feature_matrix[rank_col] = feature_matrix[col].rank(pct=True)
 
+    # Standard rank names expected by frontend/report
+    if "Momentum 30D %" in feature_matrix.columns:
+        feature_matrix["Momentum Rank"] = feature_matrix["Momentum 30D %"].rank(pct=True)
+    if "Avg Daily Value Traded" in feature_matrix.columns:
+        feature_matrix["Liquidity Rank"] = feature_matrix["Avg Daily Value Traded"].rank(pct=True)
+
     feature_matrix = apply_ranking_and_scoring(feature_matrix, reddit_df, run_datetime, summary_lookup)
     feature_matrix = handle_emerging_and_thread_tags(feature_matrix, reddit_df)
     feature_matrix["Signal Type"] = "Reddit + Financial"
@@ -238,7 +310,39 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
 
     final_df = feature_matrix[FINAL_COLUMN_ORDER].sort_values(by="Weighted Score", ascending=False).reset_index(drop=True)
     final_df = clean_and_validate_df(final_df)
-    final_df.to_csv(os.path.join(run_dir, "Final Analysis.csv"), index=False)
+    # Normalize percent-like columns to fractional scale in Final Analysis (configurable)
+    from config.config import PERCENT_NORMALIZE as _PCTN
+    if _PCTN:
+        try:
+            from config.labels import COLUMN_FORMAT_HINTS as _COLFMT
+            pct_cols = [c for c, hint in _COLFMT.items() if hint == "percent" and c in final_df.columns]
+            for pc in pct_cols:
+                s = pd.to_numeric(final_df[pc], errors='coerce')
+                nonnull = s.dropna()
+                if nonnull.empty:
+                    continue
+                frac_gt = (nonnull.abs() > 1.5).mean()
+                if pd.notna(frac_gt) and frac_gt >= 0.6:
+                    final_df[pc] = s / 100.0
+        except Exception:
+            pass
+    
+    # ChatGPT Enhancement
+    if os.getenv("OPENAI_API_KEY"):
+        logging.info("Enhancing signals with ChatGPT analysis...")
+        final_df = enhance_dataframe_with_chatgpt(final_df)
+        executive_summary = generate_executive_summary(final_df)
+        logging.info(f"AI Executive Summary: {executive_summary.get('portfolio_insights', 'N/A')}")
+    
+    # Save outputs (CSV + Parquet if available)
+    out_csv = os.path.join(run_dir, "Final Analysis.csv")
+    try:
+        from utils.parquet_writer import write_both
+        pq_path = write_both(final_df, out_csv)
+        if pq_path:
+            logging.info(f"Saved Parquet alongside CSV: {pq_path}")
+    except Exception:
+        final_df.to_csv(out_csv, index=False)
     write_to_db(final_df)
     return final_df, run_dir
 
@@ -257,7 +361,21 @@ if __name__ == "__main__":
                     "toggles": FEATURE_TOGGLES
                 }
             )
+            # Also write a plain CSV signal report for quick inspection
+            export_csv_report(combined, run_dir)
+            # Picks and run README
+            export_picks(combined, run_dir)
+            write_run_readme(run_dir)
             generate_html_dashboard(combined)
+            # Optional Slack alert
+            if SLACK_WEBHOOK_URL:
+                try:
+                    import json, requests
+                    top = combined[['Ticker', 'Score (0–100)']].head(5).to_dict(orient='records')
+                    text = f"VP Investments run complete. Top 5: {top}"
+                    requests.post(SLACK_WEBHOOK_URL, data=json.dumps({"text": text}), headers={"Content-Type": "application/json"}, timeout=10)
+                except Exception:
+                    pass
         else:
             print("[WARNING] No records passed final filter.")
     else:

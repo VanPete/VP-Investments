@@ -10,12 +10,17 @@ from pytrends.request import TrendReq
 from config.config import (
     FEATURE_TOGGLES,
     GOOGLE_TRENDS_BATCH_SIZE,
-    GOOGLE_TRENDS_SLEEP_SEC
+    GOOGLE_TRENDS_SLEEP_SEC,
+    TRENDS_CACHE_DIR,
+    TRENDS_TIMEFRAME
 )
+from config.config import AI_FEATURES
+from utils.ai_cache import get as ai_get, set as ai_set
+from processors.chatgpt_integrator import ChatGPTIntegrator
 
 # === Setup ===
 pytrends = TrendReq(hl='en-US', tz=360)
-CACHE_DIR = "data/google_trends"
+CACHE_DIR = TRENDS_CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # === Load Company Data ===
@@ -25,7 +30,7 @@ def load_company_data() -> pd.DataFrame:
     return df
 
 # === Google Trends Fetch Core ===
-def fetch_trends_for_term(term: str, timeframe: str = "now 7-d") -> pd.DataFrame:
+def fetch_trends_for_term(term: str, timeframe: str = TRENDS_TIMEFRAME) -> pd.DataFrame:
     try:
         pytrends.build_payload([term], cat=0, timeframe=timeframe, geo="", gprop="")
         data = pytrends.interest_over_time()
@@ -86,6 +91,7 @@ def fetch_google_trends(ticker_list, use_cache=True) -> pd.DataFrame:
     logging.info(f"📈 Fetching Google Trends for {len(df_core)} terms")
 
     results = []
+    integrator = ChatGPTIntegrator() if AI_FEATURES.get("ENABLED") and AI_FEATURES.get("TRENDS_COMMENTARY") else None
     for i, row in enumerate(tqdm(df_core.itertuples(index=False, name='CompanyRow'), total=len(df_core), desc="📊 Google Trends"), 1):
         ticker = row.Ticker
         company_name = row.Company
@@ -108,6 +114,18 @@ def fetch_google_trends(ticker_list, use_cache=True) -> pd.DataFrame:
             scores = compute_signals(trend_data, used_term)
 
         scores.update({"Ticker": ticker, "Source": source})
+        if integrator:
+            cache_key = f"trends_comment::{ticker}::{scores['Google Interest']}::{scores['Trend Spike']}"
+            cached = ai_get(cache_key)
+            if cached:
+                scores["AI Trends Commentary"] = cached
+            else:
+                try:
+                    text = integrator.generate_trends_commentary(ticker, scores["Google Interest"], scores["Trend Spike"])
+                    scores["AI Trends Commentary"] = text
+                    ai_set(cache_key, text)
+                except Exception:
+                    scores["AI Trends Commentary"] = ""
         results.append(scores)
 
         logging.info(f"🔍 [{i}] {ticker} — Interest: {scores['Google Interest']}, Spike: {scores['Trend Spike']} [{used_term}]")

@@ -1,6 +1,7 @@
 """
 news_fetcher.py
-Fetches and scores news sentiment for a list of tickers using NewsAPI and VADER.
+Fetches and scores news sentiment using Google News RSS (no API key) and VADER,
+then optionally summarizes with OpenAI for better results.
 Includes fuzzy matching, caching, and article summarization.
 """
 
@@ -12,25 +13,36 @@ import logging
 import requests
 from datetime import datetime, timedelta
 from typing import List, Dict
+from tqdm import tqdm
 
 import pandas as pd
 from rapidfuzz import fuzz
 from dotenv import load_dotenv
+from config.config import (
+    AI_FEATURES, NEWS_CACHE_DIR, NEWS_CACHE_TTL_HOURS,
+    NEWS_RSS_TIMEOUT_SEC, NEWS_FETCH_PACING_SEC, NEWS_FUZZY_THRESHOLD, NEWS_MAX_ITEMS
+)
+from utils.ai_cache import get as ai_get, set as ai_set
+from processors.chatgpt_integrator import ChatGPTIntegrator
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from bs4 import BeautifulSoup
+from utils.http_client import build_session
 
 # === Config ===
 load_dotenv()
-NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-assert NEWS_API_KEY, "❌ NEWS_API_KEY is not set in .env"
 
-CACHE_DIR = os.getenv("NEWS_CACHE_DIR", "cache/news")
+CACHE_DIR = NEWS_CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-NEWSAPI_URL = "https://newsapi.org/v2/everything"
-BATCH_SIZE = 5
-CACHE_TTL = timedelta(hours=1)
-DAILY_LIMIT = 90
-API_CALL_COUNT = 0
+CACHE_TTL = timedelta(hours=NEWS_CACHE_TTL_HOURS)
+
+# Shared HTTP session with caching to reduce repeated RSS hits
+_rss_sess = build_session(
+    cache_name=os.path.join(CACHE_DIR, "rss_cache"),
+    cache_expire_seconds=int(CACHE_TTL.total_seconds()),
+    timeout=NEWS_RSS_TIMEOUT_SEC,
+)
+ 
 
 
 # === Company Name Matching ===
@@ -79,7 +91,7 @@ def save_cache(symbol: str, articles: List[dict]):
 
 
 # === News Fetching ===
-def fuzzy_match_articles(name: str, articles: List[dict], threshold: int = 80) -> List[dict]:
+def fuzzy_match_articles(name: str, articles: List[dict], threshold: int = NEWS_FUZZY_THRESHOLD) -> List[dict]:
     """Return list of articles whose text matches the company name fuzzily."""
     cleaned = clean_company_name(name).lower()
     matched = []
@@ -90,64 +102,56 @@ def fuzzy_match_articles(name: str, articles: List[dict], threshold: int = 80) -
     return matched
 
 
-def fetch_news_batch(names: List[str]) -> Dict[str, List[dict]]:
-    """Batch query NewsAPI and apply fuzzy article matching for each company name."""
-    global API_CALL_COUNT
-    results = {}
-    query = " OR ".join(names)
-    params = {
-        "q": query,
-        "language": "en",
-        "apiKey": NEWS_API_KEY,
-        "pageSize": 100,
-    }
-
-    logging.info(f"📡 NewsAPI query: {params['q']}")
-    resp = requests.get(NEWSAPI_URL, params=params)
-    API_CALL_COUNT += 1
-    logging.info(f"🔄 API calls used: {API_CALL_COUNT}")
-
-    if resp.status_code != 200:
-        logging.warning(f"❌ NewsAPI error {resp.status_code}: {resp.text}")
-        return {name: [] for name in names}
-
-    all_articles = resp.json().get("articles", [])
-    for name in names:
-        matched = fuzzy_match_articles(name, all_articles)
-        results[name] = matched
-        logging.info(f"📰 {name} matched {len(matched)} articles")
-
-    return results
+def fetch_google_news_rss(name: str, max_items: int = NEWS_MAX_ITEMS) -> List[dict]:
+    """Fetch recent Google News RSS items for a company name, last ~7 days."""
+    q = requests.utils.quote(f'"{name}" when:7d')
+    url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+    try:
+        resp = _rss_sess.get(url)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.content, "xml")
+        items = soup.find_all("item")
+        articles = []
+        for it in items[:max_items]:
+            title = (it.title.text if it.title else "").strip()
+            desc = (it.description.text if it.description else "").strip()
+            pub = it.pubDate.text if it.pubDate else ""
+            articles.append({
+                "title": title,
+                "description": desc,
+                "publishedAt": pub
+            })
+        return articles
+    except Exception as e:
+        logging.warning(f"RSS fetch failed for {name}: {e}")
+        return []
 
 
 def fetch_news_for_tickers(tickers: List[str]) -> Dict[str, List[dict]]:
-    """Main method to fetch and cache news articles for a list of tickers."""
-    logging.info(f"🧠 News fetch starting for {len(tickers)} tickers")
+    """Fetch news via Google News RSS per ticker and cache results."""
+    total = len(tickers)
+    logging.info(f"🧠 News fetch (RSS) starting for {total} tickers")
     company_map = load_company_names()
-    fetched = {}
+    fetched: Dict[str, List[dict]] = {}
 
-    for i in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[i:i + BATCH_SIZE]
-        names = [company_map.get(t, t) for t in batch]
-        uncached = [t for t in batch if not is_cache_fresh(t)]
-
-        if not uncached:
-            for t in batch:
+    for i, t in enumerate(tqdm(tickers, desc="📰 Fetching News", unit="ticker"), start=1):
+        try:
+            if is_cache_fresh(t):
                 fetched[t] = load_cached(t)
-            continue
-
-        if API_CALL_COUNT >= DAILY_LIMIT:
-            for t in batch:
-                path = os.path.join(CACHE_DIR, f"{t}.json")
-                fetched[t] = load_cached(t) if os.path.exists(path) else []
-            logging.warning("🚫 Reached NewsAPI daily limit — using cache only")
-            continue
-
-        batch_res = fetch_news_batch(names)
-        for sym, arts in zip(batch, batch_res.values()):
-            fetched[sym] = arts
-            save_cache(sym, arts)
-        time.sleep(1)  # Rate limiting
+                logging.debug(f"[NEWS {i}/{total}] {t}: cache hit ({len(fetched[t])} items)")
+                continue
+            company = company_map.get(t, t)
+            articles = fetch_google_news_rss(company)
+            # Fuzzy filter with company name
+            articles = fuzzy_match_articles(company, articles)
+            fetched[t] = articles
+            save_cache(t, articles)
+            if i % 10 == 0 or i == total:
+                logging.info(f"[NEWS] Progress: {i}/{total} tickers processed")
+            time.sleep(NEWS_FETCH_PACING_SEC)  # Gentle pacing
+        except Exception as e:
+            logging.warning(f"News fetch failed for {t}: {e}")
+            fetched[t] = []
 
     return fetched
 
@@ -170,12 +174,29 @@ def score_articles_sentiment(articles: List[dict]) -> float:
 
 
 def summarize_news_sentiment(news_dict: Dict[str, List[dict]]) -> Dict[str, Dict[str, float]]:
-    """Summarize sentiment for each ticker into count and average sentiment score."""
+    """Summarize sentiment per ticker and optionally add AI news summary text."""
     summary = {}
-    for ticker, articles in news_dict.items():
+    integrator = ChatGPTIntegrator() if AI_FEATURES.get("ENABLED") and AI_FEATURES.get("NEWS_SUMMARY") else None
+    total = len(news_dict)
+    for idx, (ticker, articles) in enumerate(tqdm(news_dict.items(), desc="🧪 Scoring News", unit="ticker"), start=1):
         sentiment = score_articles_sentiment(articles)
-        summary[ticker] = {
+        row = {
             "News Mentions": len(articles),
             "News Sentiment": sentiment
         }
+        if integrator:
+            cache_key = f"news_summary::{ticker}::{len(articles)}::{round(sentiment,3)}"
+            cached = ai_get(cache_key)
+            if cached:
+                row["AI News Summary"] = cached
+            else:
+                try:
+                    text = integrator.generate_news_summary(ticker, articles, sentiment)
+                    row["AI News Summary"] = text
+                    ai_set(cache_key, text)
+                except Exception:
+                    row["AI News Summary"] = ""
+        if idx % 20 == 0 or idx == total:
+            logging.info(f"[NEWS] Scoring progress: {idx}/{total}")
+        summary[ticker] = row
     return summary

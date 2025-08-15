@@ -1,5 +1,13 @@
 import json
 import os
+from datetime import timedelta
+from dotenv import load_dotenv, find_dotenv
+
+# Ensure .env is loaded regardless of current working directory
+try:
+    load_dotenv(find_dotenv())
+except Exception:
+    pass
 
 # === Project Paths ===
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -7,6 +15,49 @@ DB_PATH = os.path.abspath(os.path.join(PROJECT_ROOT, "outputs", "backtest.db"))
 WEIGHTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "weights")
 WEIGHTS_OUTPUT_PATH = os.path.join(WEIGHTS_DIR, "ml_weights.json")
 os.makedirs(WEIGHTS_DIR, exist_ok=True)
+OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
+
+# === Env override switch ===
+# Set USE_ENV_CONFIG=1 to allow environment variables to override values below.
+USE_ENV_CONFIG = os.getenv("USE_ENV_CONFIG", "0") in {"1", "true", "True"}
+
+def _env(name: str, default: str) -> str:
+    return os.getenv(name, default) if USE_ENV_CONFIG else default
+
+def _env_int(name: str, default: int) -> int:
+    if not USE_ENV_CONFIG:
+        return default
+    try:
+        return int(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+def _env_float(name: str, default: float) -> float:
+    if not USE_ENV_CONFIG:
+        return default
+    try:
+        return float(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+def _env_bool(name: str, default: bool) -> bool:
+    if not USE_ENV_CONFIG:
+        return default
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val not in {"0", "false", "False"}
+
+# === External API Keys / Providers ===
+FMP_API_KEY = _env("FMP_API_KEY", "MISSING")
+
+# === OpenAI Settings ===
+# Always read secrets from environment; .env is loaded above
+OPENAI = {
+    "API_KEY": os.getenv("OPENAI_API_KEY", ""),
+    "MODEL": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+}
 
 # === Backtesting Constants ===
 RETURN_WINDOWS = [1, 3, 7, 10]
@@ -23,16 +74,20 @@ EXCLUDED_TICKERS = {
     "$DD", "$IT", "$IN", "$FYI", "$API", "$PSA", "$ROI", "$PT", "$WSB",
     *{f"${l}" for l in list("BCDEGHIJKLMNOPQRSUVWXZ")}
 }
+MEME_TICKER_TERMS = {
+    "GPT", "CEO", "YOLO", "MOON", "STONKS", "HODL", "FIRE", "TO THE MOON", "MEME", "PUMP", "ROCKET"
+}
+MIN_ADV_FOR_REDDIT = _env_float("MIN_ADV_FOR_REDDIT", 2_000_000.0)
 REDDIT_SUBREDDITS = [
     "investing", "stocks", "securityanalysis", "valueinvesting",
     "dividends", "growthstocks", "financialindependence",
     "economics", "quant"
 ]
 REDDIT_LIMITS = {
-    "hot": 30,
-    "new": 20,
-    "top": 20,
-    "rising": 20
+    "hot": 5,
+    "new": 5,
+    "top": 5,
+    "rising": 5
 }
 
 REDDIT_TICKER_PATTERN = r'\b[A-Z]{1,5}\b'
@@ -98,11 +153,24 @@ SIGNAL_WEIGHT_PROFILES = {"default": {
     "Earnings Gap %": 0.7, "Retail Holding %": 0.3, "Float % Held by Institutions": 0.6,
     "Avg Daily Value Traded": 0.7
 }}
-try:
-    with open("config/ml_weights.json") as f:
-        SIGNAL_WEIGHT_PROFILES["ml_optimized"] = json.load(f)
-except FileNotFoundError:
-    pass  # Optional override
+# Prefer ML weights saved to outputs/weights, fall back to legacy config path if present
+_ML_WEIGHT_CANDIDATES = [
+    WEIGHTS_OUTPUT_PATH,
+    os.path.join(PROJECT_ROOT, "config", "ml_weights.json"),
+]
+for _path in _ML_WEIGHT_CANDIDATES:
+    try:
+        if os.path.exists(_path):
+            with open(_path) as f:
+                SIGNAL_WEIGHT_PROFILES["ml_optimized"] = json.load(f)
+            break
+    except Exception:
+        # Ignore malformed files and continue to next candidate
+        continue
+
+# If ML weights weren't loaded, automatically fall back to default to avoid KeyError
+if "ml_optimized" not in SIGNAL_WEIGHT_PROFILES:
+    CURRENT_SIGNAL_PROFILE = "default"
 
 # === Pre-Score Thresholds ===
 THRESHOLDS = {
@@ -128,6 +196,73 @@ RECENCY_HALFLIFE_HOURS = 36
 EMERGING_SCORE_BOOST = 1.2
 REDDIT_FINANCIAL_WEIGHT_RATIO = 0.5
 FEATURE_NORMALIZATION = True
+PERCENT_NORMALIZE = _env_bool("PERCENT_NORMALIZE", True)
+
+# === AI/ChatGPT Feature Flags ===
+# These control optional OpenAI enrichments. Toggle via environment variables.
+AI_FEATURES = {
+    "ENABLED": bool(OPENAI.get("API_KEY")),
+    "MAX_ROWS": _env_int("AI_MAX_ROWS", 20),
+    "REDDIT_SUMMARY": _env_bool("AI_REDDIT_SUMMARY", True),
+    "NEWS_SUMMARY": _env_bool("AI_NEWS_SUMMARY", True),
+    "TRENDS_COMMENTARY": _env_bool("AI_TRENDS_COMMENTARY", False)
+}
+
+# === Caching and Paths ===
+NEWS_CACHE_DIR = _env("NEWS_CACHE_DIR", os.path.join(PROJECT_ROOT, "cache", "news"))
+NEWS_CACHE_TTL_HOURS = _env_int("NEWS_CACHE_TTL_HOURS", 1)
+
+TRENDS_CACHE_DIR = _env("TRENDS_CACHE_DIR", os.path.join(PROJECT_ROOT, "data", "google_trends"))
+
+# Outputs directory timestamp format, e.g. "(%d %B %y, %H_%M_%S)"
+OUTPUTS_DIR_FORMAT = _env("OUTPUTS_DIR_FORMAT", "(%d %B %y, %H_%M_%S)")
+
+# === Liquidity / Thresholds (UI-friendly flags) ===
+LIQUIDITY_WARNING_ADV = _env_float("LIQUIDITY_WARNING_ADV", 1_000_000.0)  # $1M default
+
+# === News Fetch Settings ===
+NEWS_RSS_TIMEOUT_SEC = _env_int("NEWS_RSS_TIMEOUT_SEC", 15)
+NEWS_FETCH_PACING_SEC = _env_float("NEWS_FETCH_PACING_SEC", 0.5)
+NEWS_FUZZY_THRESHOLD = _env_int("NEWS_FUZZY_THRESHOLD", 80)
+NEWS_MAX_ITEMS = _env_int("NEWS_MAX_ITEMS", 30)
+
+# === Google Trends Settings ===
+TRENDS_TIMEFRAME = _env("TRENDS_TIMEFRAME", "now 7-d")
+
+# === Technical Windows ===
+TECH_VOLATILITY_WINDOW = _env_int("TECH_VOLATILITY_WINDOW", 14)
+TECH_RSI_PERIOD = _env_int("TECH_RSI_PERIOD", 14)
+TECH_BB_PERIOD = _env_int("TECH_BB_PERIOD", 20)
+TECH_MOMENTUM_DAYS = _env_int("TECH_MOMENTUM_DAYS", 30)
+TECH_VOL_SPIKE_WINDOW = _env_int("TECH_VOL_SPIKE_WINDOW", 7)
+BETA_WINDOW = _env_int("BETA_WINDOW", 90)
+
+# === Data Provider Concurrency ===
+YF_MAX_WORKERS = _env_int("YF_MAX_WORKERS", 8)
+
+# === Web API Server Settings ===
+WEB_API_DEBUG = _env_bool("WEB_API_DEBUG", True)
+WEB_API_PORT = _env_int("WEB_API_PORT", 5001)
+REDIS_URL = _env("REDIS_URL", "")
+
+# === Scheduler Settings ===
+# Enable simple interval scheduling when running run_all.py
+SCHED_ENABLED = _env_bool("SCHED_ENABLED", False)
+SCHED_EVERY_MINUTES = _env_int("SCHED_EVERY_MINUTES", 360)
+SCHED_TIMEZONE = _env("SCHED_TIMEZONE", "US/Eastern")
+# Twice-daily schedule: one hour before open and one hour after close
+SCHED_TWICE_DAILY = _env_bool("SCHED_TWICE_DAILY", True)
+MARKET_OPEN_TIME = _env("MARKET_OPEN_TIME", "09:30")   # HH:MM in ET
+MARKET_CLOSE_TIME = _env("MARKET_CLOSE_TIME", "16:00")  # HH:MM in ET
+PRE_OPEN_OFFSET_MINUTES = _env_int("PRE_OPEN_OFFSET_MINUTES", 60)
+POST_CLOSE_OFFSET_MINUTES = _env_int("POST_CLOSE_OFFSET_MINUTES", 60)
+
+# === Universe Expansion (Trending Tickers) ===
+UNIVERSE_SOURCES = {
+    "FMP_MOVERS": _env_bool("UNIVERSE_FMP_MOVERS", True),
+    "STOCKTWITS_TRENDING": _env_bool("UNIVERSE_STOCKTWITS", True),
+}
+UNIVERSE_LIMIT = _env_int("UNIVERSE_LIMIT", 500)
 
 # === Group Labels for Scoring Analysis ===
 GROUP_LABELS = {
@@ -153,3 +288,7 @@ GROUP_LABELS = {
     "Sector Inflows": "Macro_Flows", "ETF Flow Spike Ratio": "Macro_Flows", "ETF Flow Signal": "Macro_Flows",
     "Avg Daily Value Traded": "Liquidity"
 }
+
+# === Observability & Alerts ===
+SENTRY_DSN = _env("SENTRY_DSN", "")
+SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
