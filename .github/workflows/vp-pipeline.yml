@@ -2,6 +2,11 @@ name: VP Investments Pipeline
 
 on:
   workflow_dispatch:
+  schedule:
+    # Weekdays at ~08:30 ET (12:30 UTC during EDT)
+    - cron: '30 12 * * 1-5'
+    # Weekdays at ~17:00 ET (21:00 UTC during EDT)
+    - cron: '0 21 * * 1-5'
 
 permissions:
   contents: write
@@ -38,16 +43,14 @@ jobs:
           uv pip install --system -r requirements.txt
 
       - name: Run pipeline (once)
-        env:
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          # Reddit API (required for scraping Reddit)
-          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
         run: |
+          set -e
+          # Export secrets if present (keeps YAML clean of undefined env mappings)
+          [ -n "${{ secrets.FMP_API_KEY }}" ] && export FMP_API_KEY="${{ secrets.FMP_API_KEY }}"
+          [ -n "${{ secrets.OPENAI_API_KEY }}" ] && export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+          [ -n "${{ secrets.REDDIT_CLIENT_ID }}" ] && export REDDIT_CLIENT_ID="${{ secrets.REDDIT_CLIENT_ID }}"
+          [ -n "${{ secrets.REDDIT_CLIENT_SECRET }}" ] && export REDDIT_CLIENT_SECRET="${{ secrets.REDDIT_CLIENT_SECRET }}"
+          [ -n "${{ secrets.REDDIT_USER_AGENT }}" ] && export REDDIT_USER_AGENT="${{ secrets.REDDIT_USER_AGENT }}"
           python "run_all.py" --once --stream --timeout 1800
 
       - name: Prepare Pages index
