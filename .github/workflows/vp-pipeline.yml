@@ -1,6 +1,10 @@
 name: VP Investments Pipeline
 
 on:
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
   schedule:
     # Weekdays at ~08:30 ET (12:30 UTC during EDT)

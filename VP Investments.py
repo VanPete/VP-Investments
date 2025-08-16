@@ -139,7 +139,6 @@ def apply_ranking_and_scoring(df: pd.DataFrame, reddit_df: pd.DataFrame, run_dat
     df["Reddit Score"] = scores.map(lambda x: x.reddit_score)
     df["Financial Score"] = scores.map(lambda x: x.financial_score)
     df["News Score"] = scores.map(lambda x: x.news_score)
-    df["Score (0–100)"] = (df["Weighted Score"] * 100).round(2)
     df["Rank"] = df["Weighted Score"].rank(ascending=False, method="min").astype("Int64")
     df["Run Datetime"] = run_datetime
 
@@ -409,8 +408,8 @@ if __name__ == "__main__":
             if SLACK_WEBHOOK_URL:
                 try:
                     import json, requests
-                    top = combined[['Ticker', 'Score (0–100)']].head(5).to_dict(orient='records')
-                    text = f"VP Investments run complete. Top 5: {top}"
+                    top = combined[['Ticker', 'Weighted Score']].head(5).to_dict(orient='records')
+                    text = f"VP Investments run complete. Top 5 by Weighted Score: {top}"
                     requests.post(SLACK_WEBHOOK_URL, data=json.dumps({"text": text}), headers={"Content-Type": "application/json"}, timeout=10)
                 except Exception:
                     pass

@@ -1,7 +1,7 @@
 # === Final Output Column Order for Excel & Console Output ===
 FINAL_COLUMN_ORDER = [
     # === Meta ===
-    "Rank", "Ticker", "Company", "Sector", "Trade Type", "Secondary Flags",  "Score (0–100)", "Risk Level", "Risk Tags",
+    "Rank", "Ticker", "Company", "Sector", "Trade Type", "Secondary Flags", "Risk Level", "Risk Tags",
     "Highest Contributor", "Lowest Contributor", "Top Factors",
     "Emerging/Thread", "Post Recency", "Reddit Summary",
 
@@ -48,9 +48,6 @@ FINAL_COLUMN_ORDER = [
 
 # === Formatting hints for Excel output ===
 COLUMN_FORMAT_HINTS = {
-    # === Meta ===
-    "Score (0–100)": "float",
-
     # === Sentiment ===
     "Reddit Sentiment": "float",
     "News Sentiment": "float",

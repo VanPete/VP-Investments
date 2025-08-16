@@ -146,19 +146,24 @@ def plot_risk_return_scatter(df: pd.DataFrame):
 # PATCHED chart logic — top of file unchanged
 
 def plot_bucket_returns(df: pd.DataFrame):
-    if {"1D Return", "Score (0–100)"}.issubset(df.columns):
-        d = df.dropna(subset=["1D Return", "Score (0–100)"]).copy()
-        if not d.empty and d["Score (0–100)"].between(0, 100).all():
-            bins = [0, 50, 60, 70, 80, 90, 100]
-            d["score_bucket"] = pd.cut(d["Score (0–100)"], bins=bins, right=True)
-            grouped = d.groupby("score_bucket", observed=False)["1D Return"].agg(["mean", "count", "std"]).reset_index()
+    # Use Weighted Score deciles to assess calibration
+    if {"1D Return", "Weighted Score"}.issubset(df.columns):
+        d = df.dropna(subset=["1D Return", "Weighted Score"]).copy()
+        if not d.empty:
+            try:
+                d["score_decile"] = pd.qcut(d["Weighted Score"], 10, labels=[f"D{i}" for i in range(1, 11)], duplicates="drop")
+            except Exception:
+                # Fallback to rank-based buckets
+                ranks = d["Weighted Score"].rank(method="average", pct=True)
+                d["score_decile"] = (ranks * 10).clip(1, 10).round().astype(int).map(lambda x: f"D{int(x)}")
+            grouped = d.groupby("score_decile", observed=False)["1D Return"].agg(["mean", "count", "std"]).reset_index()
             grouped["se"] = grouped["std"].div(grouped["count"].clip(lower=1) ** 0.5)
             plt.figure(figsize=(9, 5))
-            ax = sns.barplot(data=grouped, x="score_bucket", y="mean", color="#6baed6", edgecolor="#3b82f6")
+            ax = sns.barplot(data=grouped, x="score_decile", y="mean", color="#6baed6", edgecolor="#3b82f6")
             ax.errorbar(x=range(len(grouped)), y=grouped["mean"], yerr=grouped["se"], fmt="none", ecolor="#1f2937", capsize=3)
-            plt.title("Avg 1D Return by Score Bucket (± SE)")
+            plt.title("Avg 1D Return by Weighted Score Decile (± SE)")
             plt.ylabel("Avg 1D Return %")
-            plt.xlabel("Score (0–100) Buckets")
+            plt.xlabel("Weighted Score Decile (low→high)")
             y_scale = _guess_percent_scale(grouped["mean"])
             plt.gca().yaxis.set_major_formatter(_make_percent_formatter(scale=y_scale))
             for i, v in enumerate(grouped["mean"]):
@@ -244,24 +249,23 @@ def plot_signal_duration_hist(df: pd.DataFrame):
     save_plot(os.path.join(PLOT_DIR, "signal_duration_hist.png"))
 
 def plot_score_return_trend(df: pd.DataFrame):
-    if {"Run Datetime", "Score (0–100)", "3D Return"}.issubset(df.columns):
-        df = df.dropna(subset=["Run Datetime", "Score (0–100)", "3D Return"])
+    if {"Run Datetime", "Weighted Score", "3D Return"}.issubset(df.columns):
+        df = df.dropna(subset=["Run Datetime", "Weighted Score", "3D Return"])
         df = df.sort_values("Run Datetime").copy()
         df["Date"] = df["Run Datetime"].dt.date
-        daily = df.groupby("Date")[["Score (0–100)", "3D Return"]].mean()
+        daily = df.groupby("Date")[ ["Weighted Score", "3D Return"] ].mean()
         if not daily.empty:
             roll = daily.rolling(7).mean()
             plt.figure(figsize=(10, 5))
-            ax = roll["Score (0–100)"].plot(color="#0ea5e9", label="Score (7D avg)")
+            ax = roll["Weighted Score"].plot(color="#0ea5e9", label="Weighted Score (7D avg)")
             ax2 = ax.twinx()
             roll["3D Return"].plot(ax=ax2, color="#22c55e", label="3D Return (7D avg)")
-            ax.set_ylabel("Score (0–100)")
+            ax.set_ylabel("Weighted Score")
             ax2.set_ylabel("3D Return %")
             y_scale = _guess_percent_scale(roll["3D Return"]) if not roll["3D Return"].dropna().empty else 1.0
             ax2.yaxis.set_major_formatter(_make_percent_formatter(scale=y_scale))
             ax.grid(True, color="#eaeaea")
-            ax.set_title("7D Rolling Avg: Score vs 3D Return")
-            # Build a combined legend
+            ax.set_title("7D Rolling Avg: Weighted Score vs 3D Return")
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
             ax.legend(lines + lines2, labels + labels2, loc="upper left")
@@ -318,7 +322,7 @@ def export_breakout_csvs(df: pd.DataFrame):
 
 def export_feature_correlations(df: pd.DataFrame):
     # Build target list dynamically based on availability
-    candidate_targets = ["3D Return", "Score (0–100)"]
+    candidate_targets = ["3D Return", "Weighted Score"]
     targets = [t for t in candidate_targets if t in df.columns]
     if not targets:
         # Nothing to correlate against yet
@@ -365,14 +369,14 @@ def export_score_quantile_performance(df: pd.DataFrame):
 
     Emits CSV with mean forward returns and beat-SPY rates per score decile.
     """
-    required = {"Score (0–100)", "1D Return", "3D Return", "10D Return"}
+    required = {"Weighted Score", "1D Return", "3D Return", "10D Return"}
     cols_present = required.intersection(df.columns)
-    if "Score (0–100)" not in cols_present:
+    if "Weighted Score" not in cols_present:
         return
-    d = df.dropna(subset=["Score (0–100)"]).copy()
+    d = df.dropna(subset=["Weighted Score"]).copy()
     if d.empty:
         return
-    d["score_decile"] = pd.qcut(d["Score (0–100)"], 10, labels=[f"D{i}" for i in range(1, 11)], duplicates="drop")
+    d["score_decile"] = pd.qcut(d["Weighted Score"], 10, labels=[f"D{i}" for i in range(1, 11)], duplicates="drop")
     metrics = {}
     for w in [1, 3, 10]:
         col = f"{w}D Return"
@@ -386,7 +390,7 @@ def export_score_quantile_performance(df: pd.DataFrame):
                 metrics[f"beat_spy_{w}d"] = (f"beat_spy_{w}d", "mean")
     if not metrics:
         return
-    agg = d.groupby("score_decile", observed=False).agg(**{k: pd.NamedAgg(column=v[0], aggfunc=v[1]) for k, v in metrics.items()}, count=("Score (0–100)", "size")).reset_index()
+    agg = d.groupby("score_decile", observed=False).agg(**{k: pd.NamedAgg(column=v[0], aggfunc=v[1]) for k, v in metrics.items()}, count=("Weighted Score", "size")).reset_index()
     # Coerce to numeric before rounding in case of mixed dtypes
     for k in list(metrics.keys()):
         agg[k] = pd.to_numeric(agg[k], errors="coerce")
@@ -463,9 +467,9 @@ def generate_html_dashboard(df: pd.DataFrame):
         if os.path.exists(csv_path):
             tables[name.replace("_", " ").title()] = pd.read_csv(csv_path)
 
-    top_signals = df.sort_values("Score (0–100)", ascending=False).head(10).copy()
+    top_signals = df.sort_values("Weighted Score", ascending=False).head(10).copy()
     display_cols = ["Rank", "Ticker", "Company", "Sector", "Trade Type",
-                    "Score (0–100)", "Reddit Sentiment", "News Sentiment", "3D Return"]
+                    "Weighted Score", "Reddit Sentiment", "News Sentiment", "3D Return"]
     top_signals = top_signals[[c for c in display_cols if c in top_signals.columns]]
 
     # Ensure dashboard directory and write CSS

@@ -7,7 +7,6 @@ export interface StockData {
   run_datetime: string;
   source: string;
   subreddit?: string;
-  raw_score: number;
   weighted_score: number;
   active_signals: string;
   mentions: number;

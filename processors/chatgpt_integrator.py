@@ -37,8 +37,8 @@ class ChatGPTIntegrator:
         You are a professional investment analyst. Analyze this stock signal and provide a concise, 
         insightful commentary (2-3 sentences) explaining the key investment thesis.
 
-        Stock: {row.get('Ticker', 'N/A')} - {row.get('Company', 'N/A')}
-        Score: {row.get('Score (0–100)', 0)}/100
+    Stock: {row.get('Ticker', 'N/A')} - {row.get('Company', 'N/A')}
+    Weighted Score: {row.get('Weighted Score', 0):.3f}
         Trade Type: {row.get('Trade Type', 'N/A')}
         
         Key Metrics:
@@ -160,30 +160,30 @@ class ChatGPTIntegrator:
     def generate_portfolio_insights(self, df: pd.DataFrame) -> str:
         """
         Generate portfolio-level insights and recommendations.
-        """
-        top_signals = df.head(10)
-        sectors = df['Sector'].value_counts() if 'Sector' in df.columns else {}
-        avg_score = df['Score (0–100)'].mean() if 'Score (0–100)' in df.columns else 0
-        
-        prompt = f"""
-        You are a portfolio strategist analyzing {len(df)} stock signals.
-        
-        Key Statistics:
-        - Average Score: {avg_score:.1f}/100
-        - Top 10 Signals: {', '.join(top_signals['Ticker'].tolist())}
-        - Sector Distribution: {dict(sectors)}
-        - Score Range: {df['Score (0–100)'].min():.1f} to {df['Score (0–100)'].max():.1f}
-        
-        Provide a 4-5 sentence portfolio strategy focusing on:
-        1) Overall signal quality and market conditions
-        2) Sector concentration risks/opportunities 
-        3) Recommended position sizing approach
-        4) Key risks to monitor
-        
-        Be professional and actionable.
-        """
-        
+    """
         try:
+            top_signals = df.head(10)
+            sectors = df['Sector'].value_counts() if 'Sector' in df.columns else {}
+            avg_score = df['Weighted Score'].mean() if 'Weighted Score' in df.columns else 0
+
+            prompt = f"""
+            You are a portfolio strategist analyzing {len(df)} stock signals.
+
+            Key Statistics:
+            - Average Weighted Score: {avg_score:.3f}
+            - Top 10 Signals: {', '.join(top_signals['Ticker'].tolist())}
+            - Sector Distribution: {dict(sectors)}
+            - Weighted Score Range: {df['Weighted Score'].min() if 'Weighted Score' in df.columns else 0:.3f} to {df['Weighted Score'].max() if 'Weighted Score' in df.columns else 0:.3f}
+
+            Provide a 4-5 sentence portfolio strategy focusing on:
+            1) Overall signal quality and market conditions
+            2) Sector concentration risks/opportunities 
+            3) Recommended position sizing approach
+            4) Key risks to monitor
+
+            Be professional and actionable.
+            """
+
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -200,7 +200,7 @@ class ChatGPTIntegrator:
         Explain why a signal received its score in plain English.
         """
         prompt = f"""
-        Explain in simple terms why {row.get('Ticker')} received a {row.get('Score (0–100)', 0)}/100 score.
+    Explain in simple terms why {row.get('Ticker')} received its Weighted Score of {row.get('Weighted Score', 0):.3f}.
 
         Key Factors:
         - Reddit Mentions: {row.get('Mentions', 0)} posts
@@ -227,26 +227,26 @@ class ChatGPTIntegrator:
     def generate_market_outlook(self, df: pd.DataFrame, external_data: Dict = None) -> str:
         """
         Generate overall market outlook based on signal patterns.
-        """
-        high_score_count = len(df[df['Score (0–100)'] > 70]) if 'Score (0–100)' in df.columns else 0
-        avg_sentiment = df['Reddit Sentiment'].mean() if 'Reddit Sentiment' in df.columns else 0
-        
-        prompt = f"""
-        Analyze the current market sentiment based on alternative data signals:
-        
-        Signal Analysis:
-        - Total Signals: {len(df)}
-        - High-Quality Signals (>70/100): {high_score_count}
-        - Average Reddit Sentiment: {avg_sentiment:.2f}
-        - Most Active Sectors: {df['Sector'].value_counts().head(3).to_dict() if 'Sector' in df.columns else 'N/A'}
-        
-        Provide a brief market outlook (3-4 sentences) covering:
-        1) Overall retail sentiment temperature
-        2) Quality of current opportunities
-        3) Recommended market approach
-        """
-        
+    """
         try:
+            high_score_count = len(df[df['Weighted Score'] > 0.7]) if 'Weighted Score' in df.columns else 0
+            avg_sentiment = df['Reddit Sentiment'].mean() if 'Reddit Sentiment' in df.columns else 0
+
+            prompt = f"""
+            Analyze the current market sentiment based on alternative data signals:
+
+            Signal Analysis:
+            - Total Signals: {len(df)}
+            - High-Quality Signals (Weighted Score > 0.70): {high_score_count}
+            - Average Reddit Sentiment: {avg_sentiment:.2f}
+            - Most Active Sectors: {df['Sector'].value_counts().head(3).to_dict() if 'Sector' in df.columns else 'N/A'}
+
+            Provide a brief market outlook (3-4 sentences) covering:
+            1) Overall retail sentiment temperature
+            2) Quality of current opportunities
+            3) Recommended market approach
+            """
+
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],

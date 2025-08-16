@@ -278,7 +278,7 @@ Optional: query latest Final Analysis with DuckDB if installed.
 
 ```python
 from utils.duckdb_utils import query_final_analysis
-rows = query_final_analysis('outputs', 'SELECT Ticker, [Score (0–100)] FROM final ORDER BY [Score (0–100)] DESC', limit=20)
+rows = query_final_analysis('outputs', 'SELECT Ticker, [Weighted Score] FROM final ORDER BY [Weighted Score] DESC', limit=20)
 ```
 
 

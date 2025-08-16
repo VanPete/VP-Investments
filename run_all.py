@@ -71,7 +71,17 @@ def run_script(label, path, log_dir, args=None, timeout_sec: int | None = None, 
         with open(log_path, "w", encoding="utf-8") as log_file:
             log_file.write(f"=== {label.upper()} STARTED at {timestamp} ET ===\n")
             if stream:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=PROJECT_ROOT, env=env, text=True, bufsize=1)
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=PROJECT_ROOT,
+                    env=env,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                )
                 try:
                     assert proc.stdout is not None
                     for line in proc.stdout:

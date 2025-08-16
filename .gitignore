@@ -18,6 +18,9 @@ outputs/
 # Keep canonical company list tracked
 !data/company_names.csv
 
+# === Local caches (do not commit bulky runtime caches) ===
+cache/
+
 # === Environment Files ===
 .env
 *.env

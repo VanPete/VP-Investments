@@ -86,14 +86,7 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
         # Work on a copy to avoid mutating the pipeline DataFrame
         out = df.copy(deep=True)
 
-        # Compute score if possible
-        if "Weighted Score" in out.columns and not out["Weighted Score"].isna().all():
-            min_score = out["Weighted Score"].min()
-            max_score = out["Weighted Score"].max()
-            out["Score (0–100)"] = out["Weighted Score"].apply(
-                lambda x: round(100 * (x - min_score) / (max_score - min_score), 2)
-                if max_score > min_score else 0.0
-            )
+    # Remove legacy normalized score; rely on Weighted Score directly
 
         # Sort for presentation and compute a stable unique Rank
         sort_keys = [c for c in ["Weighted Score", "Reddit Score", "News Score", "Financial Score"] if c in out.columns]
@@ -228,12 +221,6 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
 
             # Conditional formatting for scores (visual heatmaps)
             try:
-                score_col = list(out.columns).index("Score (0–100)") if "Score (0–100)" in out.columns else None
-                if score_col is not None:
-                    ws.conditional_format(1, score_col, len(out), score_col, {
-                        'type': '3_color_scale',
-                        'min_color': '#F8696B', 'mid_color': '#FFEB84', 'max_color': '#63BE7B'
-                    })
                 w_col = list(out.columns).index("Weighted Score") if "Weighted Score" in out.columns else None
                 if w_col is not None:
                     ws.conditional_format(1, w_col, len(out), w_col, {
@@ -282,7 +269,7 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
                 logging.warning(f"Score Breakdown sheet failed: {se}")
 
             try:
-                df_notes = out[["Ticker", "Company", "Score (0–100)", "Reddit Summary", "Top Factors"]].copy()
+                df_notes = out[["Ticker", "Company", "Reddit Summary", "Top Factors"]].copy()
                 df_notes["Risk Flags"] = out.apply(lambda row: ", ".join(filter(None, [
                     "High Volatility" if row.get("Volatility", 0) > 0.05 else "",
                     "Low Liquidity" if row.get("Avg Daily Value Traded", 1e9) < 1e6 else "",
@@ -315,7 +302,7 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
                 if "Sector" in out.columns:
                     tmp = out.groupby("Sector").agg(
                         Count=("Ticker", "count"),
-                        AvgScore=("Score (0–100)", "mean") if "Score (0–100)" in out.columns else ("Weighted Score", "mean")
+                        AvgScore=("Weighted Score", "mean")
                     ).reset_index()
                     tmp["AvgScore"] = tmp["AvgScore"].round(2)
                     summary_rows.append(("By Sector", tmp))
@@ -323,7 +310,7 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
                 if "Trade Type" in out.columns:
                     tmp2 = out.groupby("Trade Type").agg(
                         Count=("Ticker", "count"),
-                        AvgScore=("Score (0–100)", "mean") if "Score (0–100)" in out.columns else ("Weighted Score", "mean")
+                        AvgScore=("Weighted Score", "mean")
                     ).reset_index()
                     tmp2["AvgScore"] = tmp2["AvgScore"].round(2)
                     summary_rows.append(("By Trade Type", tmp2))
@@ -371,12 +358,7 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
             out["Rank"] = range(1, len(out) + 1)
         out = out.loc[:, ~out.columns.duplicated()]
 
-        if "Score (0–100)" not in out.columns and "Weighted Score" in out.columns and not out["Weighted Score"].isna().all():
-            min_score = out["Weighted Score"].min()
-            max_score = out["Weighted Score"].max()
-            out["Score (0–100)"] = out["Weighted Score"].apply(
-                lambda x: round(100 * (x - min_score) / (max_score - min_score), 2) if max_score > min_score else 0.0
-            )
+    # Drop legacy normalized score; rely on Weighted Score only
 
         for col in FINAL_COLUMN_ORDER:
             if col not in out.columns:
@@ -412,7 +394,7 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
 
         # Trade Notes
         try:
-            tn = out[["Ticker", "Company", "Score (0–100)", "Reddit Summary", "Top Factors"]].copy()
+            tn = out[["Ticker", "Company", "Reddit Summary", "Top Factors"]].copy()
             tn["Risk Flags"] = out.apply(lambda row: ", ".join(filter(None, [
                 "High Volatility" if row.get("Volatility", 0) > 0.05 else "",
                 "Low Liquidity" if row.get("Avg Daily Value Traded", 1e9) < 1e6 else "",
@@ -428,14 +410,14 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
             if "Sector" in out.columns:
                 by_sector = out.groupby("Sector").agg(
                     Count=("Ticker", "count"),
-                    AvgScore=("Score (0–100)", "mean") if "Score (0–100)" in out.columns else ("Weighted Score", "mean")
+                    AvgScore=("Weighted Score", "mean")
                 ).reset_index()
                 by_sector["AvgScore"] = by_sector["AvgScore"].round(2)
                 by_sector.to_csv(os.path.join(references_dir, "Signal_Report__Summary_By_Sector.csv"), index=False, encoding="utf-8")
             if "Trade Type" in out.columns:
                 by_type = out.groupby("Trade Type").agg(
                     Count=("Ticker", "count"),
-                    AvgScore=("Score (0–100)", "mean") if "Score (0–100)" in out.columns else ("Weighted Score", "mean")
+                    AvgScore=("Weighted Score", "mean")
                 ).reset_index()
                 by_type["AvgScore"] = by_type["AvgScore"].round(2)
                 by_type.to_csv(os.path.join(references_dir, "Signal_Report__Summary_By_TradeType.csv"), index=False, encoding="utf-8")
@@ -472,7 +454,7 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
         # Curated Clean CSV
         try:
             clean_cols_pref = [
-                "Rank", "Ticker", "Company", "Sector", "Trade Type", "Score (0–100)", "Risk Level",
+                "Rank", "Ticker", "Company", "Sector", "Trade Type", "Risk Level",
                 "Top Factors", "Relative Strength", "Price 1D %", "Price 7D %", "Volume Spike Ratio",
                 "Market Cap", "Avg Daily Value Traded", "Short Percent Float", "EPS Growth", "ROE",
                 "Reddit Sentiment", "News Sentiment", "Post Recency", "Emerging", "Thread Tag", "Reddit Summary"
@@ -499,14 +481,7 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
 
 
 def generate_html_dashboard(df: pd.DataFrame, output_path="outputs/dashboard/dashboard.html") -> None:
-    """Generate an accessible, standards-compliant HTML dashboard.
-
-    Fixes flagged issues:
-    - Adds <meta charset> and <meta name="viewport">.
-    - Adds <html lang="en">.
-    - Moves styles to an external CSS file (no inline <style> tags).
-    - Strips inline style attributes introduced by pandas.to_html.
-    """
+    """Generate an accessible, standards-compliant HTML dashboard using Weighted Score only."""
     try:
         # Ensure output directory exists and prepare a sibling CSS file
         out_dir = os.path.dirname(output_path)
@@ -515,11 +490,11 @@ def generate_html_dashboard(df: pd.DataFrame, output_path="outputs/dashboard/das
 
         # Small, external stylesheet
         css = (
-            "body{font-family:Arial,Helvetica,sans-serif;margin:20px;}" \
-            "table{border-collapse:collapse;width:100%;}" \
-            "th,td{border:1px solid #ccc;padding:8px;text-align:center;}" \
-            "th{background-color:#f2f2f2;}" \
-            "h2{margin-top:40px;}" \
+            "body{font-family:Arial,Helvetica,sans-serif;margin:20px;}"
+            "table{border-collapse:collapse;width:100%;}"
+            "th,td{border:1px solid #ccc;padding:8px;text-align:center;}"
+            "th{background-color:#f2f2f2;}"
+            "h2{margin-top:40px;}"
         )
         try:
             with open(css_path, "w", encoding="utf-8") as cf:
@@ -543,7 +518,7 @@ def generate_html_dashboard(df: pd.DataFrame, output_path="outputs/dashboard/das
         }
 
         # Build table HTML and remove inline style attributes emitted by pandas
-        display_cols = ["Ticker", "Company", "Weighted Score", "Score (0–100)", "Reddit Summary"]
+        display_cols = ["Ticker", "Company", "Weighted Score", "Reddit Summary"]
         display_cols = [c for c in display_cols if c in top_df.columns]
         table_html = top_df[display_cols].to_html(index=False, escape=False, classes=["dataframe", "compact"], border=0)
 
@@ -599,20 +574,13 @@ def export_picks(df: pd.DataFrame, run_dir: str, top_deciles: tuple = (8, 9, 10)
         out_path = os.path.join(references_dir, "Picks.csv")
 
         data = df.copy()
-        # Ensure score is present
-        if "Score (0–100)" not in data.columns and "Weighted Score" in data.columns and not data["Weighted Score"].isna().all():
-            min_s, max_s = data["Weighted Score"].min(), data["Weighted Score"].max()
-            data["Score (0–100)"] = data["Weighted Score"].apply(
-                lambda x: round(100 * (x - min_s) / (max_s - min_s), 2) if max_s > min_s else 0.0
-            )
-
-        # Score deciles
+        # Score deciles from Weighted Score
         try:
-            data["Score Decile"] = pd.qcut(data["Score (0–100)"], 10, labels=list(range(1, 11)))
+            data["Score Decile"] = pd.qcut(data["Weighted Score"], 10, labels=list(range(1, 11)))
             data["Score Decile"] = data["Score Decile"].astype(int)
         except Exception:
             # Fallback to rank-based buckets if qcut fails
-            ranks = data["Score (0–100)"].rank(method="average", pct=True)
+            ranks = data["Weighted Score"].rank(method="average", pct=True)
             data["Score Decile"] = (ranks * 10).clip(1, 10).round().astype(int)
 
         # Liquidity filter
@@ -654,7 +622,7 @@ def export_picks(df: pd.DataFrame, run_dir: str, top_deciles: tuple = (8, 9, 10)
         data["Size @ $100k (USD)"] = (100000.0 * risk / data["Suggested Stop %"]).round(0)
 
         keep_cols = [c for c in [
-            "Ticker", "Company", "Sector", "Trade Type", "Risk Level", "Score (0–100)", "Score Decile",
+            "Ticker", "Company", "Sector", "Trade Type", "Risk Level", "Score Decile",
             "Weighted Score", "Current Price", "Suggested Stop %", "Initial Stop Price", "Size @ $100k (USD)",
             "Avg Daily Value Traded", "Market Cap", "Volatility", "Momentum 30D %", "Relative Strength",
             "Short Percent Float", "EPS Growth", "ROE", "Reddit Sentiment", "News Sentiment", "Top Factors",

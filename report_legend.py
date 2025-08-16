@@ -8,7 +8,6 @@ LEGEND = {
     "Sector": "Industry classification.",
     "Trade Type": "Type of trade (e.g., Long, Short, Option).",
     "Secondary Flags": "Additional flags indicating special conditions.",
-    "Score (0–100)": "Normalized score from 0–100 reflecting overall signal strength.",
     "Highest Contributor": "Top scoring factor driving the signal.",
     "Lowest Contributor": "Weakest factor lowering the score.",
     "Top Factors": "Concise explanation of the most influential scoring drivers.",
