@@ -1,0 +1,307 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>VP Investments Dashboard</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="styles.css" rel="stylesheet">
+    </head>
+    <body class="bg-light">
+        <div class="container py-4">
+            <h1 class="mb-4">VP Investments Dashboard</h1>
+
+            <h3>📊 Top Signals</h3>
+            <table border="1" class="dataframe table table-bordered table-sm">
+  <thead>
+    <tr>
+      <th>Rank</th>
+      <th>Ticker</th>
+      <th>Company</th>
+      <th>Sector</th>
+      <th>Trade Type</th>
+      <th>Weighted Score</th>
+      <th>Reddit Sentiment</th>
+      <th>News Sentiment</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>WEN</td>
+      <td>Wendy's Company (The)</td>
+      <td>Consumer Cyclical</td>
+      <td>Speculative</td>
+      <td>0.56</td>
+      <td>1.08950</td>
+      <td>0.1697</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>FI</td>
+      <td>Fiserv, Inc.</td>
+      <td>Technology</td>
+      <td>Speculative</td>
+      <td>0.43</td>
+      <td>1.11655</td>
+      <td>-0.3353</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>FOR</td>
+      <td>Forestar Group Inc</td>
+      <td>Real Estate</td>
+      <td>Speculative</td>
+      <td>0.28</td>
+      <td>0.97980</td>
+      <td>0.0114</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>NVO</td>
+      <td>Novo Nordisk A/S</td>
+      <td>Healthcare</td>
+      <td>Speculative</td>
+      <td>0.26</td>
+      <td>-0.70980</td>
+      <td>0.2737</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>XYZ</td>
+      <td>Block, Inc.</td>
+      <td>Technology</td>
+      <td>Growth</td>
+      <td>0.11</td>
+      <td>0.52550</td>
+      <td>-0.2623</td>
+    </tr>
+  </tbody>
+</table>
+
+            <h3 class="mt-5">🧠 Metadata</h3>
+            <ul>
+                
+                <li><strong>Total Signals</strong>: 5</li>
+                
+                <li><strong>Most Recent Date</strong>: 2025-08-16</li>
+                
+                <li><strong>Tickers</strong>: 5</li>
+                
+                <li><strong>Signal Types</strong>: 1</li>
+                
+            </ul>
+
+            
+                <h3 class="mt-5">Feature Correlations</h3>
+                <table border="1" class="dataframe table table-striped table-sm">
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th>Weighted Score</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Call Volume Spike Ratio</td>
+      <td>1.000000</td>
+    </tr>
+    <tr>
+      <td>Reddit Score</td>
+      <td>0.981100</td>
+    </tr>
+    <tr>
+      <td>Put/Call OI Ratio</td>
+      <td>0.956861</td>
+    </tr>
+    <tr>
+      <td>Post Recency</td>
+      <td>0.835101</td>
+    </tr>
+    <tr>
+      <td>Debt/Equity</td>
+      <td>0.765458</td>
+    </tr>
+    <tr>
+      <td>Upvotes</td>
+      <td>0.706944</td>
+    </tr>
+    <tr>
+      <td>Short Percent Float</td>
+      <td>0.699241</td>
+    </tr>
+    <tr>
+      <td>Options Skew</td>
+      <td>0.667163</td>
+    </tr>
+    <tr>
+      <td>Put/Call Volume Ratio</td>
+      <td>0.663582</td>
+    </tr>
+    <tr>
+      <td>FCF Margin</td>
+      <td>0.622480</td>
+    </tr>
+    <tr>
+      <td>Volume Spike Ratio</td>
+      <td>0.591205</td>
+    </tr>
+    <tr>
+      <td>Price 7D %</td>
+      <td>0.573237</td>
+    </tr>
+    <tr>
+      <td>Relative Strength</td>
+      <td>0.573237</td>
+    </tr>
+    <tr>
+      <td>MACD Histogram</td>
+      <td>0.560597</td>
+    </tr>
+    <tr>
+      <td>ROE</td>
+      <td>0.520962</td>
+    </tr>
+    <tr>
+      <td>Short Percent Outstanding</td>
+      <td>0.508212</td>
+    </tr>
+    <tr>
+      <td>Float % Held by Institutions</td>
+      <td>0.498438</td>
+    </tr>
+    <tr>
+      <td>Reddit Sentiment</td>
+      <td>0.477481</td>
+    </tr>
+    <tr>
+      <td>Sentiment Spike</td>
+      <td>0.477432</td>
+    </tr>
+    <tr>
+      <td>Mentions</td>
+      <td>0.366210</td>
+    </tr>
+    <tr>
+      <td>Z-Score: Reddit Activity</td>
+      <td>0.364819</td>
+    </tr>
+    <tr>
+      <td>RSI</td>
+      <td>0.298081</td>
+    </tr>
+    <tr>
+      <td>IV Spike %</td>
+      <td>0.281904</td>
+    </tr>
+    <tr>
+      <td>News Score</td>
+      <td>0.251589</td>
+    </tr>
+    <tr>
+      <td>News Sentiment</td>
+      <td>0.236523</td>
+    </tr>
+    <tr>
+      <td>Price 1D %</td>
+      <td>0.120722</td>
+    </tr>
+    <tr>
+      <td>Short Ratio</td>
+      <td>0.059612</td>
+    </tr>
+    <tr>
+      <td>P/E Ratio</td>
+      <td>0.011356</td>
+    </tr>
+    <tr>
+      <td>Volume</td>
+      <td>-0.100762</td>
+    </tr>
+    <tr>
+      <td>Bollinger Width</td>
+      <td>-0.124067</td>
+    </tr>
+    <tr>
+      <td>Current Price</td>
+      <td>-0.146908</td>
+    </tr>
+    <tr>
+      <td>Volatility</td>
+      <td>-0.195795</td>
+    </tr>
+    <tr>
+      <td>Shares Short</td>
+      <td>-0.251705</td>
+    </tr>
+    <tr>
+      <td>Momentum Rank</td>
+      <td>-0.257021</td>
+    </tr>
+    <tr>
+      <td>Z-Score: Market Cap</td>
+      <td>-0.271153</td>
+    </tr>
+    <tr>
+      <td>Market Cap</td>
+      <td>-0.273798</td>
+    </tr>
+    <tr>
+      <td>Above 50-Day MA %</td>
+      <td>-0.312719</td>
+    </tr>
+    <tr>
+      <td>News Mentions</td>
+      <td>-0.345434</td>
+    </tr>
+    <tr>
+      <td>Momentum 30D %</td>
+      <td>-0.351475</td>
+    </tr>
+    <tr>
+      <td>Retail Holding %</td>
+      <td>-0.390334</td>
+    </tr>
+    <tr>
+      <td>Above 200-Day MA %</td>
+      <td>-0.537156</td>
+    </tr>
+    <tr>
+      <td>Z-Score: Avg Daily Value</td>
+      <td>-0.555046</td>
+    </tr>
+    <tr>
+      <td>Volatility Rank</td>
+      <td>-0.562966</td>
+    </tr>
+    <tr>
+      <td>Liquidity Rank</td>
+      <td>-0.587477</td>
+    </tr>
+    <tr>
+      <td>EPS Growth</td>
+      <td>-0.718294</td>
+    </tr>
+    <tr>
+      <td>Beta vs SPY</td>
+      <td>-0.740585</td>
+    </tr>
+    <tr>
+      <td>id</td>
+      <td>-0.982189</td>
+    </tr>
+    <tr>
+      <td>Rank</td>
+      <td>-0.982189</td>
+    </tr>
+  </tbody>
+</table>
+            
+
+            <h3 class="mt-5">📈 Charts</h3>
+            
+        </div>
+    </body>
+    </html>
+    
