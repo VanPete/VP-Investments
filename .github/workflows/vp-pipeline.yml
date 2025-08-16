@@ -85,6 +85,9 @@ jobs:
           rm -rf data-repo
           git clone "https://x-access-token:${TOKEN}@github.com/${REPO}.git" data-repo
           cd data-repo
+          # Configure author for commits in this repo (no global changes)
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
           if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
             git checkout data
           else
@@ -95,7 +98,7 @@ jobs:
           mkdir -p "runs/${TS}"
           rsync -a --delete ../outputs/ "runs/${TS}/"
           git add runs
-          git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "Add run ${TS}" || echo "No changes to commit"
+          git commit -m "Add run ${TS}" || echo "No changes to commit"
           git push origin data
 
       - name: Upload Pages artifact
