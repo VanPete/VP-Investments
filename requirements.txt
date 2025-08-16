@@ -1,0 +1,37 @@
+pandas
+praw
+matplotlib
+openpyxl
+xlsxwriter
+yfinance
+requests
+scikit-learn
+beautifulsoup4
+python-dotenv
+seaborn
+plotly
+ta
+pytest
+vaderSentiment
+tqdm
+pytrends
+Jinja2
+RapidFuzz
+pytz
+prometheus-client
+
+# ChatGPT Integration
+openai>=1.0.0
+flask>=2.3.0
+flask-cors>=4.0.0
+
+# Reliability, performance, and ops
+requests-cache
+tenacity
+flask-caching
+flask-compress
+orjson
+pyarrow
+duckdb
+APScheduler
+rich
