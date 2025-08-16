@@ -23,6 +23,9 @@ from config.labels import FINAL_COLUMN_ORDER
 def load_backtest_data(db_path: str, return_target: str) -> pd.DataFrame:
     with sqlite3.connect(db_path) as conn:
         df = pd.read_sql("SELECT * FROM signals", conn)
+    # If the requested target isn't present yet (e.g., too recent), return empty
+    if return_target not in df.columns:
+        return pd.DataFrame()
     df = df.dropna(subset=[return_target])
     return df
 
@@ -82,6 +85,9 @@ def main():
     print(f"=== SCORING_TRAINER STARTED: Target = {return_target} ===")
 
     df = load_backtest_data(DB_PATH, return_target)
+    if df.empty:
+        print(f"No '{return_target}' data available yet. Skipping training.")
+        return
     X, y, feature_cols = extract_features_targets(df, return_target)
 
     if X.empty or y.empty:

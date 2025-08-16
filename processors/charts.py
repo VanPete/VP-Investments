@@ -317,16 +317,35 @@ def export_breakout_csvs(df: pd.DataFrame):
             save_table(g, os.path.join(BREAKOUT_DIR, f"date_{d}.csv"))
 
 def export_feature_correlations(df: pd.DataFrame):
-    targets = ["3D Return", "Score (0–100)"]
+    # Build target list dynamically based on availability
+    candidate_targets = ["3D Return", "Score (0–100)"]
+    targets = [t for t in candidate_targets if t in df.columns]
+    if not targets:
+        # Nothing to correlate against yet
+        return
+    # Numeric features excluding targets and obvious non-numerics
     features = [col for col in df.columns if col not in targets and df[col].dtype != 'O']
-    df_corr = df[features + targets].copy().dropna(subset=targets)
+    if not features:
+        return
+    # Restrict frame to available cols and rows that have target values
+    use_cols = [c for c in (features + targets) if c in df.columns]
+    df_corr = df[use_cols].copy()
+    df_corr = df_corr.dropna(subset=targets)
+    if df_corr.empty:
+        return
     # Drop constant feature columns to avoid invalid operations
     nunique = df_corr[features].nunique()
     features = [f for f in features if nunique.get(f, 0) > 1]
+    if not features:
+        return
     import numpy as _np
     with _np.errstate(invalid='ignore', divide='ignore'):
         corr_result = {target: df_corr[features].corrwith(df_corr[target]).dropna() for target in targets}
-    output_df = pd.DataFrame(corr_result).sort_values(by="3D Return", ascending=False)
+    output_df = pd.DataFrame(corr_result)
+    # Sort by the first available target for stability
+    sort_col = targets[0]
+    if sort_col in output_df.columns:
+        output_df = output_df.sort_values(by=sort_col, ascending=False)
     save_table(output_df.reset_index().rename(columns={"index": "Feature"}), os.path.join(TABLE_DIR, "feature_correlations.csv"))
 
 def export_metadata_summary(df: pd.DataFrame):

@@ -391,8 +391,12 @@ def enrich_future_returns_in_db(force_all: bool = True,
         print("[INFO] Generating charts and tables…")
         df_latest = pd.read_sql_query("SELECT * FROM signals", conn)
         df_latest["Run Datetime"] = pd.to_datetime(df_latest["Run Datetime"], utc=True, errors="coerce")
-        df_latest = df_latest.sort_values("Run Datetime").dropna(subset=["Run Datetime"])
-        generate_charts_and_tables(df_latest)
+        df_latest = df_latest.sort_values("Run Datetime").dropna(subset=["Run Datetime"]) 
+        try:
+            generate_charts_and_tables(df_latest)
+        except Exception as e:
+            # Non-fatal: emit a warning and continue
+            print(f"[WARN] Chart/table generation failed: {e}")
 
 
 def main() -> None:
