@@ -7,6 +7,7 @@ import os
 import re
 import logging
 import datetime
+import time
 from math import log10
 from typing import List, Dict
 
@@ -26,7 +27,7 @@ from config.config import (
     REDDIT_SUBREDDITS, REDDIT_LIMITS, ENABLE_REDDIT_SCRAPE, DEBUG_REDDIT_SCRAPE,
     REDDIT_TICKER_PATTERN, SUBREDDIT_WEIGHTS, KEYWORD_BOOSTS, FLAIR_BOOSTS,
     FLAIR_ALIASES, MIN_AUTHOR_KARMA, TITLE_COMMENT_BLEND, COMMENT_WEIGHT_SCALING, EXCLUDED_TICKERS, FEATURE_TOGGLES,
-    MEME_TICKER_TERMS
+    MEME_TICKER_TERMS, REDDIT_PACING_SEC
 )
 from utils.logger import setup_logging
 
@@ -43,8 +44,13 @@ reddit = None
 if _RID and _RSEC and _RUA:
     try:
         reddit = praw.Reddit(client_id=_RID, client_secret=_RSEC, user_agent=_RUA)
+        # Touch a lightweight endpoint to surface auth errors early
+        try:
+            _ = reddit.auth.limits  # property access shouldn't call network
+        except Exception:
+            pass
     except Exception as e:
-        logger.warning("Reddit client init failed: %s", e)
+        logger.warning("Reddit client init failed (check REDDIT_CLIENT_* env vars): %s", e)
         reddit = None
 else:
     logger.info("Reddit credentials not set; Reddit scraping will be skipped.")
@@ -269,7 +275,18 @@ def fetch_reddit_data(enable_scrape: bool = True) -> pd.DataFrame:
             for category, limit in REDDIT_LIMITS.items():
                 for post in getattr(subreddit, category)(limit=limit):
                     posts.extend(process_submission(post, sub, now))
+                    # Gentle pacing to avoid rate-limit bursts
+                    if REDDIT_PACING_SEC:
+                        time.sleep(REDDIT_PACING_SEC)
             logger.info(f"r/{sub} scrape completed.")
+        except prawcore.exceptions.OAuthException as e:
+            logger.error(f"Reddit OAuth failed for r/{sub}: {e}")
+        except prawcore.exceptions.ResponseException as e:
+            status = getattr(getattr(e, 'response', None), 'status_code', None)
+            if status == 429:
+                logger.warning(f"Rate limited while scraping r/{sub} (HTTP 429). Consider increasing REDDIT_PACING_SEC.")
+            else:
+                logger.warning(f"HTTP error while scraping r/{sub}: {status}")
         except Exception as e:
             logger.warning(f"r/{sub} failed: {e}")
 
