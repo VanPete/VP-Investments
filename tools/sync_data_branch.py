@@ -27,7 +27,15 @@ def main():
     tmp = ROOT / ".tmp-data-repo"
     if tmp.exists():
         shutil.rmtree(tmp, ignore_errors=True)
-    run(["git", "clone", "--depth", "1", "--branch", "data", repo_url, str(tmp)])
+    try:
+        run(["git", "clone", "--depth", "1", "--branch", "data", repo_url, str(tmp)])
+    except subprocess.CalledProcessError as e:
+        msg = str(e)
+        print("[ERROR] Could not clone 'data' branch. It likely hasn't been created yet.")
+        print("Reason:", msg)
+        print("Next steps: trigger a GitHub Actions run and wait for the 'Persist outputs to data branch' step to complete, then re-run this sync.")
+        print("Alternatively, create the branch once with: 'git checkout --orphan data && git commit --allow-empty -m \"init data\" && git push origin data'.")
+        raise SystemExit(2)
 
     runs_dir = tmp / "runs"
     if not runs_dir.exists():
