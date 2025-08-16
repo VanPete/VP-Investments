@@ -15,6 +15,7 @@ def main():
     # Allow overriding destination
     dest = os.environ.get("VP_SYNC_DEST")
     target = Path(dest) if dest else TARGET
+    clean = os.environ.get("VP_SYNC_CLEAN", "0") in {"1", "true", "True"}
     # resolve origin when not provided
     if not repo_url:
         try:
@@ -36,6 +37,9 @@ def main():
     if not stamps:
         raise SystemExit("No runs in data branch")
     latest = runs_dir / stamps[-1]
+    # Optionally clean out existing target to avoid stale files across runs
+    if target.exists() and clean:
+        shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True, exist_ok=True)
     for child in latest.iterdir():
         dst = target / child.name
