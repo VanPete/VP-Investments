@@ -272,8 +272,13 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
         return None, run_dir
 
     reddit_df = enrich_reddit_data(reddit_df)
-    company_df = load_company_data()
-    valid_tickers = set(company_df["Ticker"].str.upper().str.strip().str.replace("$", "", regex=False))
+    # Load known company universe; if unavailable (e.g., CI first run), fall back to scraped tickers
+    try:
+        company_df = load_company_data()
+        valid_tickers = set(company_df["Ticker"].str.upper().str.strip().str.replace("$", "", regex=False))
+    except FileNotFoundError as e:
+        logging.warning(f"[UNIVERSE] Company list missing; proceeding with scraped tickers only: {e}")
+        valid_tickers = set(reddit_df["Ticker"].str.upper().str.strip().str.replace("$", "", regex=False))
 
     reddit_df["Ticker"] = reddit_df["Ticker"].str.upper().str.strip().str.replace("$", "", regex=False)
     reddit_df = reddit_df[reddit_df["Ticker"].str.len() <= 5]
