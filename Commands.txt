@@ -1,13 +1,13 @@
 # Default cleanup (see note about DB wipe below)
 python tools\cleanup.py
 
+#Fresh start (clears previous output data and backtest.db; keeps weights)
+python tools\cleanup.py --fresh-start
+
 # Hard reset
 python tools\cleanup.py --hard-reset
 
 # Hard reset but keep weights
 python tools\cleanup.py --hard-reset --keep-weights
-
-# Explicitly wipe DB data (currently redundant; see note)
-python tools\cleanup.py --wipe-db-data
 
 #timestamp

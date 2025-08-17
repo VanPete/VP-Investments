@@ -12,14 +12,18 @@ from config.config import (
     GOOGLE_TRENDS_BATCH_SIZE,
     GOOGLE_TRENDS_SLEEP_SEC,
     TRENDS_CACHE_DIR,
-    TRENDS_TIMEFRAME
+    TRENDS_TIMEFRAME,
+    TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC
 )
 from config.config import AI_FEATURES
 from utils.ai_cache import get as ai_get, set as ai_set
 from processors.chatgpt_integrator import ChatGPTIntegrator
+from utils.http_client import get_token_bucket, CircuitBreaker
 
 # === Setup ===
 pytrends = TrendReq(hl='en-US', tz=360)
+_trends_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_trends_breaker = CircuitBreaker(BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC)
 CACHE_DIR = TRENDS_CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -32,11 +36,18 @@ def load_company_data() -> pd.DataFrame:
 # === Google Trends Fetch Core ===
 def fetch_trends_for_term(term: str, timeframe: str = TRENDS_TIMEFRAME) -> pd.DataFrame:
     try:
+        if not _trends_breaker.allow():
+            logging.info("Trends circuit open; skipping term '%s'", term)
+            return pd.DataFrame()
+        _trends_bucket.take(1.0)
         pytrends.build_payload([term], cat=0, timeframe=timeframe, geo="", gprop="")
         data = pytrends.interest_over_time()
-        return data[[term]] if not data.empty and term in data.columns else pd.DataFrame()
+        out = data[[term]] if not data.empty and term in data.columns else pd.DataFrame()
+        _trends_breaker.record(True)
+        return out
     except Exception as e:
         logging.info(f"⚠️ Trend fetch failed for '{term}': {e}")
+        _trends_breaker.record(False)
         return pd.DataFrame()
 
 def compute_signals(trend_data: pd.DataFrame, term: str) -> dict:

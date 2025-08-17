@@ -49,6 +49,30 @@ def _env_bool(name: str, default: bool) -> bool:
         return default
     return val not in {"0", "false", "False"}
 
+# === Global Concurrency/HTTP/Pacing ===
+HTTP_TIMEOUT = _env_int("HTTP_TIMEOUT", 15)
+RETRY_MAX = _env_int("RETRY_MAX", 3)
+RETRY_BACKOFF = _env_float("RETRY_BACKOFF", 0.5)
+MAX_WORKERS = _env_int("MAX_WORKERS", 8)
+BATCH_SIZE = _env_int("BATCH_SIZE", 20)
+
+# Token bucket rate limiter defaults (requests per second and burst size)
+TOKEN_BUCKET_RATE = _env_float("TOKEN_BUCKET_RATE", 5.0)
+TOKEN_BUCKET_BURST = _env_int("TOKEN_BUCKET_BURST", 10)
+
+# Fine-grained fetch guards
+YF_PER_TICKER_TIMEOUT_SEC = _env_int("YF_PER_TICKER_TIMEOUT_SEC", 25)
+BREAKER_FAIL_THRESHOLD = _env_int("BREAKER_FAIL_THRESHOLD", 5)
+BREAKER_RESET_AFTER_SEC = _env_int("BREAKER_RESET_AFTER_SEC", 60)
+
+# Observability toggles
+JSON_LOGS_ENABLED = _env_bool("JSON_LOGS_ENABLED", True)
+COUNTERS_ENABLED = _env_bool("COUNTERS_ENABLED", True)
+
+# Backtest cost model
+SLIPPAGE_BPS = _env_float("SLIPPAGE_BPS", 5.0)  # 0.05%
+FEES_BPS = _env_float("FEES_BPS", 1.0)         # 0.01%
+
 # === External API Keys / Providers ===
 # Always read secrets directly from environment (dotenv is loaded above)
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
@@ -63,6 +87,7 @@ OPENAI = {
 # === Backtesting Constants ===
 RETURN_WINDOWS = [1, 3, 7, 10]
 BENCHMARK_WINDOWS = [3, 10]
+TURNOVER_TOP_K = _env_int("TURNOVER_TOP_K", 20)
 FUTURE_PROOF_COLS = [
     "Realized Returns", "Backtest Phase", "Backtest Timestamp", "Beat SPY 3D", "Beat SPY 1D", "Backtest Notes",
     "Signal Duration", "Max Return %", "Drawdown %", "Normalized Rank", "Signal Confidence",
@@ -100,6 +125,11 @@ COMMENT_WEIGHT_SCALING = 0.2
 ENABLE_REDDIT_SCRAPE = True
 DEBUG_REDDIT_SCRAPE = True
 REDDIT_PACING_SEC = _env_float("REDDIT_PACING_SEC", 0.3)
+REDDIT_RATE_PER_SEC = _env_float("REDDIT_RATE_PER_SEC", 2.0)
+REDDIT_BURST = _env_int("REDDIT_BURST", 5)
+REDDIT_BREAKER_FAILS = _env_int("REDDIT_BREAKER_FAILS", 5)
+REDDIT_BREAKER_RESET_SEC = _env_int("REDDIT_BREAKER_RESET_SEC", 60)
+REDDIT_SEEN_CACHE_TTL_MIN = _env_int("REDDIT_SEEN_CACHE_TTL_MIN", 120)
 
 # === Sentiment Boosting ===
 KEYWORD_BOOSTS = {
@@ -128,9 +158,10 @@ FEATURE_TOGGLES = {
     "Relative Strength": True, "Momentum 30D %": True,
     "Reddit Sentiment": True, "News Sentiment": True, "News Mentions": True,
     "Post Recency": True, "Enable News Fetch": True, "Thread Detection": True,
-    "Google Trends": False, "Twitter Mentions": True, "Sentiment Spike": True,
+    "Google Trends": False, "Twitter Mentions": False, "Sentiment Spike": True,
     "Put/Call OI Ratio": True, "Put/Call Volume Ratio": True, "Options Skew": True,
     "Call Volume Spike Ratio": True, "IV Spike %": True,
+    # Insider/ETF features enabled; Twitter disabled. These can be toggled via env.
     "Insider Buys 30D": True, "Insider Buy Volume": True, "Last Insider Buy Date": True,
     "Insider Signal": True, "Retail Holding %": True, "Float % Held by Institutions": True,
     "Sector Inflows": True, "ETF Flow Spike Ratio": True, "ETF Flow Signal": True,
@@ -241,6 +272,8 @@ BETA_WINDOW = _env_int("BETA_WINDOW", 90)
 
 # === Data Provider Concurrency ===
 YF_MAX_WORKERS = _env_int("YF_MAX_WORKERS", 8)
+YF_BATCH_SIZE = _env_int("YF_BATCH_SIZE", 20)
+YF_BATCH_PAUSE_SEC = _env_float("YF_BATCH_PAUSE_SEC", 0.3)
 
 # === Web API Server Settings ===
 WEB_API_DEBUG = _env_bool("WEB_API_DEBUG", True)
@@ -294,3 +327,4 @@ GROUP_LABELS = {
 # === Observability & Alerts ===
 SENTRY_DSN = _env("SENTRY_DSN", "")
 SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
+SLACK_ENABLED = _env_bool("SLACK_ENABLED", False)

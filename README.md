@@ -65,16 +65,16 @@ Reddit/News/Trends → Signal Detection → Financial Validation → ML Scoring 
   - Saves weights to `outputs/weights/ml_weights.json`
   - Select via profile in `config/config.py`
 
-- **`reports.py`** - Excel report generation
-  - Creates formatted Excel workbooks with multiple sheets
-  - Implements conditional formatting and styling
-  - Generates correlation analysis and feature importance
-  - Includes legend and metadata sheets
+- **`reports.py`** - Excel/CSV report generation
+  - Creates formatted Excel workbooks with multiple sheets and conditional formatting
+  - Exports CSVs for Signals, Correlations, Clean extracts, Trade Notes, Feature Coverage, Sanity Checks
+  - Adds a Backtest Metrics sheet/CSV (IC, deciles, hit rates) when returns exist
+  - Writes compact artifacts for the web/API: `signals_min.json` and `signals_full.json`
 
-- **`charts.py`** - HTML dashboard generation
-  - Creates interactive charts using matplotlib and seaborn
-  - Generates web-friendly visualizations
-  - Implements Jinja2 templating for dynamic content
+- **`charts.py`** - Analytics tables/plots and dashboard helpers
+  - Score decile performance (gross/net), backtest cost summary
+  - Daily turnover of top-K (configurable via `TURNOVER_TOP_K`), plus turnover-by-Sector/Trade-Type
+  - Saves tables into `outputs/tables/` and plots into `outputs/plots/`
 
 - **`backtest.py`** - Performance validation system
   - Tracks historical signal performance
@@ -84,8 +84,10 @@ Reddit/News/Trends → Signal Detection → Financial Validation → ML Scoring 
   - Benchmarks vs SPY across 1D/3D/7D/10D windows and computes Beat SPY flags
   - Batches price downloads, guards against future dates, and auto-adds missing DB columns
   - Emits diagnostics CSV for missing prices under `outputs/tables/`
+  - Provides `net_returns_from_series` helper and annotates net returns (net of fees+slippage)
 
 #### 🔧 Configuration (`config/`)
+
 - **`config.py`** - Central configuration hub
   - Feature toggles for enabling/disabling modules
   - API keys and connection settings
@@ -100,18 +102,20 @@ Reddit/News/Trends → Signal Detection → Financial Validation → ML Scoring 
 
  
 #### 🛠️ Utilities (`utils/`)
- 
-- **`logger.py`** - Logging configuration
-  - Implements rotating file handlers
-  - Configures different log levels
-  - Manages log retention and cleanup
+
+- **`http_client.py`** - Shared sessions with retries, requests-cache, token bucket, and circuit breaker
+- **`observability.py`** - Lightweight JSONL metrics emitter per-run and counters CSV
+- **`reddit_seen_cache.py`** - TTL JSON cache to reduce duplicate Reddit posts
+- **`parquet_writer.py`** - Optional CSV+Parquet writer when pyarrow is available
+- **`duckdb_utils.py`** - Optional helpers to query latest outputs via DuckDB
+- **`logger.py`** - Logging setup and noise control
 
  
 #### 🧪 Maintenance & Diagnostics
- 
+
 - **`processors/db_audit.py`** - Audits database completeness; optional CLI to mark Unavailable
 - **`processors/yf_diagnose.py`** - Quick yfinance symbol availability probe; exports status CSV
-- **`tools/cleanup.py`** - Removes caches and build artifacts (safe)
+- **`tools/cleanup.py`** - Cleans outputs/cache; `--fresh-start` resets run folders safely
 
  
 ### 🌐 Web Dashboard (`web/vp-investments-web/`)
@@ -218,6 +222,10 @@ REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_secret
 REDDIT_USER_AGENT=your_app_name
 FMP_API_KEY=your_fmp_key (optional)
+- SEC_USER_AGENT: Required for SEC/EDGAR access, e.g. `VP-Investments/1.0 (your-email@example.com)`
+- SEC_EDGAR_COOLDOWN_SEC: Optional; seconds to disable EDGAR after 403/429 (default 600)
+- SEC_EDGAR_FORCE: Optional; set to `fmp-only`, `edgar-only`, or leave unset for hybrid fallback
+- SEC_EDGAR_DISABLED: Optional; set to `1` to start with EDGAR disabled
 ```
 
 ### Web Dashboard Setup
@@ -265,14 +273,18 @@ What it removes safely:
 - Rotated logs: `outputs/logs/` and `*.log.*` (keeps `vp_investments.log`)
 - Obsolete files: `Roadmap.txt`, `bug_checker.py`
 
+Notes:
+- Does not wipe `outputs/backtest.db` unless `--wipe-db-data` is provided.
+- `--fresh-start` keeps `outputs/weights/` by default; add `--include-weights` to remove it.
+
 Run on Windows PowerShell from the repo root:
 
 ```powershell
-python .\tools\cleanup.py
+python .\tools\cleanup.py --fresh-start
 ```
 
 ## 📈 Performance Metrics
-## 🦆 DuckDB Quick Queries
+## 🦆 DuckDB Quick Queries (optional)
 
 Optional: query latest Final Analysis with DuckDB if installed.
 
@@ -289,9 +301,24 @@ The system tracks multiple performance indicators:
 - **Maximum Drawdown** - Worst-case scenario analysis
 - **Beat Benchmark Rate** - Outperformance vs. SPY
 
+## 🔌 Web API (Flask)
+
+Lightweight API for serving latest artifacts:
+
+- GET `/api/observability/fetch-reliability` — Aggregated per-run component metrics
+- GET `/api/metrics/daily-turnover` — Daily top-K turnover table
+- GET `/api/metrics/turnover-summary` — Derived turnover + cost summary
+- GET `/api/metrics/backtest-cost-summary` — Gross vs net cost summary
+- GET `/api/metrics/feature-correlations` — Feature correlation table
+- GET `/api/metrics/score-deciles` — Gross score decile table; `/score-deciles-net` for net
+- GET `/api/signals/min` — Compact JSON; `?top_n=50` supported
+- GET `/api/signals/full` — Full JSON (all fields)
+
+Run from `web/chatgpt_web_api.py` (waitress optional) and visit `/` for links.
+
 ## 🔮 Future Enhancements
 
-See `Roadmap.txt` for detailed development plans including:
+Planned improvements include:
 - **Advanced ML Models** - Deep learning and ensemble methods
 - **Real-Time Streaming** - Live data feeds and instant alerts
 - **Portfolio Optimization** - Automated position sizing and allocation
@@ -313,45 +340,6 @@ This software is for educational and research purposes only. It is not financial
 ## 📞 Support
 
 For questions, issues, or feature requests, please open an issue on GitHub or contact the development team.
-
----
-
-**VP Investments** - Democratizing alternative data for smarter investment decisions.
-  - ≥2 mentions, ≥3 upvotes
-  - Author karma ≥ 100
-- Boosts:
-  - Flair boosts (e.g., DD, News)
-  - Keyword boosts (e.g., earnings, buyback)
-  - Subreddit weight boosts
-- Reddit summary: extractive title + comment snapshot
-
-### 💰 Financial Signal Analysis
-- Pulls from Yahoo Finance:
-  - Price % change (1D, 7D), Volume, Market Cap
-  - RSI, MACD, MA, Bollinger Width, Volatility
-  - EPS Growth, ROE, P/E Ratio, FCF Margin, Debt/Equity
-- Human-readable formatting for volume, cap, percentages
-
-### 🧮 Signal Scoring
-- Multi-group weights:
-  - Sentiment
-  - Price
-  - Technicals
-  - Fundamentals
-- Threshold-based gates
-- Emerging ticker detection
-- Trade type: Swing / Long-Term / Balanced
-- Score normalization (0–100 scale)
-
-### 📊 Excel Output (`Signal_Report.xlsx`)
-- Sheets:
-  - `Signals`: full dataset with formatting
-  - `Dashboard`: top 10 signals (with conditional formatting)
-- Human-friendly formats (`1.2M`, `%`, `$`)
-- Highlights:
-  - Emerging tickers (yellow)
-  - Score heatmaps
-- Export location: `outputs/(timestamped folder)/`
 
 ---
 
@@ -379,11 +367,13 @@ Edit in `config/config.py`:
 ## 🛣️ Roadmap
 
 ### 🔜 Priority Features
+
 - [ ] Rebalance Reddit vs. Financial influence
 - [ ] Add per-feature toggle in config
 - [ ] Tag DD series / threads
 
 ### 📅 Planned
+
 - [ ] Web dashboard frontend
 - [ ] Email alerts for emerging tickers
 - [ ] Backtest signal effectiveness
@@ -391,7 +381,7 @@ Edit in `config/config.py`:
 
 ---
 
-## 🚀 Setup Instructions
+## 🚀 Setup Instructions (quick)
 
 ```bash
 # Install dependencies
@@ -401,4 +391,4 @@ pip install -r requirements.txt
 cp .env.template .env
 
 # Run the analysis
-python VP_Investments.py
+python "VP Investments.py"

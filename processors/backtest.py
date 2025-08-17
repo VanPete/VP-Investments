@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from charts import generate_charts_and_tables
-from config.config import DB_PATH, RETURN_WINDOWS, FUTURE_PROOF_COLS
+from config.config import DB_PATH, RETURN_WINDOWS, FUTURE_PROOF_COLS, SLIPPAGE_BPS, FEES_BPS
 from config.labels import FINAL_COLUMN_ORDER
 
 import numpy as np
@@ -131,6 +131,13 @@ def compute_returns(row: pd.Series) -> Optional[Dict[str, Any]]:
         if len(prices) > w:
             val = round((prices.iloc[w] - base) / base * 100, 2)
             updates[f"{w}D Return"] = val
+            # Net of simple transaction costs (in/out once):
+            try:
+                cost_bps = float(SLIPPAGE_BPS) + float(FEES_BPS)
+            except Exception:
+                cost_bps = 0.0
+            net = val - (cost_bps / 100.0)  # convert bps to percent
+            updates[f"{w}D Return (net)"] = round(net, 2)
             realized.append(str(w))
 
     for val in prices:
@@ -313,6 +320,11 @@ def enrich_future_returns_in_db(force_all: bool = True,
                 if tgt_idx < len(s):
                     val = round((float(s.iloc[tgt_idx]) - base_price) / base_price * 100, 2)
                     updates[f"{w}D Return"] = val
+                    try:
+                        cost_bps = float(SLIPPAGE_BPS) + float(FEES_BPS)
+                    except Exception:
+                        cost_bps = 0.0
+                    updates[f"{w}D Return (net)"] = round(val - (cost_bps / 100.0), 2)
                     realized.append(str(w))
 
             # Path metrics
@@ -398,6 +410,27 @@ def enrich_future_returns_in_db(force_all: bool = True,
             # Non-fatal: emit a warning and continue
             print(f"[WARN] Chart/table generation failed: {e}")
 
+
+def net_returns_from_series(series: List[float], windows: List[int]) -> Dict[str, float]:
+    """Compute gross and net returns (%) from a simple price series for given windows.
+
+    Returns dict with keys like '3D Return' and '3D Return (net)'.
+    """
+    if not series or len(series) < 2:
+        return {}
+    try:
+        cost_bps = float(SLIPPAGE_BPS) + float(FEES_BPS)
+    except Exception:
+        cost_bps = 0.0
+    base = float(series[0])
+    out: Dict[str, float] = {}
+    for w in windows:
+        if w < len(series):
+            v = float(series[w])
+            gross = (v - base) / base * 100.0
+            out[f"{w}D Return"] = round(gross, 2)
+            out[f"{w}D Return (net)"] = round(gross - (cost_bps / 100.0), 2)
+    return out
 
 def main() -> None:
     parser = argparse.ArgumentParser()

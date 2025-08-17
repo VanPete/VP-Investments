@@ -12,7 +12,8 @@ import numpy as np
 from config.labels import FINAL_COLUMN_ORDER
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pathlib import Path
-from config.config import OUTPUTS_DIR
+from config.config import OUTPUTS_DIR, SLIPPAGE_BPS, FEES_BPS
+from config.config import TURNOVER_TOP_K
 
 # === Directory Setup ===
 PLOT_DIR = os.path.join(OUTPUTS_DIR, "plots")
@@ -422,6 +423,225 @@ def plot_score_quantile_performance():
     plt.gca().yaxis.set_major_formatter(_make_percent_formatter(scale=1.0))
     save_plot(os.path.join(PLOT_DIR, "score_decile_performance.png"), dpi=160)
 
+def export_score_quantile_performance_net(df: pd.DataFrame):
+    """Export performance by score decile using net forward returns if present."""
+    if "Weighted Score" not in df.columns:
+        return
+    d = df.dropna(subset=["Weighted Score"]).copy()
+    if d.empty:
+        return
+    d["score_decile"] = pd.qcut(d["Weighted Score"], 10, labels=[f"D{i}" for i in range(1, 11)], duplicates="drop")
+    metrics = {}
+    for w in [1, 3, 10]:
+        col = f"{w}D Return (net)"
+        if col in d.columns:
+            metrics[f"avg_{w}d_net"] = (col, "mean")
+            metrics[f"med_{w}d_net"] = (col, "median")
+    if not metrics:
+        return
+    agg = d.groupby("score_decile", observed=False).agg(**{k: pd.NamedAgg(column=v[0], aggfunc=v[1]) for k, v in metrics.items()}, count=("Weighted Score", "size")).reset_index()
+    for k in list(metrics.keys()):
+        agg[k] = pd.to_numeric(agg[k], errors="coerce").round(2)
+    save_table(agg, os.path.join(TABLE_DIR, "score_quantile_performance_net.csv"))
+
+def plot_score_quantile_performance_net():
+    path = os.path.join(TABLE_DIR, "score_quantile_performance_net.csv")
+    if not os.path.exists(path):
+        return
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return
+    avg_cols = [c for c in df.columns if c.startswith("avg_")]
+    if not avg_cols:
+        return
+    m = df.melt(id_vars=["score_decile"], value_vars=avg_cols, var_name="window", value_name="avg_return")
+    plt.figure(figsize=(9, 5))
+    sns.barplot(data=m, x="score_decile", y="avg_return", hue="window", palette="Greens")
+    plt.title("Average Net Forward Return by Score Decile")
+    plt.ylabel("Avg Return %")
+    plt.xlabel("Score Decile (low→high)")
+    plt.gca().yaxis.set_major_formatter(_make_percent_formatter(scale=1.0))
+    save_plot(os.path.join(PLOT_DIR, "score_decile_performance_net.png"), dpi=160)
+
+def export_backtest_cost_summary(df: pd.DataFrame):
+    rows = []
+    for w in [1, 3, 7, 10]:
+        g = f"{w}D Return"
+        n = f"{w}D Return (net)"
+        if g in df.columns and n in df.columns:
+            s_g = pd.to_numeric(df[g], errors="coerce")
+            s_n = pd.to_numeric(df[n], errors="coerce")
+            m = s_g.notna() & s_n.notna()
+            if m.any():
+                gg = float(s_g[m].mean())
+                nn = float(s_n[m].mean())
+                rows.append({
+                    "window": f"{w}D",
+                    "rows": int(m.sum()),
+                    "avg_gross_%": round(gg, 3),
+                    "avg_net_%": round(nn, 3),
+                    "avg_cost_%": round(gg - nn, 3)
+                })
+    if rows:
+        save_table(pd.DataFrame(rows), os.path.join(TABLE_DIR, "backtest_cost_summary.csv"))
+
+def export_daily_turnover(df: pd.DataFrame, top_k: int = TURNOVER_TOP_K):
+    """Compute daily turnover of top-K signals by Weighted Score.
+
+    Turnover_t = 1 - |TopK_t ∩ TopK_{t-1}| / K
+    """
+    if {"Run Datetime", "Ticker", "Weighted Score"}.issubset(df.columns) is False:
+        return
+    d = df.dropna(subset=["Run Datetime", "Ticker", "Weighted Score"]).copy()
+    if d.empty:
+        return
+    d["Date"] = pd.to_datetime(d["Run Datetime"], errors="coerce").dt.date
+    if d["Date"].isna().all():
+        return
+    daily = []
+    prev_set = None
+    for day, g in d.groupby("Date", sort=True):
+        g = g.sort_values("Weighted Score", ascending=False)
+        top = list(g["Ticker"].astype(str).head(top_k))
+        cur_set = set(top)
+        if prev_set is None:
+            overlap = 0
+            turnover = None
+        else:
+            overlap = len(cur_set & prev_set)
+            turnover = round(1.0 - (overlap / float(top_k)), 4)
+        daily.append({
+            "date": str(day),
+            "k": int(top_k),
+            "overlap": int(overlap),
+            "turnover": turnover
+        })
+        prev_set = cur_set
+    if daily:
+        df_out = pd.DataFrame(daily)
+        save_table(df_out, os.path.join(TABLE_DIR, "daily_turnover.csv"))
+
+def export_turnover_summary(df: pd.DataFrame, top_k: int = TURNOVER_TOP_K):
+    """Summarize turnover and implied cost drag from slippage+fees.
+
+    Uses average daily turnover and cost in percent derived from (SLIPPAGE_BPS+FEES_BPS)/100.
+    """
+    path = os.path.join(TABLE_DIR, "daily_turnover.csv")
+    if not os.path.exists(path):
+        export_daily_turnover(df, top_k=top_k)
+    if not os.path.exists(path):
+        return
+    try:
+        tdf = pd.read_csv(path)
+    except Exception:
+        return
+    t = pd.to_numeric(tdf["turnover"], errors="coerce").dropna()
+    if t.empty:
+        return
+    avg_daily_turn = float(t.mean())
+    med_daily_turn = float(t.median())
+    # Cost per rebalance (%): (bps_in + bps_out) / 100; we model a single round-trip
+    try:
+        cost_pct = (float(SLIPPAGE_BPS) + float(FEES_BPS)) / 100.0
+    except Exception:
+        cost_pct = 0.0
+    # Implied expected daily cost from turnover of fraction of portfolio
+    exp_daily_cost_pct = avg_daily_turn * cost_pct
+    # Rough month = 21 trading days, year = 252
+    exp_monthly_cost_pct = exp_daily_cost_pct * 21
+    exp_annual_cost_pct = exp_daily_cost_pct * 252
+    summary = pd.DataFrame([
+        {
+            "k": int(top_k),
+            "avg_daily_turnover": round(avg_daily_turn, 4),
+            "med_daily_turnover": round(med_daily_turn, 4),
+            "cost_per_roundtrip_pct": round(cost_pct, 4),
+            "exp_daily_cost_pct": round(exp_daily_cost_pct, 4),
+            "exp_monthly_cost_pct": round(exp_monthly_cost_pct, 2),
+            "exp_annual_cost_pct": round(exp_annual_cost_pct, 2),
+        }
+    ])
+    save_table(summary, os.path.join(TABLE_DIR, "turnover_summary.csv"))
+
+def plot_daily_turnover():
+    path = os.path.join(TABLE_DIR, "daily_turnover.csv")
+    if not os.path.exists(path):
+        return
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return
+    if df.empty or "turnover" not in df.columns:
+        return
+    plt.figure(figsize=(10, 4))
+    plt.plot(pd.to_datetime(df["date"]), df["turnover"].astype(float), color="#fb7185")
+    plt.title("Daily Turnover of Top-K Signals")
+    plt.ylabel("Turnover (fraction)")
+    plt.xlabel("Date")
+    plt.grid(True, color="#eaeaea")
+    save_plot(os.path.join(PLOT_DIR, "daily_turnover.png"))
+
+def export_turnover_by_group(df: pd.DataFrame, group_col: str, top_k: int = TURNOVER_TOP_K, out_name: str = "turnover_by_group.csv"):
+    """Compute daily top-K turnover within each group (e.g., Sector or Trade Type)."""
+    required = {"Run Datetime", "Ticker", "Weighted Score", group_col}
+    if not required.issubset(df.columns):
+        return
+    d = df.dropna(subset=["Run Datetime", "Ticker", "Weighted Score", group_col]).copy()
+    if d.empty:
+        return
+    d["Date"] = pd.to_datetime(d["Run Datetime"], errors="coerce").dt.date
+    if d["Date"].isna().all():
+        return
+    rows = []
+    # Precompute previous day's top per group
+    d_sorted = d.sort_values([group_col, "Date", "Weighted Score"], ascending=[True, True, False])
+    for (gval, day), g in d_sorted.groupby([group_col, "Date" ], sort=True):
+        top_today = set(g["Ticker"].astype(str).head(top_k))
+        prev_mask = (d_sorted[group_col] == gval) & (d_sorted["Date"] < day)
+        prev = d_sorted.loc[prev_mask]
+        if prev.empty:
+            overlap, turnover = 0, None
+        else:
+            prev_day = prev["Date"].max()
+            prev_top = set(prev[prev["Date"] == prev_day]["Ticker"].astype(str).head(top_k))
+            overlap = len(top_today & prev_top)
+            turnover = round(1.0 - (overlap / float(top_k)), 4)
+        rows.append({
+            "group": gval,
+            "date": str(day),
+            "k": int(top_k),
+            "overlap": int(overlap),
+            "turnover": turnover,
+        })
+    if rows:
+        save_table(pd.DataFrame(rows), os.path.join(TABLE_DIR, out_name))
+
+def plot_turnover_by_group(out_name: str, plot_name: str) -> None:
+    path = os.path.join(TABLE_DIR, out_name)
+    if not os.path.exists(path):
+        return
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return
+    if df.empty or "turnover" not in df.columns:
+        return
+    try:
+        df["date"] = pd.to_datetime(df["date"])
+    except Exception:
+        return
+    plt.figure(figsize=(11, 6))
+    med = df.groupby(["group", "date"])['turnover'].median().reset_index()
+    for gval, g in med.groupby("group"):
+        plt.plot(g["date"], g["turnover"], label=str(gval))
+    plt.title("Daily Turnover by Group")
+    plt.ylabel("Turnover (fraction)")
+    plt.xlabel("Date")
+    plt.legend(loc="best", fontsize=8, ncol=2)
+    plt.grid(True, color="#eaeaea")
+    save_plot(os.path.join(PLOT_DIR, plot_name))
+
 def clean_output_dirs():
     for folder in [PLOT_DIR, TABLE_DIR, SIGNAL_DIR, BREAKOUT_DIR]:
         if os.path.exists(folder):
@@ -446,6 +666,19 @@ def generate_charts_and_tables(df: pd.DataFrame):
     export_metadata_summary(df)
     export_score_quantile_performance(df)
     plot_score_quantile_performance()
+    export_score_quantile_performance_net(df)
+    plot_score_quantile_performance_net()
+    export_backtest_cost_summary(df)
+    export_daily_turnover(df, top_k=TURNOVER_TOP_K)
+    export_turnover_summary(df, top_k=TURNOVER_TOP_K)
+    plot_daily_turnover()
+    # By Sector and Trade Type
+    if "Sector" in df.columns:
+        export_turnover_by_group(df, "Sector", top_k=TURNOVER_TOP_K, out_name="turnover_by_sector.csv")
+        plot_turnover_by_group("turnover_by_sector.csv", "turnover_by_sector.png")
+    if "Trade Type" in df.columns:
+        export_turnover_by_group(df, "Trade Type", top_k=TURNOVER_TOP_K, out_name="turnover_by_tradetype.csv")
+        plot_turnover_by_group("turnover_by_tradetype.csv", "turnover_by_tradetype.png")
     generate_html_dashboard(df)
 
 def generate_html_dashboard(df: pd.DataFrame):
@@ -462,7 +695,16 @@ def generate_html_dashboard(df: pd.DataFrame):
             metadata = json.load(f)
 
     tables = {}
-    for name in ["factor_return_summary", "feature_correlations"]:
+    for name in [
+        "factor_return_summary",
+        "feature_correlations",
+        "score_quantile_performance",
+        "score_quantile_performance_net",
+        "backtest_cost_summary",
+        "turnover_summary",
+        "turnover_by_sector",
+        "turnover_by_tradetype",
+    ]:
         csv_path = os.path.join(TABLE_DIR, f"{name}.csv")
         if os.path.exists(csv_path):
             tables[name.replace("_", " ").title()] = pd.read_csv(csv_path)

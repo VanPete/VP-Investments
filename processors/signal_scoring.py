@@ -159,6 +159,9 @@ class SignalScorer:
         w_score, f_weights, flags = 0.0, {}, []
 
         for key in self.weights:
+            # Hard-disable any lingering Twitter-derived feature
+            if "Twitter" in key:
+                continue
             if not FEATURE_TOGGLES.get(key, True):
                 continue
             val = 1.0 if key in ["ETF Flow Signal", "Insider Signal"] and str(row.get(key)).strip().lower() == "yes" else safe_float(row.get(key))
@@ -228,9 +231,17 @@ class SignalScorer:
         risk_lvl, risk_tags = self.evaluate_risk(row)
         signal_type = self.infer_signal_type(row)
 
-        reddit_score = sum(v for k, v in f_weights.items() if "Reddit" in GROUP_LABELS.get(k, ""))
-        financial_score = sum(v for k, v in f_weights.items() if "Financial" in GROUP_LABELS.get(k, ""))
-        news_score = sum(v for k, v in f_weights.items() if "News" in GROUP_LABELS.get(k, ""))
+        reddit_score = 0.0
+        news_score = 0.0
+        financial_score = 0.0
+        for k, v in f_weights.items():
+            g = GROUP_LABELS.get(k, "") or ""
+            if g == "Sentiment_Reddit":
+                reddit_score += v
+            elif g in ("Sentiment_News", "Sentiment_Search"):
+                news_score += v
+            elif not g.startswith("Sentiment_"):
+                financial_score += v
 
         return SignalScore(
             round(w_score, 2), best_type, top_feats if debug else None, high_feat, low_feat,

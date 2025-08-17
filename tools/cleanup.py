@@ -21,11 +21,12 @@ PURGE_DIRS = [
     ROOT / "web" / "vp-investments-web" / ".next",
     ROOT / "web" / "vp-investments-web" / "node_modules",
     ROOT / "outputs" / "logs",
+    ROOT / "outputs" / "tmp",
 ]
 
 # File patterns considered safe to remove
 PATTERNS = [
-    "*.pyc", "*.pyo", "*.tmp", "*.log.1", "*.log.2", "*.log.*",
+    "*.pyc", "*.pyo", "*.tmp", "*.log.1", "*.log.2", "*.log.*", "*.bak",
 ]
 
 # Individual files known to be obsolete
@@ -157,8 +158,10 @@ def wipe_db_data_file(db: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hard-reset", action="store_true", help="Wipe outputs (runs, plots, tables, dashboard), caches, and backtest DB.")
+    parser.add_argument("--hard-reset", action="store_true", help="Wipe outputs (all runs, plots, tables, dashboard), caches, and backtest DB.")
     parser.add_argument("--keep-weights", action="store_true", help="Preserve outputs/weights even during hard reset.")
+    parser.add_argument("--fresh-start", action="store_true", help="Reset previous run data: delete outputs/plots, outputs/tables, outputs/top_signals, outputs/breakouts, outputs/dashboard, outputs/logs, and any dated run folders. Weights are kept by default.")
+    parser.add_argument("--include-weights", action="store_true", help="When used with --fresh-start, also remove outputs/weights.")
     parser.add_argument("--wipe-db-data", action="store_true", help="Clear all data from backtest.db (keep file/schema).")
     args = parser.parse_args()
 
@@ -180,9 +183,45 @@ def main():
         if f.exists():
             remove_path(f)
 
+    # Cache hygiene: prune old cache namespaces and expired sqlite caches
+    cache_root = ROOT / "cache"
+    try:
+        if cache_root.exists():
+            keep_days = int(os.environ.get("CACHE_KEEP_DAYS", "10"))
+            cutoff = time.time() - keep_days * 86400
+            for p in cache_root.rglob("*"):
+                try:
+                    if p.is_file() and p.suffix in {".sqlite", ".json", ".csv"}:
+                        if p.stat().st_mtime < cutoff:
+                            remove_path(p)
+                except Exception:
+                    continue
+    except Exception as e:
+        print(f"[CLEAN][WARN] Cache cleanup encountered an error: {e}")
+
+    outputs = ROOT / "outputs"
+    if args.fresh_start:
+        # Remove specific outputs subfolders and dated run folders; keep weights unless explicitly included
+        if outputs.exists():
+            keep_dirs = {"weights"} if not args.include_weights else set()
+            keep_dirs.update({"config_logs"})
+            runtime_dirs = {"plots", "tables", "top_signals", "breakouts", "dashboard", "logs", "tmp"}
+            for child in list(outputs.iterdir()):
+                if child.is_dir():
+                    # Delete known run-time dirs
+                    if child.name in runtime_dirs:
+                        remove_path(child)
+                    # Delete dated run folders e.g. "(15 August 25, 14_10_43)"
+                    elif child.name not in keep_dirs and not child.name.startswith("config") and not child.name == "weights":
+                        # Heuristic: remove any non-kept directory that isn't a known config/weights
+                        remove_path(child)
+                elif child.is_file():
+                    # Keep README and DB; don't touch DB unless --wipe-db-data is passed
+                    if child.name not in {"README.md", "backtest.db"}:
+                        remove_path(child)
+    
     if args.hard_reset:
         # Wipe outputs except keep outputs/config_logs (and optionally weights)
-        outputs = ROOT / "outputs"
         if outputs.exists():
             keep_dirs = {"config_logs"}
             if args.keep_weights:
@@ -208,10 +247,6 @@ def main():
         # Remove caches
         for p in [ROOT / "cache" / "news", ROOT / "cache" / "ai", ROOT / "cache" / "finance_cache.sqlite", ROOT / "cache" / "universe_cache.sqlite"]:
             remove_path(p)
-    # Wipe backtest DB data (keep file)
-    db = ROOT / "outputs" / "backtest.db"
-    wipe_db_data_file(db)
-
     # Wipe data inside SQLite DB without deleting the file
     if args.wipe_db_data:
         db = ROOT / "outputs" / "backtest.db"

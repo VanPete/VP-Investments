@@ -21,7 +21,6 @@ LEGEND = {
     "Mentions": "Weighted Reddit post count.",
     "News Mentions": "Number of recent financial news articles.",
     "Upvotes": "Average Reddit post upvotes.",
-    "Twitter Mentions": "Recent Twitter mentions count for the ticker.",
     "Sentiment Spike": "Sudden surge in sentiment volume.",
 
     # === Price & Volume ===

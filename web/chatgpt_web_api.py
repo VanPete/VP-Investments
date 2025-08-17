@@ -15,6 +15,7 @@ import glob
 
 import pandas as pd
 from flask import Flask, request, Response
+from flask import redirect
 from flask_cors import CORS
 
 # Optional imports with safe fallbacks
@@ -112,6 +113,25 @@ def latest_signal_dir() -> Optional[str]:
     except Exception:
         return None
 
+def latest_fetch_reliability_csv() -> Optional[str]:
+    try:
+        base = latest_signal_dir()
+        if not base:
+            return None
+        p = os.path.join(base, 'References', 'Fetch_Reliability.csv')
+        return p if os.path.exists(p) else None
+    except Exception:
+        return None
+
+def latest_reliability_csv() -> Optional[str]:
+    try:
+        candidates = glob.glob(os.path.join("outputs", "*", "References", "Fetch_Reliability.csv"))
+        if not candidates:
+            return None
+        return sorted(candidates)[-1]
+    except Exception:
+        return None
+
 def read_csv_if_exists(path: str) -> Optional[pd.DataFrame]:
     try:
         if path and os.path.exists(path):
@@ -119,6 +139,29 @@ def read_csv_if_exists(path: str) -> Optional[pd.DataFrame]:
     except Exception:
         return None
     return None
+
+def latest_signals_min() -> Optional[str]:
+    d = latest_signal_dir()
+    if not d:
+        return None
+    p = os.path.join(d, "signals_min.json")
+    return p if os.path.exists(p) else None
+
+def latest_signals_full() -> Optional[str]:
+    d = latest_signal_dir()
+    if not d:
+        return None
+    p = os.path.join(d, "signals_full.json")
+    return p if os.path.exists(p) else None
+
+def _latest_table(name: str) -> Optional[str]:
+    d = latest_signal_dir()
+    if not d:
+        return None
+    p = os.path.join("outputs", "tables", f"{name}.csv")
+    # Prefer per-run table if present; else fall back to global outputs/tables
+    per_run = os.path.join(d, "tables", f"{name}.csv")
+    return per_run if os.path.exists(per_run) else (p if os.path.exists(p) else None)
 
 def _json(data: Dict[str, Any], status: int = 200) -> Response:
     return Response(_dumps(data), status=status, mimetype="application/json")
@@ -189,6 +232,14 @@ def home():
         ("Summary by Trade Type", "/api/outputs/signal/summary_by_tradetype"),
         ("Data Quality", "/api/outputs/signal/data_quality"),
         ("Final Analysis (raw)", "/api/outputs/final"),
+        ("signals_min.json", "/api/signals/min"),
+        ("Fetch Reliability", "/api/observability/fetch-reliability"),
+    ("Daily Turnover", "/api/metrics/daily-turnover"),
+    ("Turnover Summary", "/api/metrics/turnover-summary"),
+    ("Backtest Cost Summary", "/api/metrics/backtest-cost-summary"),
+    ("Feature Correlations (tables)", "/api/metrics/feature-correlations"),
+    ("Score Deciles (gross)", "/api/metrics/score-deciles"),
+    ("Score Deciles (net)", "/api/metrics/score-deciles-net"),
     ]
     links = ''.join([f'<li><a href="{href}">{label}</a></li>' for label, href in sheets])
     return f"""
@@ -202,6 +253,170 @@ def home():
 @app.route('/health', methods=['GET'])
 def health():
     return _json({"status": "ok", "time": datetime.now().isoformat()})
+
+@app.route('/api/observability/fetch-reliability', methods=['GET'])
+@cache.cached()
+def fetch_reliability():
+    """Return aggregated fetch reliability metrics (canonical)."""
+    if REQ_COUNT:
+        try:
+            REQ_COUNT.labels('/api/observability/fetch-reliability').inc()
+        except Exception:
+            pass
+    path = latest_reliability_csv()
+    if not path:
+        return _json({"error": "Fetch_Reliability.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Fetch_Reliability read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+# Back-compat: redirect old metrics route to canonical observability path
+@app.route('/api/metrics/fetch-reliability', methods=['GET'])
+def fetch_reliability_redirect():
+    return redirect('/api/observability/fetch-reliability', code=301)
+
+@app.route('/api/metrics/daily-turnover', methods=['GET'])
+@cache.cached()
+def daily_turnover():
+    path = _latest_table('daily_turnover')
+    if not path:
+        return _json({"error": "daily_turnover.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Daily Turnover read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/metrics/turnover-summary', methods=['GET'])
+@cache.cached()
+def turnover_summary():
+    path = _latest_table('turnover_summary')
+    if not path:
+        return _json({"error": "turnover_summary.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Turnover summary read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/metrics/backtest-cost-summary', methods=['GET'])
+@cache.cached()
+def backtest_cost_summary():
+    path = _latest_table('backtest_cost_summary')
+    if not path:
+        return _json({"error": "backtest_cost_summary.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Backtest cost summary read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/metrics/feature-correlations', methods=['GET'])
+@cache.cached()
+def feature_correlations():
+    path = _latest_table('feature_correlations')
+    if not path:
+        return _json({"error": "feature_correlations.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Feature correlations read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/metrics/score-deciles', methods=['GET'])
+@cache.cached()
+def score_deciles():
+    path = _latest_table('score_quantile_performance')
+    if not path:
+        return _json({"error": "score_quantile_performance.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Score deciles read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/metrics/score-deciles-net', methods=['GET'])
+@cache.cached()
+def score_deciles_net():
+    path = _latest_table('score_quantile_performance_net')
+    if not path:
+        return _json({"error": "score_quantile_performance_net.csv not found"}, 404)
+    try:
+        df = pd.read_csv(path)
+        return _json({"rows": df.to_dict(orient="records"), "path": path})
+    except Exception as e:
+        logger.error(f"Score deciles net read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/signals/min', methods=['GET'])
+@cache.cached()
+def signals_min():
+    path = latest_signals_min()
+    if not path:
+        return _json({"error": "signals_min.json not found"}, 404)
+    try:
+        # Support optional top_n slicing without re-computing artifacts
+        top_n = request.args.get('top_n')
+        if top_n is None:
+            with open(path, 'rb') as f:
+                data = f.read()
+            # Light ETag based on size+mtime
+            st = os.stat(path)
+            etag = f'W/"{st.st_size}-{int(st.st_mtime)}"'
+            resp = Response(data, mimetype='application/json')
+            resp.headers['ETag'] = etag
+            resp.headers['Cache-Control'] = 'public, max-age=120'
+            return resp
+        # Slice dynamically
+        try:
+            n = max(0, int(top_n))
+        except Exception:
+            n = 100
+        with open(path, 'rb') as f:
+            arr = json.loads(f.read().decode('utf-8'))
+        arr = arr[:n]
+        return _json({"rows": arr, "path": path, "top_n": n})
+    except Exception as e:
+        logger.error(f"signals_min read failed: {e}")
+        return _json({"error": "read failure"}, 500)
+
+@app.route('/api/signals/full', methods=['GET'])
+@cache.cached()
+def signals_full():
+    path = latest_signals_full()
+    if not path:
+        return _json({"error": "signals_full.json not found"}, 404)
+    try:
+        # Optional top_n here as well for large payloads
+        top_n = request.args.get('top_n')
+        if top_n is None:
+            with open(path, 'rb') as f:
+                data = f.read()
+            st = os.stat(path)
+            etag = f'W/"{st.st_size}-{int(st.st_mtime)}"'
+            resp = Response(data, mimetype='application/json')
+            resp.headers['ETag'] = etag
+            resp.headers['Cache-Control'] = 'public, max-age=60'
+            return resp
+        try:
+            n = max(0, int(top_n))
+        except Exception:
+            n = 200
+        with open(path, 'rb') as f:
+            arr = json.loads(f.read().decode('utf-8'))
+        arr = arr[:n]
+        return _json({"rows": arr, "path": path, "top_n": n})
+    except Exception as e:
+        logger.error(f"signals_full read failed: {e}")
+        return _json({"error": "read failure"}, 500)
 
 @app.route('/api/chatgpt/analyze-signal', methods=['POST'])
 def analyze_signal():

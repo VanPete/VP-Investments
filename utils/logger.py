@@ -99,5 +99,5 @@ def setup_logging(log_dir=DEFAULT_LOG_DIR, log_file=DEFAULT_LOG_FILE):
     logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler], format=fmt)
 
     # Tame noisy third-party loggers
-    for name in ("yfinance", "yf", "urllib3", "praw", "prawcore"):
+    for name in ("yfinance", "yf", "urllib3", "praw", "prawcore", "openai", "httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)

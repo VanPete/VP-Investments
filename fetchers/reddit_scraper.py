@@ -22,12 +22,16 @@ import warnings
 from config.config import AI_FEATURES
 from utils.ai_cache import get as ai_get, set as ai_set
 from processors.chatgpt_integrator import ChatGPTIntegrator
+from utils.observability import emit_metric
+from utils.http_client import get_token_bucket, CircuitBreaker
+from utils.reddit_seen_cache import SeenCache
 
 from config.config import (
     REDDIT_SUBREDDITS, REDDIT_LIMITS, ENABLE_REDDIT_SCRAPE, DEBUG_REDDIT_SCRAPE,
     REDDIT_TICKER_PATTERN, SUBREDDIT_WEIGHTS, KEYWORD_BOOSTS, FLAIR_BOOSTS,
     FLAIR_ALIASES, MIN_AUTHOR_KARMA, TITLE_COMMENT_BLEND, COMMENT_WEIGHT_SCALING, EXCLUDED_TICKERS, FEATURE_TOGGLES,
-    MEME_TICKER_TERMS, REDDIT_PACING_SEC
+    MEME_TICKER_TERMS, REDDIT_PACING_SEC, REDDIT_RATE_PER_SEC, REDDIT_BURST,
+    REDDIT_BREAKER_FAILS, REDDIT_BREAKER_RESET_SEC, REDDIT_SEEN_CACHE_TTL_MIN
 )
 from utils.logger import setup_logging
 
@@ -61,6 +65,14 @@ try:
 except Exception as e:
     logger.error("VADER sentiment analyzer failed to initialize: %s", e)
     raise e
+
+# === Pacing & Resilience ===
+_bucket = get_token_bucket(REDDIT_RATE_PER_SEC, REDDIT_BURST)
+_breaker = CircuitBreaker(REDDIT_BREAKER_FAILS, REDDIT_BREAKER_RESET_SEC)
+
+# Simple in-memory seen-post cache to reduce duplicates across runs
+_SEEN_TTL = float(REDDIT_SEEN_CACHE_TTL_MIN) * 60.0
+_seen_cache = SeenCache(ttl_seconds=_SEEN_TTL)
 
 
 # === Text Processing ===
@@ -213,10 +225,18 @@ def process_submission(post: Submission, sub: str, now: datetime.datetime) -> Li
                 "Author": str(author),
                 "Post URL": f"https://reddit.com{post.permalink}"
             })
+        try:
+            emit_metric("reddit_post", {"ok": 1, "subreddit": sub, "tickers": len(tickers)})
+        except Exception:
+            pass
         return results
     except (prawcore.exceptions.NotFound, prawcore.exceptions.Forbidden) as e:
         # Post deleted/removed or forbidden; treat as expected and skip
         logger.info(f"Post skipped ({getattr(post, 'id', 'unknown')}): {e}")
+        try:
+            emit_metric("reddit_post", {"ok": 0, "subreddit": sub, "reason": "deleted/forbidden"})
+        except Exception:
+            pass
         return []
     except prawcore.exceptions.ResponseException as e:
         status = getattr(getattr(e, 'response', None), 'status_code', None)
@@ -224,9 +244,17 @@ def process_submission(post: Submission, sub: str, now: datetime.datetime) -> Li
             logger.info(f"Post skipped ({getattr(post, 'id', 'unknown')}): 404 Not Found")
             return []
         logger.warning(f"Post process failed: {getattr(post, 'id', 'unknown')} → HTTP {status}")
+        try:
+            emit_metric("reddit_post", {"ok": 0, "subreddit": sub, "status": status})
+        except Exception:
+            pass
         return []
     except Exception as e:
         logger.warning(f"Post process failed: {getattr(post, 'id', 'unknown')} → {e}")
+        try:
+            emit_metric("reddit_post", {"ok": 0, "subreddit": sub})
+        except Exception:
+            pass
         return []
 
 def is_emerging(df: pd.DataFrame) -> pd.Series:
@@ -272,23 +300,66 @@ def fetch_reddit_data(enable_scrape: bool = True) -> pd.DataFrame:
     for sub in tqdm(REDDIT_SUBREDDITS, desc="🔎 Scraping Reddit", unit="sub"):
         try:
             subreddit = reddit.subreddit(sub)
+            if not _breaker.allow():
+                logger.info(f"Circuit open; skipping r/{sub}")
+                try:
+                    emit_metric("reddit_sub", {"ok": 0, "subreddit": sub, "breaker_open": True})
+                except Exception:
+                    pass
+                continue
             for category, limit in REDDIT_LIMITS.items():
+                # Rate-limit token per listing fetch to avoid bursty access
+                _bucket.take(1.0)
                 for post in getattr(subreddit, category)(limit=limit):
+                    # De-dup within TTL
+                    if _seen_cache.has(post.id):
+                        continue
                     posts.extend(process_submission(post, sub, now))
+                    _seen_cache.add(post.id)
                     # Gentle pacing to avoid rate-limit bursts
                     if REDDIT_PACING_SEC:
                         time.sleep(REDDIT_PACING_SEC)
             logger.info(f"r/{sub} scrape completed.")
+            try:
+                emit_metric("reddit_sub", {"ok": 1, "subreddit": sub})
+            except Exception:
+                pass
         except prawcore.exceptions.OAuthException as e:
             logger.error(f"Reddit OAuth failed for r/{sub}: {e}")
+            try:
+                emit_metric("reddit_sub", {"ok": 0, "subreddit": sub, "error": "oauth"})
+            except Exception:
+                pass
         except prawcore.exceptions.ResponseException as e:
             status = getattr(getattr(e, 'response', None), 'status_code', None)
             if status == 429:
                 logger.warning(f"Rate limited while scraping r/{sub} (HTTP 429). Consider increasing REDDIT_PACING_SEC.")
+                _breaker.record(False)
+                try:
+                    emit_metric("reddit_sub", {"ok": 0, "subreddit": sub, "status": 429})
+                except Exception:
+                    pass
             else:
                 logger.warning(f"HTTP error while scraping r/{sub}: {status}")
+                if status and int(status) >= 500:
+                    _breaker.record(False)
+                try:
+                    emit_metric("reddit_sub", {"ok": 0, "subreddit": sub, "status": status})
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"r/{sub} failed: {e}")
+            _breaker.record(False)
+            try:
+                emit_metric("reddit_sub", {"ok": 0, "subreddit": sub})
+            except Exception:
+                pass
+
+    # Persist seen cache to disk at the end
+    try:
+        _seen_cache.flush()
+    except Exception:
+        pass
 
     df = pd.DataFrame(posts)
     if df.empty:

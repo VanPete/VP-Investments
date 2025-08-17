@@ -21,7 +21,6 @@ LEGEND = {
     "Mentions": "Weighted Reddit post count.",
     "News Mentions": "Number of recent financial news articles.",
     "Upvotes": "Average Reddit post upvotes.",
-    "Twitter Mentions": "Recent Twitter mentions count for the ticker.",
     "Sentiment Spike": "Sudden surge in sentiment volume.",
 
     # === Price & Volume ===
@@ -76,9 +75,9 @@ LEGEND = {
     "Insider Signal": "Flag summarizing strength of insider activity.",
 
     # === ETF Flows ===
-    "Sector Inflows": "Net capital inflow into the stock's sector ETFs.",
-    "ETF Flow Spike Ratio": "Sector ETF inflow relative to historical average.",
-    "ETF Flow Signal": "Flag indicating notable surge in ETF demand for sector.",
+    "Sector Inflows": "Net capital inflow into the stock's sector ETFs (falls back to sector ETF price*volume proxy when primary data unavailable).",
+    "ETF Flow Spike Ratio": "Sector ETF inflow relative to historical average (or PV spike ratio when proxied).",
+    "ETF Flow Signal": "Flag indicating notable surge in ETF demand for sector (works with proxy mode too).",
 
     # === Earnings ===
     "Next Earnings Date": "Next scheduled earnings report date.",

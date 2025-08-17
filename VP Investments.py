@@ -17,16 +17,18 @@ from fetchers.google_trends_fetcher import fetch_google_trends
 from fetchers.universe_fetcher import build_trending_universe
 from processors.backtest import FUTURE_PROOF_COLS
 from processors.signal_scoring import SignalScorer, calculate_post_recency, detect_new_signals
-from processors.reports import export_excel_report, export_csv_report, generate_html_dashboard, export_picks, write_run_readme
+from processors.reports import export_excel_report, export_csv_report, generate_html_dashboard, export_picks, write_run_readme, export_min_signals, export_full_json, generate_run_homepage
 # ChatGPT Integration
 from processors.chatgpt_integrator import enhance_dataframe_with_chatgpt, generate_executive_summary
 from config.config import (
     MIN_MENTIONS, MIN_UPVOTES, SUBREDDIT_WEIGHTS, FEATURE_TOGGLES, DB_PATH, OUTPUTS_DIR_FORMAT,
-    LIQUIDITY_WARNING_ADV, CURRENT_SIGNAL_PROFILE, OUTPUTS_DIR
+    LIQUIDITY_WARNING_ADV, CURRENT_SIGNAL_PROFILE, OUTPUTS_DIR,
+    JSON_LOGS_ENABLED, COUNTERS_ENABLED
 )
 from config.labels import FINAL_COLUMN_ORDER
 from utils.logger import setup_logging
-from config.config import SLACK_WEBHOOK_URL
+from config.config import SLACK_WEBHOOK_URL, SLACK_ENABLED
+from utils.observability import JsonlLogger, RunCounters
 
 setup_logging()
 warnings.filterwarnings("ignore", message=".*Downcasting object dtype arrays on .*fillna.* is deprecated.*")
@@ -59,6 +61,17 @@ def _ensure_db_tables() -> None:
                 )
                 """
             )
+            # Helpful indices for faster lookups and joins
+            try:
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_signals_ticker ON signals("Ticker")')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_signals_run_dt ON signals("Run Datetime")')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_signals_ticker_run_dt ON signals("Ticker", "Run Datetime")')
+            except Exception:
+                pass
+            try:
+                conn.execute('ANALYZE')
+            except Exception:
+                pass
     except Exception:
         # Non-fatal; downstream code handles missing tables conservatively
         pass
@@ -66,7 +79,15 @@ def _ensure_db_tables() -> None:
 def initialize_run_directory() -> Tuple[str, str]:
     now = datetime.now()
     run_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-    run_dir = os.path.join(OUTPUTS_DIR, now.strftime(OUTPUTS_DIR_FORMAT))
+        # Prefer RUN_DIR from environment when provided (e.g., orchestrated runs)
+    env_run_dir = os.getenv("RUN_DIR")
+    if env_run_dir:
+        try:
+            os.makedirs(env_run_dir, exist_ok=True)
+            return run_datetime, env_run_dir
+        except Exception:
+            pass
+        run_dir = os.path.join(OUTPUTS_DIR, now.strftime(OUTPUTS_DIR_FORMAT))
     os.makedirs(run_dir, exist_ok=True)
     return run_datetime, run_dir
 
@@ -111,6 +132,11 @@ def merge_with_optional_sources(df: pd.DataFrame, tickers: set) -> pd.DataFrame:
             df["Google Interest"] = 0.0
         if "AI Trends Commentary" not in df.columns:
             df["AI Trends Commentary"] = ""
+    # Populate Source column with a simple origin flag if still missing
+    if "Source" not in df.columns:
+        df["Source"] = "Reddit"
+    else:
+        df["Source"] = df["Source"].fillna("Reddit")
     return df
 
 def apply_ranking_and_scoring(df: pd.DataFrame, reddit_df: pd.DataFrame, run_datetime: str, summary_lookup: pd.DataFrame) -> pd.DataFrame:
@@ -166,6 +192,9 @@ def apply_ranking_and_scoring(df: pd.DataFrame, reddit_df: pd.DataFrame, run_dat
     df["Liquidity Flags"] = df["Avg Daily Value Traded"].apply(
         lambda x: "Low Liquidity" if pd.notna(x) and x < LIQUIDITY_WARNING_ADV else ""
     )
+    # Backward-compatible alias used by reports/trade notes
+    if "Liquidity Warning" not in df.columns:
+        df["Liquidity Warning"] = df["Liquidity Flags"]
 
     # Ensure Squeeze Signal exists if not set by scorer
     if "Squeeze Signal" not in df.columns or df["Squeeze Signal"].isna().all():
@@ -184,9 +213,9 @@ def apply_ranking_and_scoring(df: pd.DataFrame, reddit_df: pd.DataFrame, run_dat
     else:
         df["Sentiment Spike"] = 0.0
 
-    # Twitter Mentions default to 0 when missing
-    if "Twitter Mentions" not in df.columns:
-        df["Twitter Mentions"] = 0.0
+    # Twitter Mentions removed; ensure column not required downstream
+    if "Twitter Mentions" in df.columns and df["Twitter Mentions"].isna().all():
+        df.drop(columns=["Twitter Mentions"], inplace=True)
 
     return df
 
@@ -248,7 +277,7 @@ def clean_and_validate_df(df: pd.DataFrame) -> pd.DataFrame:
         df["Source"] = "Unknown"
     df["Source"] = df["Source"].fillna("Unknown")
 
-    for col in ["Twitter Mentions", "Next Earnings Date", "Google Interest", "Squeeze Signal"]:
+    for col in ["Next Earnings Date", "Google Interest", "Squeeze Signal"]:
         if col in df.columns and df[col].isna().all():
             logging.warning(f"[WARNING] Column '{col}' is fully null.")
 
@@ -265,11 +294,15 @@ def clean_and_validate_df(df: pd.DataFrame) -> pd.DataFrame:
 def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     _ensure_db_tables()
     run_datetime, run_dir = initialize_run_directory()
+    obs = JsonlLogger(run_dir, enabled=JSON_LOGS_ENABLED)
+    ctr = RunCounters(run_dir, enabled=COUNTERS_ENABLED)
     reddit_df = fetch_reddit_data(enable_scrape=True)
     if reddit_df.empty:
         logging.warning("No Reddit posts after fetch.")
         return None, run_dir
 
+    obs.emit("reddit_fetched", {"rows": len(reddit_df)})
+    ctr.inc("reddit_rows", len(reddit_df))
     reddit_df = enrich_reddit_data(reddit_df)
     # Load known company universe; if unavailable (e.g., CI first run), fall back to scraped tickers
     try:
@@ -304,10 +337,12 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     logging.info(f"[PIPELINE] Merging optional sources (news/trends) for {len(tickers)} tickers…")
     feature_matrix = merge_with_optional_sources(feature_matrix, tickers)
     logging.info("[PIPELINE] Optional sources merge complete.")
+    obs.emit("optional_sources_merged", {"tickers": len(tickers)})
 
     # === PATCHED SECTION START ===
     yf_data = fetch_yf_data(sorted(tickers))
     logging.info(f"[YF] Requested: {len(tickers)} tickers; Received: {len(yf_data)} rows")
+    ctr.inc("yf_rows", len(getattr(yf_data, "index", [])))
     if isinstance(yf_data, pd.DataFrame):
         missing_yf = set(tickers) - set(yf_data["Ticker"].unique())
         if missing_yf:
@@ -338,6 +373,8 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
         feature_matrix["Liquidity Rank"] = feature_matrix["Avg Daily Value Traded"].rank(pct=True)
 
     feature_matrix = apply_ranking_and_scoring(feature_matrix, reddit_df, run_datetime, summary_lookup)
+    ctr.inc("scored_rows", len(feature_matrix))
+    obs.emit("scored", {"rows": len(feature_matrix)})
     feature_matrix = handle_emerging_and_thread_tags(feature_matrix, reddit_df)
     feature_matrix["Signal Type"] = "Reddit + Financial"
 
@@ -347,6 +384,31 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
 
     final_df = feature_matrix[FINAL_COLUMN_ORDER].sort_values(by="Weighted Score", ascending=False).reset_index(drop=True)
     final_df = clean_and_validate_df(final_df)
+    # Basic validation flags + minimal imputation tag
+    try:
+        flags = []
+        if "Current Price" in final_df.columns:
+            flags.append((final_df["Current Price"] <= 0).rename("Flag: Price<=0"))
+        if "Market Cap" in final_df.columns:
+            flags.append((pd.to_numeric(final_df["Market Cap"], errors='coerce') < 1e8).rename("Flag: SmallCap<100M"))
+        if flags:
+            fdf = pd.concat(flags, axis=1)
+            final_df["Validation Flags"] = fdf.apply(lambda r: ", ".join([c for c, v in r.items() if bool(v)]) or "", axis=1)
+    except Exception:
+        pass
+
+    try:
+        imputed_cols = []
+        for col in ["EPS Growth", "Avg Daily Value Traded", "Market Cap"]:
+            if col in final_df.columns:
+                s = pd.to_numeric(final_df[col], errors='coerce')
+                if s.isna().any():
+                    fill = s.median()
+                    final_df[col] = s.fillna(fill)
+                    imputed_cols.append(col)
+        final_df["Imputed"] = "; ".join(imputed_cols) if imputed_cols else ""
+    except Exception:
+        pass
     # Normalize percent-like columns to fractional scale in Final Analysis (configurable)
     from config.config import PERCENT_NORMALIZE as _PCTN
     if _PCTN:
@@ -381,6 +443,10 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     except Exception:
         final_df.to_csv(out_csv, index=False)
     write_to_db(final_df)
+    try:
+        ctr.flush()
+    except Exception:
+        pass
     return final_df, run_dir
 
 if __name__ == "__main__":
@@ -388,6 +454,7 @@ if __name__ == "__main__":
     if result:
         combined, run_dir = result
         if combined is not None and not combined.empty:
+            import shutil
             version = "v1.0.0"  # Adjust version tag as needed
             export_excel_report(
                 combined,
@@ -400,12 +467,30 @@ if __name__ == "__main__":
             )
             # Also write a plain CSV signal report for quick inspection
             export_csv_report(combined, run_dir)
+            # Compact artifacts for web/API
+            export_min_signals(combined, run_dir)
+            # Full JSON for programmatic access
+            export_full_json(combined, run_dir)
             # Picks and run README
             export_picks(combined, run_dir)
             write_run_readme(run_dir)
+            # Copy lightweight counters into References for observability
+            try:
+                ref_dir = os.path.join(run_dir, "References")
+                os.makedirs(ref_dir, exist_ok=True)
+                counters_src = os.path.join(run_dir, "logs", "counters.csv")
+                if os.path.isfile(counters_src):
+                    shutil.copy2(counters_src, os.path.join(ref_dir, "Run_Counters.csv"))
+            except Exception:
+                pass
+            # Lightweight per-run homepage with Top 10 and links
+            try:
+                generate_run_homepage(combined, run_dir)
+            except Exception:
+                pass
             generate_html_dashboard(combined)
             # Optional Slack alert
-            if SLACK_WEBHOOK_URL:
+            if SLACK_ENABLED and SLACK_WEBHOOK_URL:
                 try:
                     import json, requests
                     top = combined[['Ticker', 'Weighted Score']].head(5).to_dict(orient='records')

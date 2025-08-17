@@ -1,13 +1,13 @@
 # === Final Output Column Order for Excel & Console Output ===
 FINAL_COLUMN_ORDER = [
     # === Meta ===
-    "Rank", "Ticker", "Company", "Sector", "Trade Type", "Secondary Flags", "Risk Level", "Risk Tags",
+    "Rank", "Ticker", "Company", "Sector", "Weighted Score", "Trade Type", "Secondary Flags", "Risk",
     "Highest Contributor", "Lowest Contributor", "Top Factors",
     "Emerging/Thread", "Post Recency", "Reddit Summary",
 
     # === Sentiment ===
     "Reddit Sentiment", "News Sentiment", "Mentions", "News Mentions", "Upvotes",
-    "Twitter Mentions", "Sentiment Spike",
+    "Sentiment Spike",
 
     # === Price & Volume ===
     "Current Price", "Price 1D %", "Price 7D %", "Volume", "Volume Spike Ratio",
@@ -38,23 +38,24 @@ FINAL_COLUMN_ORDER = [
     "Next Earnings Date", "Earnings Gap %",
 
     # === Trend ===
-    "Trend Spike", "Google Interest", "AI News Summary", "AI Trends Commentary", "AI Commentary", "Score Explanation", "Risk Assessment",
+    "Trend Spike", "Google Interest", "AI News Summary", "AI Trends Commentary", "AI Commentary", "Score Explanation",
 
     # === Scoring Metadata ===
-    "Weighted Score", "Run Datetime", "Signal Type", "Source",
+    "Run Datetime", "Signal Type", "Source",
     "Reddit Score", "Financial Score", "News Score"
 ]
 
 
 # === Formatting hints for Excel output ===
 COLUMN_FORMAT_HINTS = {
+    # === Meta additions ===
+    "Risk": "string",
     # === Sentiment ===
     "Reddit Sentiment": "float",
     "News Sentiment": "float",
     "Mentions": "float",
     "News Mentions": "float",
     "Upvotes": "float",
-    "Twitter Mentions": "float",
     "Sentiment Spike": "float",
 
     # === Price & Volume ===
@@ -124,7 +125,6 @@ COLUMN_FORMAT_HINTS = {
     "AI Trends Commentary": "string",
     "AI Commentary": "string",
     "Score Explanation": "string",
-    "Risk Assessment": "string",
 
     # === Scoring Metadata ===
     "Weighted Score": "float",

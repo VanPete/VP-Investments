@@ -15,14 +15,17 @@ import time
 import json
 
 from dotenv import load_dotenv
-from config.config import UNIVERSE_SOURCES, UNIVERSE_LIMIT
-from utils.http_client import build_session
+from config.config import UNIVERSE_SOURCES, UNIVERSE_LIMIT, TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC
+from utils.http_client import build_session, get_token_bucket, CircuitBreaker
+from utils.observability import emit_metric
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Shared HTTP session with small cache to avoid hammering sources
 _sess = build_session(cache_name=os.path.join(os.path.dirname(__file__), "..", "cache", "universe_cache"), cache_expire_seconds=600, timeout=15)
+_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_breaker = CircuitBreaker(BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC)
 
 
 def _sanitize(symbol: str) -> str:
@@ -49,6 +52,11 @@ def fetch_fmp_movers() -> List[str]:
         url = f"{base}/{ep}?apikey={key}"
         for attempt in range(3):
             try:
+                if not _breaker.allow():
+                    logger.info("FMP circuit open; skipping %s", ep)
+                    break
+                _bucket.take(1.0)
+                _start = time.time()
                 resp = _sess.get(url)
                 resp.raise_for_status()
                 data = resp.json() or []
@@ -62,6 +70,11 @@ def fetch_fmp_movers() -> List[str]:
                     sym = _sanitize(row.get("symbol", ""))
                     if sym:
                         results.append(sym)
+                _breaker.record(True)
+                try:
+                    emit_metric("universe_fmp", {"ok": 1, "endpoint": ep, "items": len(data), "latency_ms": int((time.time()-_start)*1000)})
+                except Exception:
+                    pass
                 break
             except Exception as e:
                 # On final attempt, try cache fallback
@@ -80,6 +93,11 @@ def fetch_fmp_movers() -> List[str]:
                     except Exception:
                         pass
                 # small backoff with jitter
+                _breaker.record(False)
+                try:
+                    emit_metric("universe_fmp", {"ok": 0, "endpoint": ep})
+                except Exception:
+                    pass
                 time.sleep(0.7 + 0.3 * attempt)
                 if attempt == 2:
                     logger.warning(f"FMP {ep} failed: {e}")
@@ -91,6 +109,11 @@ def fetch_stocktwits_trending() -> List[str]:
         return []
     try:
         url = "https://api.stocktwits.com/api/2/trending/symbols.json"
+        if not _breaker.allow():
+            logger.info("Stocktwits circuit open; skipping trending")
+            return []
+        _bucket.take(1.0)
+        _start = time.time()
         resp = _sess.get(url)
         resp.raise_for_status()
         data = resp.json() or {}
@@ -100,16 +123,31 @@ def fetch_stocktwits_trending() -> List[str]:
             sym = _sanitize(s)
             if sym:
                 out.append(sym)
+        _breaker.record(True)
+        try:
+            emit_metric("universe_stocktwits", {"ok": 1, "items": len(syms), "latency_ms": int((time.time()-_start)*1000)})
+        except Exception:
+            pass
         return out
     except Exception as e:
         # 403s are common without proper client context; treat as informational.
         logger.info(f"Stocktwits trending unavailable ({e}); continuing with other sources")
+        _breaker.record(False)
+        try:
+            emit_metric("universe_stocktwits", {"ok": 0})
+        except Exception:
+            pass
         return []
 
 
 def fetch_yahoo_trending() -> List[str]:
     try:
         url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+        if not _breaker.allow():
+            logger.info("Yahoo trending circuit open; skipping")
+            return []
+        _bucket.take(1.0)
+        _start = time.time()
         resp = _sess.get(url, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
         data = resp.json() or {}
@@ -119,9 +157,19 @@ def fetch_yahoo_trending() -> List[str]:
                 sym = _sanitize(q.get("symbol", ""))
                 if sym:
                     results.append(sym)
+        _breaker.record(True)
+        try:
+            emit_metric("universe_yahoo", {"ok": 1, "items": len(results), "latency_ms": int((time.time()-_start)*1000)})
+        except Exception:
+            pass
         return results
     except Exception as e:
         logger.warning(f"Yahoo trending failed: {e}")
+        _breaker.record(False)
+        try:
+            emit_metric("universe_yahoo", {"ok": 0})
+        except Exception:
+            pass
         return []
 
 
@@ -139,4 +187,9 @@ def build_trending_universe(limit: int = None) -> Set[str]:
             uniq.append(s)
         if len(uniq) >= lim:
             break
-    return set(uniq)
+    out = set(uniq)
+    try:
+        emit_metric("universe_builder", {"ok": 1, "count": len(out)})
+    except Exception:
+        pass
+    return out

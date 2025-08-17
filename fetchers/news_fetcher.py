@@ -20,13 +20,15 @@ from rapidfuzz import fuzz
 from dotenv import load_dotenv
 from config.config import (
     AI_FEATURES, NEWS_CACHE_DIR, NEWS_CACHE_TTL_HOURS,
-    NEWS_RSS_TIMEOUT_SEC, NEWS_FETCH_PACING_SEC, NEWS_FUZZY_THRESHOLD, NEWS_MAX_ITEMS
+    NEWS_RSS_TIMEOUT_SEC, NEWS_FETCH_PACING_SEC, NEWS_FUZZY_THRESHOLD, NEWS_MAX_ITEMS,
+    TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC
 )
 from utils.ai_cache import get as ai_get, set as ai_set
 from processors.chatgpt_integrator import ChatGPTIntegrator
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from bs4 import BeautifulSoup
-from utils.http_client import build_session
+from utils.http_client import build_session, get_token_bucket, CircuitBreaker
+from utils.observability import emit_metric
 
 # === Config ===
 load_dotenv()
@@ -42,6 +44,8 @@ _rss_sess = build_session(
     cache_expire_seconds=int(CACHE_TTL.total_seconds()),
     timeout=NEWS_RSS_TIMEOUT_SEC,
 )
+_rss_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_rss_breaker = CircuitBreaker(BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC)
  
 
 
@@ -64,8 +68,14 @@ def load_company_names() -> Dict[str, str]:
 
 
 def clean_company_name(name: str) -> str:
-    """Remove common suffixes for cleaner fuzzy matching."""
-    return re.sub(r"\b(inc|inc\.|corp|corporation|llc|ltd|plc|group|co|company|s\.a\.?)\b", "", name, flags=re.I).strip()
+    """Remove common suffixes and stray punctuation for cleaner fuzzy matching."""
+    # Remove common suffixes with optional trailing dot
+    s = re.sub(r"\b(inc|corp|corporation|llc|ltd|plc|group|co|company|s\.a\.?)\.?\b", "", name, flags=re.I)
+    # Collapse multiple spaces
+    s = re.sub(r"\s+", " ", s)
+    # Strip common trailing punctuation and whitespace
+    s = s.strip().strip(" .,-")
+    return s
 
 
 # === Caching Logic ===
@@ -107,6 +117,19 @@ def fetch_google_news_rss(name: str, max_items: int = NEWS_MAX_ITEMS) -> List[di
     q = requests.utils.quote(f'"{name}" when:7d')
     url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
     try:
+        # Circuit breaker: skip if upstream is degrading
+        if not _rss_breaker.allow():
+            logging.info("[NEWS] RSS circuit open; skipping fetch for %s", name)
+            try:
+                emit_metric("news_rss", {"ok": 0, "breaker_open": True, "name": name})
+            except Exception:
+                pass
+            return []
+        # Token bucket pacing
+        waited = _rss_bucket.take(1.0)
+        if waited > 0.2:
+            logging.debug("[NEWS] Rate-limiter waited %.2fs before RSS call", waited)
+        _start = time.time()
         resp = _rss_sess.get(url)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.content, "xml")
@@ -121,9 +144,19 @@ def fetch_google_news_rss(name: str, max_items: int = NEWS_MAX_ITEMS) -> List[di
                 "description": desc,
                 "publishedAt": pub
             })
+        _rss_breaker.record(True)
+        try:
+            emit_metric("news_rss", {"ok": 1, "latency_ms": int((time.time()-_start)*1000), "items": len(articles)})
+        except Exception:
+            pass
         return articles
     except Exception as e:
         logging.warning(f"RSS fetch failed for {name}: {e}")
+        _rss_breaker.record(False)
+        try:
+            emit_metric("news_rss", {"ok": 0, "error": str(e)[:200]})
+        except Exception:
+            pass
         return []
 
 
@@ -146,12 +179,22 @@ def fetch_news_for_tickers(tickers: List[str]) -> Dict[str, List[dict]]:
             articles = fuzzy_match_articles(company, articles)
             fetched[t] = articles
             save_cache(t, articles)
+            try:
+                emit_metric("news_ticker", {"ok": 1, "ticker": t, "items": len(articles)})
+            except Exception:
+                pass
             if i % 10 == 0 or i == total:
                 logging.info(f"[NEWS] Progress: {i}/{total} tickers processed")
-            time.sleep(NEWS_FETCH_PACING_SEC)  # Gentle pacing
+            # Gentle pacing in addition to token bucket to avoid bursty patterns
+            if NEWS_FETCH_PACING_SEC:
+                time.sleep(NEWS_FETCH_PACING_SEC)
         except Exception as e:
             logging.warning(f"News fetch failed for {t}: {e}")
             fetched[t] = []
+            try:
+                emit_metric("news_ticker", {"ok": 0, "ticker": t})
+            except Exception:
+                pass
 
     return fetched
 

@@ -31,7 +31,63 @@ try:
 except Exception:
     pass
 BASE_LOG_DIR = os.path.join(PROJECT_ROOT, "outputs", "logs")
+
+# Ensure standard outputs structure exists for fresh starts
+def _ensure_outputs_structure():
+    base = os.path.join(PROJECT_ROOT, "outputs")
+    subdirs = [
+        base,
+        os.path.join(base, "logs"),
+        os.path.join(base, "plots"),
+        os.path.join(base, "tables"),
+        os.path.join(base, "top_signals"),
+        os.path.join(base, "breakouts"),
+        os.path.join(base, "dashboard"),
+        os.path.join(base, "weights"),
+        os.path.join(base, "References"),
+    ]
+    for d in subdirs:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+
+_ensure_outputs_structure()
 os.makedirs(BASE_LOG_DIR, exist_ok=True)
+
+def _write_root_index_to_latest_run():
+    """Create outputs/index.html pointing to the latest per-run homepage when present.
+
+    Falls back to dashboard/dashboard.html if no per-run index is found. Best-effort only.
+    """
+    try:
+        outputs_dir = os.path.join(PROJECT_ROOT, "outputs")
+        # Find candidate run dirs that contain an index.html (per-run homepage)
+        candidates = []
+        for name in os.listdir(outputs_dir):
+            p = os.path.join(outputs_dir, name)
+            if os.path.isdir(p) and os.path.isfile(os.path.join(p, "index.html")):
+                try:
+                    mtime = os.path.getmtime(os.path.join(p, "index.html"))
+                except Exception:
+                    mtime = 0
+                candidates.append((mtime, name))
+        target_rel = None
+        if candidates:
+            candidates.sort(reverse=True)
+            # name is relative to outputs/
+            target_rel = f"{candidates[0][1]}/index.html"
+        else:
+            # Fallback to the static dashboard
+            target_rel = "dashboard/dashboard.html"
+        idx_path = os.path.join(outputs_dir, "index.html")
+        # Write minimal redirect page
+        html = f"<meta http-equiv=\"refresh\" content=\"0; url={target_rel}\">"
+        with open(idx_path, "w", encoding="utf-8") as f:
+            f.write(html)
+    except Exception:
+        # Non-fatal; Pages step has its own fallback
+        pass
 
 SCRIPTS = {
     "vp_investments": os.path.join(PROJECT_ROOT, "VP Investments.py"),
@@ -66,6 +122,8 @@ def run_script(label, path, log_dir, args=None, timeout_sec: int | None = None, 
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("OUTPUTS_DIR", os.path.join(PROJECT_ROOT, "outputs"))
+    # RUN_DIR will be injected later once we know it; leave empty here
+    env.setdefault("RUN_DIR", env.get("RUN_DIR", ""))
     start = time.time()
     try:
         with open(log_path, "w", encoding="utf-8") as log_file:
@@ -143,6 +201,46 @@ def wait_for_signals_table(timeout_seconds=15):
     print("❌ Timeout: 'signals' table not ready.")
     return False
 
+def aggregate_fetch_reliability(run_dir: str) -> None:
+    """Aggregate component metrics JSONL files into References/Fetch_Reliability.csv."""
+    try:
+        import json, glob
+        import pandas as _pd
+        logs_dir = os.path.join(run_dir, "logs")
+        refs_dir = os.path.join(run_dir, "References")
+        os.makedirs(refs_dir, exist_ok=True)
+        rows = []
+        for path in glob.glob(os.path.join(logs_dir, "*_metrics.jsonl")):
+            comp = os.path.basename(path).replace("_metrics.jsonl", "")
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                        obj["component"] = comp
+                        rows.append(obj)
+                    except Exception:
+                        continue
+        if not rows:
+            return
+        df = _pd.DataFrame(rows)
+        # Normalize fields
+        df["ok"] = _pd.to_numeric(df.get("ok"), errors='coerce')
+        df["latency_ms"] = _pd.to_numeric(df.get("latency_ms"), errors='coerce')
+        df["breaker_open"] = df.get("breaker_open").astype(bool) if "breaker_open" in df.columns else False
+        agg = df.groupby("component").agg(
+            calls=("component", "size"),
+            success=("ok", "sum"),
+            avg_latency_ms=("latency_ms", "mean"),
+            breaker_opens=("breaker_open", "sum")
+        ).reset_index()
+        # Derive failures
+        agg["failures"] = agg["calls"] - agg["success"].fillna(0).astype(int)
+        # Save
+        out_path = os.path.join(refs_dir, "Fetch_Reliability.csv")
+        agg.to_csv(out_path, index=False)
+    except Exception:
+        pass
+
 # === Pipeline Runner ===
 def main():
     # CLI
@@ -169,12 +267,21 @@ def main():
         timestamp, date_str = get_et_timestamp()
         log_dir = os.path.join(BASE_LOG_DIR, date_str)
         os.makedirs(log_dir, exist_ok=True)
+
+        # Precompute the run directory name to share via env
+        from datetime import datetime as _dt
+        run_dir = os.path.join(PROJECT_ROOT, "outputs", _dt.now().strftime("(%d %B %y, %H_%M_%S)"))
+        os.makedirs(run_dir, exist_ok=True)
+        print(f"📂 Run outputs directory: {run_dir}")
+
         # Step order
         for step in ["vp", "backtest", "trainer"]:
             if step not in selected_steps:
                 continue
             if step == "vp":
                 print("▶️ Running VP Investments…")
+                # Inject RUN_DIR so children can emit metrics
+                os.environ["RUN_DIR"] = run_dir
                 code = run_script("vp_investments", SCRIPTS["vp_investments"], log_dir, args=extra_args["vp"], timeout_sec=timeout_sec, stream=stream)
                 if code != 0:
                     print("❌ VP Investments script failed. Skipping remaining steps.")
@@ -182,12 +289,20 @@ def main():
                 if not wait_for_signals_table():
                     print("❌ 'signals' table not ready. Skipping remaining steps.")
                     return
+                # Update root index to point at the latest run homepage
+                _write_root_index_to_latest_run()
             elif step == "backtest":
                 print("▶️ Running Backtest…")
                 run_script("backtest", SCRIPTS["backtest"], log_dir, args=extra_args["backtest"], timeout_sec=timeout_sec, stream=stream)
             elif step == "trainer":
                 print("▶️ Running Scoring Trainer…")
                 run_script("scoring_trainer", SCRIPTS["scoring_trainer"], log_dir, args=extra_args["trainer"], timeout_sec=timeout_sec, stream=stream)
+
+        # After run ends, aggregate reliability metrics into this run dir
+        try:
+            aggregate_fetch_reliability(run_dir)
+        except Exception:
+            pass
 
     if run_immediately or not SCHED_ENABLED:
         run_once()

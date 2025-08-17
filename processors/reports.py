@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import xlsxwriter
 from typing import Optional
+import numpy as np
+import sqlite3
 
 from config.labels import FINAL_COLUMN_ORDER, COLUMN_FORMAT_HINTS
 from config.config import PERCENT_NORMALIZE, LIQUIDITY_WARNING_ADV
@@ -77,6 +79,60 @@ def autosize_and_center(ws, df_like, workbook):
         width = max(df_like[col].astype(str).map(len).max(), len(str(col))) + 2
         ws.set_column(idx, idx, max(min(width, 50), 12), center_fmt)
 
+
+def compute_backtest_metrics_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute simple backtest diagnostics from current DataFrame if future return columns exist.
+
+    Returns a table with one row per available return window containing:
+    - Count: rows with both Weighted Score and the window's return present
+    - Pearson IC / Spearman IC between Weighted Score and the return
+    - Top-Decile Avg Return vs Rest Avg Return and Excess (Top - Rest)
+    - Hit Rate in Top Decile (share of names with positive return)
+    """
+    rows = []
+    if "Weighted Score" not in df.columns:
+        return pd.DataFrame(columns=[
+            "Window", "Count", "Pearson IC", "Spearman IC", "Top-Decile Avg %", "Rest Avg %", "Excess %", "Top-Decile Hit %"
+        ])
+
+    score = pd.to_numeric(df["Weighted Score"], errors="coerce")
+    ret_cols = [c for c in ("3D Return", "10D Return") if c in df.columns]
+    for col in ret_cols:
+        r = pd.to_numeric(df[col], errors="coerce")
+        mask = score.notna() & r.notna()
+        if not mask.any():
+            continue
+        s = score[mask]
+        y = r[mask]
+        n = int(mask.sum())
+        pearson = float(round(s.corr(y, method="pearson"), 4)) if n > 2 else None
+        spearman = float(round(s.corr(y, method="spearman"), 4)) if n > 2 else None
+        # Top decile split by score
+        try:
+            ranks = s.rank(pct=True)
+            top_mask = ranks >= 0.9
+        except Exception:
+            # Fallback: quantile threshold
+            thr = s.quantile(0.9)
+            top_mask = s >= thr
+        top_mean = float(round(y[top_mask].mean(), 2)) if top_mask.any() else None
+        rest_mean = float(round(y[~top_mask].mean(), 2)) if (~top_mask).any() else None
+        excess = float(round((top_mean - rest_mean), 2)) if top_mean is not None and rest_mean is not None else None
+        hit = float(round((y[top_mask] > 0).mean() * 100.0, 2)) if top_mask.any() else None
+        rows.append({
+            "Window": col,
+            "Count": n,
+            "Pearson IC": pearson,
+            "Spearman IC": spearman,
+            "Top-Decile Avg %": top_mean,
+            "Rest Avg %": rest_mean,
+            "Excess %": excess,
+            "Top-Decile Hit %": hit,
+        })
+    return pd.DataFrame(rows, columns=[
+        "Window", "Count", "Pearson IC", "Spearman IC", "Top-Decile Avg %", "Rest Avg %", "Excess %", "Top-Decile Hit %"
+    ])
+
 def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict] = None) -> Optional[str]:
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -88,17 +144,46 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
 
     # Remove legacy normalized score; rely on Weighted Score directly
 
+        # Build a combined Risk field early so it's available for ordering/formatting
+        try:
+            def _build_risk(row):
+                lvl = str(row.get("Risk Level") or "").strip()
+                tags = str(row.get("Risk Tags") or "").strip()
+                ai = str(row.get("Risk Assessment") or "").strip()
+                parts = []
+                if lvl:
+                    parts.append(lvl)
+                if tags:
+                    parts.append(tags)
+                if ai:
+                    low_ai = ai.lower()
+                    if lvl and (low_ai == f"{lvl.lower()} risk" or low_ai == lvl.lower()):
+                        pass
+                    else:
+                        parts.append(ai)
+                return " — ".join([p for p in parts if p])
+            out["Risk"] = out.apply(_build_risk, axis=1)
+        except Exception:
+            # If anything goes wrong, at least ensure the column exists
+            if "Risk" not in out.columns:
+                out["Risk"] = ""
+
         # Sort for presentation and compute a stable unique Rank
-        sort_keys = [c for c in ["Weighted Score", "Reddit Score", "News Score", "Financial Score"] if c in out.columns]
+        sort_prim = [c for c in ["Weighted Score", "Reddit Score", "News Score", "Financial Score"] if c in out.columns]
+        sort_keys = sort_prim + (["Ticker"] if "Ticker" in out.columns else [])
         if sort_keys:
-            out = out.sort_values(by=sort_keys, ascending=[False] * len(sort_keys), kind="mergesort").reset_index(drop=True)
+            ascending = [False] * len(sort_prim) + ([True] if ("Ticker" in out.columns) else [])
+            out = out.sort_values(by=sort_keys, ascending=ascending, kind="mergesort").reset_index(drop=True)
             out["Rank"] = range(1, len(out) + 1)
 
         out = out.loc[:, ~out.columns.duplicated()]
         for col in FINAL_COLUMN_ORDER:
             if col not in out.columns:
                 out[col] = ""
-        out = out[FINAL_COLUMN_ORDER]
+        # Reorder to put preferred columns first but KEEP all other columns afterward
+        ordered = [c for c in FINAL_COLUMN_ORDER if c in out.columns]
+        others = [c for c in out.columns if c not in ordered]
+        out = out[ordered + others]
 
         with pd.ExcelWriter(file_path, engine="xlsxwriter",
             engine_kwargs={"options": {"nan_inf_to_errors": True}}) as writer:
@@ -171,7 +256,7 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
                 'High': workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'align': 'center'})
             }
 
-            long_text_cols = [c for c in ["Reddit Summary", "AI News Summary", "AI Trends Commentary", "AI Commentary", "Score Explanation", "Risk Assessment"] if c in out.columns]
+            long_text_cols = [c for c in ["Reddit Summary", "AI News Summary", "AI Trends Commentary", "AI Commentary", "Score Explanation", "Risk"] if c in out.columns]
             # Set a fixed data row height to keep sheet readable while allowing wrapped text visibility
             FIXED_ROW_HEIGHT = 60  # points
             for row_idx, row in out.iterrows():
@@ -188,6 +273,16 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
                         fmt = trade_type_fmts[val]
                     elif col == "Risk Level" and isinstance(val, str) and val in risk_level_fmts:
                         fmt = risk_level_fmts[val]
+                    elif col == "Risk":
+                        # Try to color by extracted risk level
+                        level_val = row.get("Risk Level")
+                        if isinstance(level_val, str) and level_val in risk_level_fmts:
+                            fmt = risk_level_fmts[level_val]
+                        elif isinstance(val, str):
+                            for _lvl in ["High", "Moderate", "Low"]:
+                                if val.startswith(_lvl):
+                                    fmt = risk_level_fmts[_lvl]
+                                    break
                     elif hint in {"currency", "percent", "float"} and (
                         (isinstance(val, (float, int)) and val == 0.0) or pd.isna(val)
                     ):
@@ -268,14 +363,43 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
             except Exception as se:
                 logging.warning(f"Score Breakdown sheet failed: {se}")
 
+            # Backtest Metrics
+            try:
+                bt = compute_backtest_metrics_table(out)
+                if not bt.empty:
+                    bt.to_excel(writer, sheet_name="Backtest Metrics", index=False)
+                    autosize_and_center(writer.sheets["Backtest Metrics"], bt, workbook)
+            except Exception as bte:
+                logging.warning(f"Backtest Metrics sheet failed: {bte}")
+
             try:
                 df_notes = out[["Ticker", "Company", "Reddit Summary", "Top Factors"]].copy()
-                df_notes["Risk Flags"] = out.apply(lambda row: ", ".join(filter(None, [
-                    "High Volatility" if row.get("Volatility", 0) > 0.05 else "",
-                    "Low Liquidity" if row.get("Avg Daily Value Traded", 1e9) < 1e6 else "",
-                    "High Short Interest" if row.get("Short Percent Float", 0) > 0.15 else "",
-                    row.get("Liquidity Warning") if isinstance(row.get("Liquidity Warning"), str) else ""
-                ])), axis=1)
+                # Safe numeric comparisons to avoid type warnings (strings vs floats)
+                def _safe_gt(val, threshold: float) -> bool:
+                    try:
+                        v = pd.to_numeric(val, errors='coerce')
+                        return bool(v > threshold) if pd.notna(v) else False
+                    except Exception:
+                        return False
+                def _safe_lt(val, threshold: float) -> bool:
+                    try:
+                        v = pd.to_numeric(val, errors='coerce')
+                        return bool(v < threshold) if pd.notna(v) else False
+                    except Exception:
+                        return False
+                def _flags(row: pd.Series) -> str:
+                    parts = []
+                    if _safe_gt(row.get("Volatility"), 0.05):
+                        parts.append("High Volatility")
+                    if _safe_lt(row.get("Avg Daily Value Traded"), 1e6):
+                        parts.append("Low Liquidity")
+                    if _safe_gt(row.get("Short Percent Float"), 0.15):
+                        parts.append("High Short Interest")
+                    lw = row.get("Liquidity Warning") or row.get("Liquidity Flags")
+                    if isinstance(lw, str) and lw.strip():
+                        parts.append(lw.strip())
+                    return ", ".join(parts)
+                df_notes["Risk Flags"] = out.apply(_flags, axis=1)
                 df_notes.to_excel(writer, sheet_name="Trade Notes", index=False)
                 autosize_and_center(writer.sheets["Trade Notes"], df_notes, workbook)
             except Exception as tn:
@@ -343,6 +467,7 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
     Notes:
     - No Excel-specific formatting or percent scaling.
     - Ensures FINAL_COLUMN_ORDER presence; fills missing columns with blank values.
+    - Keeps preferred columns first but preserves all other columns after them.
     - Does not mutate the original DataFrame.
     """
     try:
@@ -352,18 +477,47 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
         file_path = os.path.join(references_dir, "Signal_Report.csv")
 
         out = df.copy()
-        sort_keys = [c for c in ["Weighted Score", "Reddit Score", "News Score", "Financial Score"] if c in out.columns]
+
+        # Create combined Risk column consistent with Excel
+        try:
+            def _build_risk(row):
+                lvl = str(row.get("Risk Level") or "").strip()
+                tags = str(row.get("Risk Tags") or "").strip()
+                ai = str(row.get("Risk Assessment") or "").strip()
+                parts = []
+                if lvl:
+                    parts.append(lvl)
+                if tags:
+                    parts.append(tags)
+                if ai:
+                    low_ai = ai.lower()
+                    if lvl and (low_ai == f"{lvl.lower()} risk" or low_ai == lvl.lower()):
+                        pass
+                    else:
+                        parts.append(ai)
+                return " — ".join([p for p in parts if p])
+            out["Risk"] = out.apply(_build_risk, axis=1)
+        except Exception:
+            if "Risk" not in out.columns:
+                out["Risk"] = ""
+
+        # Stable sort and rank
+        sort_prim = [c for c in ["Weighted Score", "Reddit Score", "News Score", "Financial Score"] if c in out.columns]
+        sort_keys = sort_prim + (["Ticker"] if "Ticker" in out.columns else [])
         if sort_keys:
-            out = out.sort_values(by=sort_keys, ascending=[False] * len(sort_keys), kind="mergesort").reset_index(drop=True)
+            ascending = [False] * len(sort_prim) + ([True] if ("Ticker" in out.columns) else [])
+            out = out.sort_values(by=sort_keys, ascending=ascending, kind="mergesort").reset_index(drop=True)
             out["Rank"] = range(1, len(out) + 1)
+
         out = out.loc[:, ~out.columns.duplicated()]
-
-    # Drop legacy normalized score; rely on Weighted Score only
-
         for col in FINAL_COLUMN_ORDER:
             if col not in out.columns:
                 out[col] = ""
-        out = out[FINAL_COLUMN_ORDER]
+
+        # Reorder to put preferred columns first but KEEP all other columns afterward
+        ordered = [c for c in FINAL_COLUMN_ORDER if c in out.columns]
+        others = [c for c in out.columns if c not in ordered]
+        out = out[ordered + others]
 
         # Main signals CSVs
         out.to_csv(file_path, index=False, encoding="utf-8")
@@ -395,12 +549,31 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
         # Trade Notes
         try:
             tn = out[["Ticker", "Company", "Reddit Summary", "Top Factors"]].copy()
-            tn["Risk Flags"] = out.apply(lambda row: ", ".join(filter(None, [
-                "High Volatility" if row.get("Volatility", 0) > 0.05 else "",
-                "Low Liquidity" if row.get("Avg Daily Value Traded", 1e9) < 1e6 else "",
-                "High Short Interest" if row.get("Short Percent Float", 0) > 0.15 else "",
-                row.get("Liquidity Warning") if isinstance(row.get("Liquidity Warning"), str) else ""
-            ])), axis=1)
+            def _safe_gt(val, threshold: float) -> bool:
+                try:
+                    v = pd.to_numeric(val, errors='coerce')
+                    return bool(v > threshold) if pd.notna(v) else False
+                except Exception:
+                    return False
+            def _safe_lt(val, threshold: float) -> bool:
+                try:
+                    v = pd.to_numeric(val, errors='coerce')
+                    return bool(v < threshold) if pd.notna(v) else False
+                except Exception:
+                    return False
+            def _flags(row: pd.Series) -> str:
+                parts = []
+                if _safe_gt(row.get("Volatility"), 0.05):
+                    parts.append("High Volatility")
+                if _safe_lt(row.get("Avg Daily Value Traded"), 1e6):
+                    parts.append("Low Liquidity")
+                if _safe_gt(row.get("Short Percent Float"), 0.15):
+                    parts.append("High Short Interest")
+                lw = row.get("Liquidity Warning") or row.get("Liquidity Flags")
+                if isinstance(lw, str) and lw.strip():
+                    parts.append(lw.strip())
+                return ", ".join(parts)
+            tn["Risk Flags"] = out.apply(_flags, axis=1)
             tn.to_csv(os.path.join(references_dir, "Signal_Report__Trade_Notes.csv"), index=False, encoding="utf-8")
         except Exception as tn_err:
             logging.warning(f"[EXPORT] Trade Notes CSV failed: {tn_err}")
@@ -451,6 +624,113 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
         except Exception as dq_err:
             logging.warning(f"[EXPORT] Data Quality CSV failed: {dq_err}")
 
+        # Backtest Metrics
+        try:
+            bt = compute_backtest_metrics_table(out)
+            if not bt.empty:
+                bt.to_csv(os.path.join(references_dir, "Signal_Report__Backtest_Metrics.csv"), index=False, encoding="utf-8")
+                bt.to_csv(os.path.join(references_dir, "Backtest_Metrics.csv"), index=False, encoding="utf-8")
+                # Persist a simple summary row into DB (if available)
+                try:
+                    row = bt.iloc[0].to_dict()
+                    row["Run Path"] = output_dir
+                    with sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'outputs', 'backtest.db')) as conn:
+                        cols = ', '.join([f'"{k}"' for k in row.keys()])
+                        placeholders = ', '.join(['?'] * len(row))
+                        conn.execute(f"CREATE TABLE IF NOT EXISTS run_backtest_metrics ({cols})")
+                        conn.execute(f"INSERT INTO run_backtest_metrics ({cols}) VALUES ({placeholders})", list(row.values()))
+                except Exception:
+                    pass
+        except Exception as bt_err:
+            logging.warning(f"[EXPORT] Backtest Metrics CSV failed: {bt_err}")
+
+    # Feature Coverage (non-null %, simple stats)
+        try:
+            cov_rows = []
+            n = max(1, len(out))
+            for col in out.columns:
+                series = out[col]
+                nonnull = int(series.notna().sum())
+                coverage = round((nonnull / n) * 100.0, 2)
+                row = {"Column": col, "Non-Null Count": nonnull, "Coverage %": coverage}
+                # Numeric stats when possible
+                try:
+                    s_num = pd.to_numeric(series, errors='coerce')
+                    if s_num.notna().any():
+                        row.update({
+                            "Min": float(s_num.min(skipna=True)),
+                            "Max": float(s_num.max(skipna=True)),
+                            "Mean": float(s_num.mean(skipna=True)),
+                            "Std": float(s_num.std(skipna=True))
+                        })
+                    else:
+                        # Categorical quick view
+                        vc = series.dropna().astype(str).value_counts()
+                        if not vc.empty:
+                            top_val = vc.index[0]
+                            top_cnt = int(vc.iloc[0])
+                            row.update({"Top Value": top_val, "Top Count": top_cnt})
+                except Exception:
+                    pass
+                cov_rows.append(row)
+            cov_df = pd.DataFrame(cov_rows)
+            cov_df.to_csv(os.path.join(references_dir, "Signal_Report__Feature_Coverage.csv"), index=False, encoding="utf-8")
+            # Also write a plain-named file for easier discovery
+            cov_df.to_csv(os.path.join(references_dir, "Feature_Coverage.csv"), index=False, encoding="utf-8")
+        except Exception as cov_err:
+            logging.warning(f"[EXPORT] Feature Coverage CSV failed: {cov_err}")
+
+        # Sanity checks (Weighted Score health)
+        try:
+            sanity = []
+            if "Weighted Score" in out.columns:
+                s = pd.to_numeric(out["Weighted Score"], errors='coerce')
+                n = len(s)
+                nulls = int(s.isna().sum())
+                finite = int(np.isfinite(s).sum()) if 'np' in globals() else int(s.replace([float('inf'), float('-inf')], pd.NA).notna().sum())
+                nunique = int(s.nunique(dropna=True))
+                s_non = s.dropna()
+                stats = {
+                    "count": int(n),
+                    "nulls": nulls,
+                    "finite": finite,
+                    "unique": nunique,
+                    "min": float(s_non.min()) if not s_non.empty else None,
+                    "max": float(s_non.max()) if not s_non.empty else None,
+                    "mean": float(s_non.mean()) if not s_non.empty else None,
+                    "std": float(s_non.std()) if not s_non.empty else None,
+                }
+                # Flags
+                flags = []
+                if nulls > 0:
+                    flags.append(f"{nulls} nulls")
+                if nunique <= 1:
+                    flags.append("constant values")
+                if stats["std"] is not None and stats["std"] == 0.0:
+                    flags.append("zero std")
+                # top vs median spread
+                try:
+                    med = float(s_non.median()) if not s_non.empty else None
+                    top = float(s_non.max()) if not s_non.empty else None
+                    if med is not None and top is not None and abs(top - med) < 1e-3:
+                        flags.append("weak separation (top≈median)")
+                except Exception:
+                    pass
+                sanity.append({"Metric": "Weighted Score", **stats, "flags": ", ".join(flags)})
+            if sanity:
+                sc_df = pd.DataFrame(sanity)
+                sc_path1 = os.path.join(references_dir, "Signal_Report__Sanity_Checks.csv")
+                sc_path2 = os.path.join(references_dir, "Sanity_Checks.csv")
+                sc_df.to_csv(sc_path1, index=False, encoding="utf-8")
+                sc_df.to_csv(sc_path2, index=False, encoding="utf-8")
+                # Log any flags prominently
+                for _, r in sc_df.iterrows():
+                    flags_text = str(r.get("flags", "")).strip()
+                    if flags_text:
+                        logging.warning(f"[SANITY] {r.get('Metric')}: {flags_text}")
+        except Exception as sc_err:
+            logging.warning(f"[EXPORT] Sanity Checks CSV failed: {sc_err}")
+
         # Curated Clean CSV
         try:
             clean_cols_pref = [
@@ -477,6 +757,118 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
         return file_path
     except Exception as e:
         logging.warning(f"[EXPORT ERROR] CSV export failed: {e}")
+        return None
+
+
+def export_min_signals(df: pd.DataFrame, run_dir: str, top_n: int = None) -> Optional[dict]:
+    """Export compact artifacts for web/API while keeping full reports intact.
+
+    Writes two files into the run directory:
+      - signals_min.csv
+      - signals_min.json
+
+    Fields: Rank, Ticker, Company, Sector, Trade Type, Weighted Score, Risk
+    If top_n is provided, limit to that many rows after sorting by Weighted Score.
+    Returns paths in a dict on success.
+    """
+    try:
+        os.makedirs(run_dir, exist_ok=True)
+        cols = [
+            "Rank", "Ticker", "Company", "Sector", "Trade Type", "Weighted Score", "Risk"
+        ]
+        data = df.copy()
+        # ensure Risk exists as in main exports
+        if "Risk" not in data.columns:
+            try:
+                def _build_risk(row):
+                    lvl = str(row.get("Risk Level") or "").strip()
+                    tags = str(row.get("Risk Tags") or "").strip()
+                    ai = str(row.get("Risk Assessment") or "").strip()
+                    parts = []
+                    if lvl:
+                        parts.append(lvl)
+                    if tags:
+                        parts.append(tags)
+                    if ai:
+                        low_ai = ai.lower()
+                        if lvl and (low_ai == f"{lvl.lower()} risk" or low_ai == lvl.lower()):
+                            pass
+                        else:
+                            parts.append(ai)
+                    return " — ".join([p for p in parts if p])
+                data["Risk"] = data.apply(_build_risk, axis=1)
+            except Exception:
+                data["Risk"] = ""
+
+        # stable sort & rank
+        sort_prim = [c for c in ["Weighted Score", "Reddit Score", "News Score", "Financial Score"] if c in data.columns]
+        sort_keys = sort_prim + (["Ticker"] if "Ticker" in data.columns else [])
+        if sort_keys:
+            ascending = [False] * len(sort_prim) + ([True] if ("Ticker" in data.columns) else [])
+            data = data.sort_values(by=sort_keys, ascending=ascending, kind="mergesort").reset_index(drop=True)
+        if "Rank" not in data.columns:
+            data["Rank"] = range(1, len(data) + 1)
+
+        # Default cap for web speed
+        if top_n is None:
+            top_n = 100
+        try:
+            n = int(top_n)
+            data = data.head(max(n, 0))
+        except Exception:
+            pass
+
+        # ensure columns exist
+        for c in cols:
+            if c not in data.columns:
+                data[c] = ""
+        compact = data[cols]
+
+        # write csv
+        csv_path = os.path.join(run_dir, "signals_min.csv")
+        compact.to_csv(csv_path, index=False, encoding="utf-8")
+
+        # write json
+        try:
+            import json as _json
+            json_path = os.path.join(run_dir, "signals_min.json")
+            with open(json_path, "w", encoding="utf-8") as jf:
+                _json.dump(compact.to_dict(orient="records"), jf, ensure_ascii=False, indent=2)
+        except Exception as je:
+            logging.warning(f"[EXPORT] signals_min.json failed: {je}")
+            json_path = None
+
+        logging.info(f"[EXPORT] signals_min artifacts saved: csv={csv_path}, json={json_path}")
+        return {"csv": csv_path, "json": json_path}
+    except Exception as e:
+        logging.warning(f"[EXPORT ERROR] signals_min export failed: {e}")
+        return None
+
+
+def export_full_json(df: pd.DataFrame, run_dir: str) -> Optional[str]:
+    """Export the full DataFrame as a JSON records file for web/API consumption.
+
+    Writes: signals_full.json into the run directory.
+    Returns the path on success.
+    """
+    try:
+        import json as _json
+        os.makedirs(run_dir, exist_ok=True)
+        out_path = os.path.join(run_dir, "signals_full.json")
+        # Convert any non-serializable objects to strings
+        serializable = df.copy()
+        for c in serializable.columns:
+            try:
+                serializable[c] = serializable[c].apply(lambda v: v if (pd.isna(v) or isinstance(v, (int, float, str, bool))) else str(v))
+            except Exception:
+                # Fallback: cast entire column to string
+                serializable[c] = serializable[c].astype(str)
+        with open(out_path, "w", encoding="utf-8") as f:
+            _json.dump(serializable.to_dict(orient="records"), f, ensure_ascii=False, indent=2)
+        logging.info(f"[EXPORT] signals_full.json saved: {out_path}")
+        return out_path
+    except Exception as e:
+        logging.warning(f"[EXPORT ERROR] signals_full export failed: {e}")
         return None
 
 
@@ -556,6 +948,81 @@ def generate_html_dashboard(df: pd.DataFrame, output_path="outputs/dashboard/das
         logging.info(f"[DASHBOARD] Saved: {output_path}")
     except Exception as e:
         logging.warning(f"[DASHBOARD ERROR] Failed to generate HTML: {e}")
+
+
+def generate_run_homepage(df: pd.DataFrame, run_dir: str) -> Optional[str]:
+    """Generate a simple per-run homepage (index.html) with links to artifacts and a Top 10 table.
+
+    Keeps it dependency-free and light; focuses on the most actionable fields and provides links
+    to the full Excel/CSV/JSON artifacts to see everything else.
+    """
+    try:
+        os.makedirs(run_dir, exist_ok=True)
+        index_path = os.path.join(run_dir, "index.html")
+
+        # Summary stats
+        total = int(len(df))
+        uniq = int(df["Ticker"].nunique()) if "Ticker" in df.columns else total
+        recent_date = "N/A"
+        if "Run Datetime" in df.columns:
+            try:
+                recent_date = pd.to_datetime(df["Run Datetime"]).max().strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+
+        # Top 10 compact table
+        cols = [c for c in ["Rank", "Ticker", "Company", "Sector", "Trade Type", "Weighted Score", "Risk"] if c in df.columns]
+        top10 = df.sort_values("Weighted Score", ascending=False).head(10)
+        table_html = top10[cols].to_html(index=False, border=0)
+        import re as _re
+        table_html = _re.sub(r"\sstyle=\"[^\"]*\"", "", table_html)
+
+        # Links to artifacts we expect in the run folder
+        links = [
+            ("Signal_Report.xlsx", "Main Excel report (all columns)"),
+            ("References/Signal_Report.csv", "CSV (all columns)"),
+            ("signals_min.json", "Compact JSON (homepage/API)"),
+            ("signals_full.json", "Full JSON (all fields)"),
+            ("References/Picks.csv", "Filtered Picks with stops & sizing"),
+            ("References/Signal_Report__Backtest_Metrics.csv", "Backtest Metrics (IC, deciles, hit rate)"),
+            ("References/Signal_Report__Feature_Coverage.csv", "Feature Coverage (non-null %, stats)"),
+            ("References/Signal_Report__Sanity_Checks.csv", "Sanity Checks (Weighted Score health)"),
+            ("References/Run_Counters.csv", "Run Counters (observability)")
+        ]
+
+        html = [
+            "<!DOCTYPE html>",
+            "<html lang=\"en\">",
+            "<head>",
+            "<meta charset=\"utf-8\">",
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+            "<title>VP Investments — Run Overview</title>",
+            "<style>body{font-family:Arial,Helvetica,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:center}th{background:#f2f2f2}h2{margin-top:28px}</style>",
+            "</head>",
+            "<body>",
+            "<h1>Run Overview</h1>",
+            f"<p><b>Total Signals:</b> {total} &nbsp; | &nbsp; <b>Unique Tickers:</b> {uniq} &nbsp; | &nbsp; <b>Most Recent:</b> {recent_date}</p>",
+            "<h2>Top 10</h2>",
+            table_html,
+            "<h2>Artifacts</h2>",
+            "<ul>",
+        ]
+        for href, label in links:
+            html.append(f"<li><a href=\"{href}\" target=\"_blank\">{label}</a></li>")
+        html.extend([
+            "</ul>",
+            "<p>For the complete dataset and additional analyses (Correlations, Score Breakdown, Data Quality), see the References folder.</p>",
+            "</body>",
+            "</html>",
+        ])
+
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write("".join(html))
+        logging.info(f"[DASHBOARD] Run homepage saved: {index_path}")
+        return index_path
+    except Exception as e:
+        logging.warning(f"[DASHBOARD ERROR] Failed to generate run homepage: {e}")
+        return None
 
 
 def export_picks(df: pd.DataFrame, run_dir: str, top_deciles: tuple = (8, 9, 10),
@@ -651,13 +1118,15 @@ def write_run_readme(run_dir: str) -> Optional[str]:
     try:
         os.makedirs(run_dir, exist_ok=True)
         readme_path = os.path.join(run_dir, "README.md")
-        content = []
+        content: list[str] = []
         content.append(f"# VP Investments Run — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         content.append("")
         content.append("Artifacts in this folder:")
         content.append("- Signal_Report.xlsx — main report with multiple sheets.")
         content.append("- References/ — CSV versions, correlations, legends, and clean extracts.")
         content.append("- References/Picks.csv — filtered candidates with stops and size guidance.")
+        content.append("- signals_min.json — compact JSON for homepage/API.")
+        content.append("- signals_full.json — full JSON (all columns) for programmatic use.")
         content.append("")
         content.append("Quick tips:")
         content.append("- Picks.csv defaults to deciles 8–10, ADV >= $2M, excludes earnings within 3 days.")

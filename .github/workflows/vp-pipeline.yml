@@ -41,10 +41,25 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Install dependencies (uv)
         run: |
           uv pip install --system -r requirements.txt
+          uv pip install --system ruff mypy
+
+      - name: Lint (ruff)
+        run: |
+          ruff check .
+
+      - name: Type check (mypy)
+        run: |
+          mypy .
+
+      - name: Unit tests (pytest)
+        run: |
+          pytest -q
 
       - name: Run pipeline (once)
         run: |
@@ -52,15 +67,22 @@ jobs:
           # Export secrets if present (keeps YAML clean of undefined env mappings)
           [ -n "${{ secrets.FMP_API_KEY }}" ] && export FMP_API_KEY="${{ secrets.FMP_API_KEY }}"
           [ -n "${{ secrets.OPENAI_API_KEY }}" ] && export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+          # SEC / EDGAR configuration
+          [ -n "${{ secrets.SEC_USER_AGENT }}" ] && export SEC_USER_AGENT="${{ secrets.SEC_USER_AGENT }}"
+          [ -n "${{ vars.SEC_EDGAR_COOLDOWN_SEC }}" ] && export SEC_EDGAR_COOLDOWN_SEC="${{ vars.SEC_EDGAR_COOLDOWN_SEC }}"
+          [ -n "${{ vars.SEC_EDGAR_FORCE }}" ] && export SEC_EDGAR_FORCE="${{ vars.SEC_EDGAR_FORCE }}"
+          [ -n "${{ vars.SEC_EDGAR_DISABLED }}" ] && export SEC_EDGAR_DISABLED="${{ vars.SEC_EDGAR_DISABLED }}"
           [ -n "${{ secrets.REDDIT_CLIENT_ID }}" ] && export REDDIT_CLIENT_ID="${{ secrets.REDDIT_CLIENT_ID }}"
           [ -n "${{ secrets.REDDIT_CLIENT_SECRET }}" ] && export REDDIT_CLIENT_SECRET="${{ secrets.REDDIT_CLIENT_SECRET }}"
           [ -n "${{ secrets.REDDIT_USER_AGENT }}" ] && export REDDIT_USER_AGENT="${{ secrets.REDDIT_USER_AGENT }}"
           python "run_all.py" --once --stream --timeout 1800
 
-      - name: Prepare Pages index
+      - name: Prepare Pages index (fallback)
         run: |
           mkdir -p outputs
-          echo '<meta http-equiv="refresh" content="0; url=dashboard/dashboard.html">' > outputs/index.html
+          if [ ! -f outputs/index.html ]; then
+            echo '<meta http-equiv="refresh" content="0; url=dashboard/dashboard.html">' > outputs/index.html
+          fi
 
       - name: Upload outputs artifact
         uses: actions/upload-artifact@v4

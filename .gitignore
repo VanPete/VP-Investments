@@ -11,15 +11,24 @@ __pycache__/
 logs/
 *.log
 
-# === Runtime Outputs (Excel, CSV, etc.) ===
-outputs/
+# === Runtime Outputs (plots, tables, dashboards, run folders) ===
+# Keep the DB and README tracked; ignore the rest
+outputs/plots/
+outputs/tables/
+outputs/top_signals/
+outputs/breakouts/
+outputs/dashboard/
+outputs/logs/
+outputs/*/
+!outputs/README.md
+!outputs/backtest.db
 *.xlsx
 *.csv
-# Keep canonical company list tracked
-!data/company_names.csv
+*.png
 
 # === Local caches (do not commit bulky runtime caches) ===
 cache/
+!cache/.gitkeep
 
 # === Environment Files ===
 .env
@@ -42,5 +51,14 @@ Thumbs.db
 .venv/
 venv/
 
+# === Web build artifacts ===
+web/vp-investments-web/.next/
+web/vp-investments-web/node_modules/
+web/vp-investments-web/outputs/
 
-.env.example
+# === Coverage ===
+.coverage*
+**/coverage.xml
+
+# Keep canonical company list tracked
+!data/company_names.csv
