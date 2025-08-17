@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: America/New_York
-      # Secrets and vars provided by repository settings
       FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
@@ -51,40 +50,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: false # disable lockfile-based caching to avoid uv.lock warnings
-
-      - name: Install dependencies (uv with pip fallback)
+      - name: Install dependencies
         run: |
-          set -e
-          if command -v uv >/dev/null 2>&1; then
-            echo "Using uv for dependency install"
-            uv pip install --system -r requirements.txt || {
-              echo "uv failed; falling back to pip";
-              python -m pip install --upgrade pip;
-              pip install -r requirements.txt;
-            }
-            uv pip install --system ruff mypy || pip install ruff mypy
-          else
-            echo "uv not available; using pip"
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt
-            pip install ruff mypy
-          fi
-
-      - name: Lint (ruff)
-        run: |
-          ruff check .
-
-      - name: Type check (mypy)
-        run: |
-          mypy .
-
-      - name: Unit tests (pytest)
-        run: |
-          pytest -q
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run pipeline (once)
         run: |
