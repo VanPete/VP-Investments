@@ -1,9 +1,12 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
 name: Smoke
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   smoke:
@@ -12,8 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-            python-version: '3.11'
-            cache: 'pip'
+          python-version: '3.11'
+          cache: 'pip'
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
