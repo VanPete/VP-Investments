@@ -1,5 +1,3 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-
 name: VP Investments Pipeline
 
 on:
@@ -32,6 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: America/New_York
+      # Secrets and vars provided by repository settings
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      SEC_EDGAR_COOLDOWN_SEC: ${{ vars.SEC_EDGAR_COOLDOWN_SEC }}
+      SEC_EDGAR_FORCE: ${{ vars.SEC_EDGAR_FORCE }}
+      SEC_EDGAR_DISABLED: ${{ vars.SEC_EDGAR_DISABLED }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+      REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,12 +54,25 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
+          enable-cache: false # disable lockfile-based caching to avoid uv.lock warnings
 
-      - name: Install dependencies (uv)
+      - name: Install dependencies (uv with pip fallback)
         run: |
-          uv pip install --system -r requirements.txt
-          uv pip install --system ruff mypy
+          set -e
+          if command -v uv >/dev/null 2>&1; then
+            echo "Using uv for dependency install"
+            uv pip install --system -r requirements.txt || {
+              echo "uv failed; falling back to pip";
+              python -m pip install --upgrade pip;
+              pip install -r requirements.txt;
+            }
+            uv pip install --system ruff mypy || pip install ruff mypy
+          else
+            echo "uv not available; using pip"
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            pip install ruff mypy
+          fi
 
       - name: Lint (ruff)
         run: |
@@ -68,19 +89,7 @@ jobs:
       - name: Run pipeline (once)
         run: |
           set -e
-          # Export secrets if present (keeps YAML clean of undefined env mappings)
-          [ -n "${{ secrets.FMP_API_KEY }}" ] && export FMP_API_KEY="${{ secrets.FMP_API_KEY }}"
-          [ -n "${{ secrets.OPENAI_API_KEY }}" ] && export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
-          # SEC / EDGAR configuration
-          [ -n "${{ secrets.SEC_USER_AGENT }}" ] && export SEC_USER_AGENT="${{ secrets.SEC_USER_AGENT }}"
-          [ -n "${{ vars.SEC_EDGAR_COOLDOWN_SEC }}" ] && export SEC_EDGAR_COOLDOWN_SEC="${{ vars.SEC_EDGAR_COOLDOWN_SEC }}"
-          [ -n "${{ vars.SEC_EDGAR_FORCE }}" ] && export SEC_EDGAR_FORCE="${{ vars.SEC_EDGAR_FORCE }}"
-          [ -n "${{ vars.SEC_EDGAR_DISABLED }}" ] && export SEC_EDGAR_DISABLED="${{ vars.SEC_EDGAR_DISABLED }}"
-          [ -n "${{ secrets.REDDIT_CLIENT_ID }}" ] && export REDDIT_CLIENT_ID="${{ secrets.REDDIT_CLIENT_ID }}"
-          [ -n "${{ secrets.REDDIT_CLIENT_SECRET }}" ] && export REDDIT_CLIENT_SECRET="${{ secrets.REDDIT_CLIENT_SECRET }}"
-          [ -n "${{ secrets.REDDIT_USER_AGENT }}" ] && export REDDIT_USER_AGENT="${{ secrets.REDDIT_USER_AGENT }}"
           python "run_all.py" --once --stream --timeout 1800
-
       - name: Prepare Pages index (fallback)
         run: |
           mkdir -p outputs
