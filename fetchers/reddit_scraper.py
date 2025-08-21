@@ -31,8 +31,11 @@ from config.config import (
     REDDIT_TICKER_PATTERN, SUBREDDIT_WEIGHTS, KEYWORD_BOOSTS, FLAIR_BOOSTS,
     FLAIR_ALIASES, MIN_AUTHOR_KARMA, TITLE_COMMENT_BLEND, COMMENT_WEIGHT_SCALING, EXCLUDED_TICKERS, FEATURE_TOGGLES,
     MEME_TICKER_TERMS, REDDIT_PACING_SEC, REDDIT_RATE_PER_SEC, REDDIT_BURST,
-    REDDIT_BREAKER_FAILS, REDDIT_BREAKER_RESET_SEC, REDDIT_SEEN_CACHE_TTL_MIN
+    REDDIT_BREAKER_FAILS, REDDIT_BREAKER_RESET_SEC, REDDIT_SEEN_CACHE_TTL_MIN,
+    FAST_MODE, FAST_REDDIT_CATEGORIES, REDDIT_MAX_POSTS, REDDIT_MAX_PER_SUB,
+    REDDIT_LISTING_CACHE_ENABLED, REDDIT_LISTING_CACHE_TTL_MIN
 )
+from pathlib import Path
 from utils.logger import setup_logging
 
 # === Init ===
@@ -67,12 +70,50 @@ except Exception as e:
     raise e
 
 # === Pacing & Resilience ===
-_bucket = get_token_bucket(REDDIT_RATE_PER_SEC, REDDIT_BURST)
+_bucket = get_token_bucket(REDDIT_RATE_PER_SEC, REDDIT_BURST, name="reddit")
 _breaker = CircuitBreaker(REDDIT_BREAKER_FAILS, REDDIT_BREAKER_RESET_SEC)
 
 # Simple in-memory seen-post cache to reduce duplicates across runs
 _SEEN_TTL = float(REDDIT_SEEN_CACHE_TTL_MIN) * 60.0
 _seen_cache = SeenCache(ttl_seconds=_SEEN_TTL)
+
+# Optional lightweight listing cache (per subreddit/category)
+_LISTING_CACHE_DIR = Path("cache/reddit_listings")
+try:
+    _LISTING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
+def _cache_key(sub: str, category: str) -> Path:
+    return _LISTING_CACHE_DIR / f"{sub}__{category}.json"
+
+def _load_listing_cache(sub: str, category: str):
+    try:
+        if not REDDIT_LISTING_CACHE_ENABLED:
+            return None
+        p = _cache_key(sub, category)
+        if not p.exists():
+            return None
+        age = time.time() - p.stat().st_mtime
+        if age > max(60, REDDIT_LISTING_CACHE_TTL_MIN * 60):
+            return None
+        import json
+        with open(p, "r", encoding="utf-8") as f:
+            ids = json.load(f)
+        return ids if isinstance(ids, list) else None
+    except Exception:
+        return None
+
+def _save_listing_cache(sub: str, category: str, ids: list[str]) -> None:
+    try:
+        if not REDDIT_LISTING_CACHE_ENABLED:
+            return
+        import json
+        p = _cache_key(sub, category)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(ids[:200], f)
+    except Exception:
+        pass
 
 
 # === Text Processing ===
@@ -101,7 +142,10 @@ def get_top_comment_sentiment(post: Submission, limit: int = 3) -> float:
     try:
         # Set sort before any comments access to avoid UserWarning from PRAW
         try:
-            post.comment_sort = "top"
+            # Locally silence PRAW's UserWarning about changing sort after fetch
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UserWarning)
+                post.comment_sort = "top"
         except Exception:
             pass
         post.comments.replace_more(limit=0)
@@ -145,7 +189,9 @@ def generate_reddit_summary(post: Submission, max_comments: int = 6) -> str:
     try:
         # Ensure we set sort before fetching comments to prevent warnings
         try:
-            post.comment_sort = "top"
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=UserWarning)
+                post.comment_sort = "top"
         except Exception:
             pass
         post.comments.replace_more(limit=0)
@@ -294,8 +340,25 @@ def fetch_reddit_data(enable_scrape: bool = True) -> pd.DataFrame:
         logger.info("🔕 Reddit sentiment processing disabled via FEATURE_TOGGLES.")
         return pd.DataFrame()
 
+    # Optional: ignore seen-cache for immediate re-runs (set REDDIT_IGNORE_SEEN=1)
+    try:
+        if os.getenv("REDDIT_IGNORE_SEEN", "0") == "1":
+            _seen_cache.ttl = 0.0
+            _seen_cache.data.clear()
+            logger.info("[Reddit] Ignoring seen-cache for this run.")
+    except Exception:
+        pass
+
     posts = []
     now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+
+    remaining_global = REDDIT_MAX_POSTS if REDDIT_MAX_POSTS and REDDIT_MAX_POSTS > 0 else None
+    fast_categories = None
+    if FAST_MODE:
+        try:
+            fast_categories = [c.strip() for c in FAST_REDDIT_CATEGORIES.split(',') if c.strip()]
+        except Exception:
+            fast_categories = ["hot", "top"]
 
     for sub in tqdm(REDDIT_SUBREDDITS, desc="🔎 Scraping Reddit", unit="sub"):
         try:
@@ -307,18 +370,64 @@ def fetch_reddit_data(enable_scrape: bool = True) -> pd.DataFrame:
                 except Exception:
                     pass
                 continue
+            per_sub_count = 0
             for category, limit in REDDIT_LIMITS.items():
+                if fast_categories is not None and category not in fast_categories:
+                    continue
                 # Rate-limit token per listing fetch to avoid bursty access
                 _bucket.take(1.0)
-                for post in getattr(subreddit, category)(limit=limit):
+                # Try cached IDs first to avoid re-hitting PRAW during dev
+                cached_ids = _load_listing_cache(sub, category)
+                if cached_ids:
+                    posts_iter = (reddit.submission(id=i) for i in cached_ids)
+                else:
+                    posts_iter = getattr(subreddit, category)(limit=limit)
+                ids_seen = []
+                for post in posts_iter:
+                    try:
+                        pid = getattr(post, "id", None)
+                        if pid:
+                            ids_seen.append(pid)
+                    except Exception:
+                        pass
+                    if remaining_global is not None and remaining_global <= 0:
+                        break
+                    if REDDIT_MAX_PER_SUB and per_sub_count >= REDDIT_MAX_PER_SUB:
+                        break
                     # De-dup within TTL
                     if _seen_cache.has(post.id):
                         continue
                     posts.extend(process_submission(post, sub, now))
                     _seen_cache.add(post.id)
+                    per_sub_count += 1
+                    if remaining_global is not None:
+                        remaining_global -= 1
                     # Gentle pacing to avoid rate-limit bursts
                     if REDDIT_PACING_SEC:
                         time.sleep(REDDIT_PACING_SEC)
+                # Save the IDs we just iterated for optional reuse
+                try:
+                    if ids_seen:
+                        _save_listing_cache(sub, category, ids_seen)
+                except Exception:
+                    pass
+                    if remaining_global is not None and remaining_global <= 0:
+                        break
+                    if REDDIT_MAX_PER_SUB and per_sub_count >= REDDIT_MAX_PER_SUB:
+                        break
+                    # De-dup within TTL
+                    if _seen_cache.has(post.id):
+                        continue
+                    posts.extend(process_submission(post, sub, now))
+                    _seen_cache.add(post.id)
+                    per_sub_count += 1
+                    if remaining_global is not None:
+                        remaining_global -= 1
+                    # Gentle pacing to avoid rate-limit bursts
+                    if REDDIT_PACING_SEC:
+                        time.sleep(REDDIT_PACING_SEC)
+                if remaining_global is not None and remaining_global <= 0:
+                    break
             logger.info(f"r/{sub} scrape completed.")
             try:
                 emit_metric("reddit_sub", {"ok": 1, "subreddit": sub})

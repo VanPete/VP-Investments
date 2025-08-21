@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from charts import generate_charts_and_tables
 from config.config import DB_PATH, RETURN_WINDOWS, FUTURE_PROOF_COLS, SLIPPAGE_BPS, FEES_BPS
+from utils.db import upsert_label, upsert_prices, insert_metric
 from config.labels import FINAL_COLUMN_ORDER
 
 import numpy as np
@@ -19,6 +20,10 @@ import pandas as pd
 import yfinance as yf
 import pytz
 import csv
+import warnings
+
+# Suppress noisy NumPy warnings when computing stats over empty sets during early runs
+warnings.filterwarnings("ignore", message="Mean of empty slice", category=RuntimeWarning)
 
 
 def hash_config(config_dict: Dict[str, Any]) -> str:
@@ -107,6 +112,27 @@ def fetch_price_series(ticker: str, start: date, end: date) -> Optional[pd.Serie
     except Exception:
         return None
 
+def _upsert_price_series_to_db(ticker: str, series: Optional[pd.Series]) -> int:
+    """Convert a Close series to normalized rows and upsert into prices table."""
+    try:
+        if series is None or series.empty:
+            return 0
+        rows = []
+        for dt, close in series.dropna().items():
+            try:
+                # We only have Close here; set others to null
+                rows.append({
+                    "ticker": ticker,
+                    "date": (dt.to_pydatetime() if hasattr(dt, 'to_pydatetime') else pd.Timestamp(dt)).strftime("%Y-%m-%d"),
+                    "open": None, "high": None, "low": None, "close": float(close),
+                    "adj_close": None, "volume": None,
+                })
+            except Exception:
+                continue
+        return upsert_prices(rows)
+    except Exception:
+        return 0
+
 
 def compute_returns(row: pd.Series) -> Optional[Dict[str, Any]]:
     ticker = row["Ticker"].replace("$", "")
@@ -176,7 +202,8 @@ def enrich_future_returns_in_db(force_all: bool = True,
                                 since_days: int = 30,
                                 tickers: Optional[List[str]] = None,
                                 limit: int = 0,
-                                only_pending: bool = False) -> None:
+                                only_pending: bool = False,
+                                only_labels: bool = False) -> None:
     """Compute forward returns for signals and persist into DB.
 
     Optimizations:
@@ -224,42 +251,84 @@ def enrich_future_returns_in_db(force_all: bool = True,
         except Exception:
             valid_set = set()
 
+        # Normalize Ticker for downstream use and optional filtering
+        base_df["Ticker"] = base_df["Ticker"].astype(str).str.replace("$", "", regex=False).str.upper()
         all_symbols = {str(t).replace("$", "").upper() for t in base_df["Ticker"].unique()}
         if valid_set:
             drop_syms = sorted(all_symbols - valid_set)
             if drop_syms:
                 print(f"[FILTER] Dropping {len(drop_syms)} unknown symbols (e.g., {drop_syms[:10]})")
-            use_syms = sorted(all_symbols & valid_set)
+            # Filter base_df rows to valid tickers only
+            base_df = base_df[base_df["Ticker"].isin(valid_set)]
+            use_syms = sorted(set(base_df["Ticker"].unique()) & valid_set)
         else:
             use_syms = sorted(all_symbols)
 
-        # Prefetch price data for all tickers and SPY in one go
-        uniq_tickers = use_syms
-        min_run = base_df["Run Datetime"].min().tz_convert(None).date() if hasattr(base_df["Run Datetime"], 'dt') else date.today()
-        # Start the day after the earliest run, but never in the future
-        start_global = min_run + timedelta(days=1)
-        today = date.today()
-        if start_global >= today:
-            start_global = today - timedelta(days=1)
-        # End at today (no future), price windows computed via index offsets
-        end_global = today
+    # Prefetch price data for all tickers and SPY in one go
+    # Always include SPY for benchmarks
+    uniq_tickers = sorted(set(use_syms) | {"SPY"})
+    min_run = base_df["Run Datetime"].min().tz_convert(None).date() if hasattr(base_df["Run Datetime"], 'dt') else date.today()
+    # Broaden the window to avoid weekend/holiday gaps and yfinance's exclusive end bound
+    # Start a week BEFORE the earliest run to ensure baseline alignment exists
+    start_global = max(date(1990, 1, 1), min_run - timedelta(days=7))
+    today = date.today()
+    # yfinance "end" is exclusive; include today by adding one day
+    end_global = today + timedelta(days=1)
 
-        print(f"[FETCH] Downloading price history for {len(uniq_tickers)} tickers from {start_global} to {end_global}…")
-        price_map: Dict[str, pd.Series] = {}
-        try:
+    print(f"[FETCH] Downloading price history for {len(uniq_tickers)} tickers from {start_global} to {end_global}…")
+    price_map: Dict[str, pd.Series] = {}
+    try:
             data = yf.download(uniq_tickers, start=start_global.strftime("%Y-%m-%d"), end=end_global.strftime("%Y-%m-%d"),
                                progress=False, group_by='ticker', auto_adjust=False, threads=True)
             if isinstance(data.columns, pd.MultiIndex):
                 for t in uniq_tickers:
                     try:
                         if t in data.columns.get_level_values(0):
-                            s = data[t]["Close"].dropna()
+                            frame = data[t].copy()
+                            # Upsert OHLCV into normalized prices table
+                            try:
+                                rows = []
+                                for idx, r in frame.iterrows():
+                                    rows.append({
+                                        "ticker": t,
+                                        "date": (idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else pd.Timestamp(idx)).strftime("%Y-%m-%d"),
+                                        "open": float(r.get("Open")) if pd.notna(r.get("Open")) else None,
+                                        "high": float(r.get("High")) if pd.notna(r.get("High")) else None,
+                                        "low": float(r.get("Low")) if pd.notna(r.get("Low")) else None,
+                                        "close": float(r.get("Close")) if pd.notna(r.get("Close")) else None,
+                                        "adj_close": float(r.get("Adj Close")) if pd.notna(r.get("Adj Close")) else None,
+                                        "volume": float(r.get("Volume")) if pd.notna(r.get("Volume")) else None,
+                                    })
+                                if rows:
+                                    upsert_prices(rows)
+                            except Exception:
+                                pass
+                            s = frame["Close"].dropna()
                             if not s.empty:
                                 price_map[t] = s
                     except Exception:
                         continue
             else:
                 # Single ticker path
+                try:
+                    # Attempt normalized upsert for single-ticker download
+                    if {'Open','High','Low','Close','Adj Close','Volume'}.issubset(set(data.columns)):
+                        rows = []
+                        for idx, r in data.iterrows():
+                            rows.append({
+                                "ticker": uniq_tickers[0],
+                                "date": (idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else pd.Timestamp(idx)).strftime("%Y-%m-%d"),
+                                "open": float(r.get("Open")) if pd.notna(r.get("Open")) else None,
+                                "high": float(r.get("High")) if pd.notna(r.get("High")) else None,
+                                "low": float(r.get("Low")) if pd.notna(r.get("Low")) else None,
+                                "close": float(r.get("Close")) if pd.notna(r.get("Close")) else None,
+                                "adj_close": float(r.get("Adj Close")) if pd.notna(r.get("Adj Close")) else None,
+                                "volume": float(r.get("Volume")) if pd.notna(r.get("Volume")) else None,
+                            })
+                        if rows:
+                            upsert_prices(rows)
+                except Exception:
+                    pass
                 if 'Close' in data:
                     s = data['Close'].dropna()
                     if not s.empty:
@@ -271,8 +340,10 @@ def enrich_future_returns_in_db(force_all: bool = True,
                 if s is not None and not s.empty:
                     price_map[t] = s
 
-        # Fetch SPY once
-        s_spy = fetch_price_series("SPY", start_global, end_global)
+        # Fetch SPY once (from bulk map if available; else fallback to per-ticker)
+        s_spy = price_map.get("SPY")
+        if s_spy is None or s_spy.empty:
+            s_spy = fetch_price_series("SPY", start_global, end_global)
         spy_series = s_spy if s_spy is not None else pd.Series(dtype=float)
 
         updated, skipped, skipped_tickers = 0, [], []
@@ -366,20 +437,42 @@ def enrich_future_returns_in_db(force_all: bool = True,
                 "Backtest Timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
-            # Ensure all columns exist before updating
-            missing_cols = set(updates.keys()) - existing_cols
-            for col in missing_cols:
-                try:
-                    conn.execute(f'ALTER TABLE signals ADD COLUMN "{col}"')
-                    existing_cols.add(col)
-                except Exception:
-                    # Ignore if column was added concurrently
-                    pass
+            # Persist labels into normalized table when Run ID present
+            try:
+                run_id_val = str(row.get("Run ID") or "").strip()
+                if run_id_val:
+                    t_tkr = str(row.get("Ticker", "")).replace("$", "").upper()
+                    for w in RETURN_WINDOWS:
+                        win_key = f"{w}D Return"
+                        if win_key in updates:
+                            fwd = float(updates[win_key])
+                            beat = None
+                            beat_key = f"Beat SPY {w}D"
+                            if beat_key in updates:
+                                try:
+                                    beat = 1 if bool(updates[beat_key]) else 0
+                                except Exception:
+                                    beat = None
+                            upsert_label(run_id_val, t_tkr, f"{w}D", fwd, beat, datetime.now(timezone.utc).isoformat())
+            except Exception:
+                pass
 
-            sets = ", ".join([f'"{k}" = ?' for k in updates])
-            values = list(updates.values())
-            conn.execute(f'UPDATE signals SET {sets} WHERE rowid = ?', values + [row["rowid"]])
-            updated += 1
+            # Update wide signals table unless in label-only mode
+            if not only_labels:
+                # Ensure all columns exist before updating
+                missing_cols = set(updates.keys()) - existing_cols
+                for col in missing_cols:
+                    try:
+                        conn.execute(f'ALTER TABLE signals ADD COLUMN "{col}"')
+                        existing_cols.add(col)
+                    except Exception:
+                        # Ignore if column was added concurrently
+                        pass
+
+                sets = ", ".join([f'"{k}" = ?' for k in updates])
+                values = list(updates.values())
+                conn.execute(f'UPDATE signals SET {sets} WHERE rowid = ?', values + [row["rowid"]])
+                updated += 1
             if updated % 50 == 0:
                 print(f"[UPDATE] Processed {updated} rows…")
 
@@ -400,15 +493,25 @@ def enrich_future_returns_in_db(force_all: bool = True,
                     w.writerow([t, r])
             print(f"[INFO] Missing price diagnostics saved: {diag_path}")
 
-        print("[INFO] Generating charts and tables…")
-        df_latest = pd.read_sql_query("SELECT * FROM signals", conn)
-        df_latest["Run Datetime"] = pd.to_datetime(df_latest["Run Datetime"], utc=True, errors="coerce")
-        df_latest = df_latest.sort_values("Run Datetime").dropna(subset=["Run Datetime"]) 
+        if not only_labels:
+            print("[INFO] Generating charts and tables…")
+            df_latest = pd.read_sql_query("SELECT * FROM signals", conn)
+            df_latest["Run Datetime"] = pd.to_datetime(df_latest["Run Datetime"], utc=True, errors="coerce")
+            df_latest = df_latest.sort_values("Run Datetime").dropna(subset=["Run Datetime"]) 
+            try:
+                generate_charts_and_tables(df_latest)
+            except Exception as e:
+                # Non-fatal: emit a warning and continue
+                print(f"[WARN] Chart/table generation failed: {e}")
+
+        # Insert a simple run metric for this backtest pass
         try:
-            generate_charts_and_tables(df_latest)
-        except Exception as e:
-            # Non-fatal: emit a warning and continue
-            print(f"[WARN] Chart/table generation failed: {e}")
+            run_ids = [r for r in df_latest.get("Run ID", pd.Series(dtype=str)).dropna().unique()]
+            if run_ids:
+                rid = str(run_ids[-1])
+                insert_metric(rid, "backtest_updated_rows", float(updated), None, datetime.now(timezone.utc).isoformat())
+        except Exception:
+            pass
 
 
 def net_returns_from_series(series: List[float], windows: List[int]) -> Dict[str, float]:
@@ -439,6 +542,7 @@ def main() -> None:
     parser.add_argument("--tickers", type=str, default="", help="Comma-separated tickers to filter (optional)")
     parser.add_argument("--limit", type=int, default=0, help="Max number of rows to process (0 = no limit)")
     parser.add_argument("--only-pending", action="store_true", help="Only rows without complete backtest")
+    parser.add_argument("--only-labels", action="store_true", help="Skip wide table updates/plots; only persist labels to normalized DB")
     args = parser.parse_args()
 
     tickers = [t.strip().upper() for t in args.tickers.split(',') if t.strip()] if args.tickers else None
@@ -448,6 +552,7 @@ def main() -> None:
         tickers=tickers,
         limit=args.limit,
         only_pending=args.only_pending,
+        only_labels=args.only_labels,
     )
 
 

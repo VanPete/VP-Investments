@@ -22,7 +22,7 @@ from utils.http_client import get_token_bucket, CircuitBreaker
 
 # === Setup ===
 pytrends = TrendReq(hl='en-US', tz=360)
-_trends_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_trends_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, name="trends")
 _trends_breaker = CircuitBreaker(BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC)
 CACHE_DIR = TRENDS_CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)

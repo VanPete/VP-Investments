@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from datetime import datetime, timedelta
 import pandas as pd
@@ -8,7 +9,10 @@ import numpy as np
 import sqlite3
 
 from config.labels import FINAL_COLUMN_ORDER, COLUMN_FORMAT_HINTS
+from utils.db import insert_metric
+from datetime import datetime, timezone
 from config.config import PERCENT_NORMALIZE, LIQUIDITY_WARNING_ADV
+from config.config import OUTPUTS_DIR
 from config.report_legend import LEGEND
 
 INVERSE_COLUMNS = {"Volatility", "Debt/Equity", "P/E Ratio"}
@@ -132,6 +136,88 @@ def compute_backtest_metrics_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=[
         "Window", "Count", "Pearson IC", "Spearman IC", "Top-Decile Avg %", "Rest Avg %", "Excess %", "Top-Decile Hit %"
     ])
+
+
+def compute_and_save_daily_ic_pk(df: pd.DataFrame, run_dir: str, ks: list[int] | None = None) -> None:
+    """Compute daily Spearman IC and precision@K per available return window and persist CSVs.
+
+    - Groups by date from 'Run Datetime'.
+    - For each day, computes Spearman IC between Weighted Score and return (3D/10D if present).
+    - precision@K: fraction of top-K by score with positive return for that window.
+    Writes per-run tables to run_dir/tables/ and also updates global outputs/tables/ files.
+    """
+    try:
+        if "Run Datetime" not in df.columns or "Weighted Score" not in df.columns:
+            return
+        d = df.copy()
+        d["Run Datetime"] = pd.to_datetime(d["Run Datetime"], errors='coerce')
+        d = d.dropna(subset=["Run Datetime"])  # ensure valid timestamps
+        d["date"] = d["Run Datetime"].dt.date
+        score = pd.to_numeric(d["Weighted Score"], errors="coerce")
+        d = d.assign(_score=score)
+        ret_windows = [c for c in ("3D Return", "10D Return") if c in d.columns]
+        if not ret_windows:
+            return
+        if ks is None:
+            ks = [10, 20]
+        rows = []
+        for win in ret_windows:
+            rr = pd.to_numeric(d[win], errors='coerce')
+            tmp = d.assign(_ret=rr).dropna(subset=["_score", "_ret"])  # keep rows with both
+            if tmp.empty:
+                continue
+            for day, grp in tmp.groupby("date"):
+                if len(grp) < 3:
+                    continue
+                try:
+                    ic_s = float(grp["_score"].corr(grp["_ret"], method="spearman"))
+                except Exception:
+                    ic_s = None
+                # precision@K on that day
+                pk_vals = {}
+                try:
+                    gsorted = grp.sort_values("_score", ascending=False)
+                    for k in ks:
+                        topk = gsorted.head(k)
+                        if not topk.empty:
+                            pk = float((topk["_ret"] > 0).mean() * 100.0)
+                        else:
+                            pk = None
+                        pk_vals[f"p@{k}"] = pk
+                except Exception:
+                    for k in ks:
+                        pk_vals[f"p@{k}"] = None
+                row = {"Date": str(day), "Window": win, "Spearman IC": ic_s}
+                row.update(pk_vals)
+                rows.append(row)
+        if not rows:
+            return
+        out = pd.DataFrame(rows)
+        # Write per-run table
+        try:
+            run_tables = os.path.join(run_dir, "tables")
+            os.makedirs(run_tables, exist_ok=True)
+            out_path = os.path.join(run_tables, "daily_ic_pk.csv")
+            out.to_csv(out_path, index=False)
+        except Exception:
+            pass
+        # Write global table
+        try:
+            global_tables = os.path.join(OUTPUTS_DIR, "tables")
+            os.makedirs(global_tables, exist_ok=True)
+            out_path2 = os.path.join(global_tables, "daily_ic_pk.csv")
+            # Append to global with de-dup on (Date, Window) by keeping latest
+            if os.path.exists(out_path2):
+                prev = pd.read_csv(out_path2)
+                all_df = pd.concat([prev, out], ignore_index=True)
+                all_df = all_df.drop_duplicates(subset=["Date", "Window"], keep="last")
+            else:
+                all_df = out
+            all_df.to_csv(out_path2, index=False)
+        except Exception:
+            pass
+    except Exception as e:
+        logging.warning(f"[DAILY_METRICS] Failed: {e}")
 
 def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict] = None) -> Optional[str]:
     try:
@@ -369,6 +455,17 @@ def export_excel_report(df: pd.DataFrame, output_dir: str, metadata: Optional[di
                 if not bt.empty:
                     bt.to_excel(writer, sheet_name="Backtest Metrics", index=False)
                     autosize_and_center(writer.sheets["Backtest Metrics"], bt, workbook)
+                    # Persist key metrics to DB for the latest run, if Run ID present
+                    try:
+                        run_ids = out.get("Run ID") if "Run ID" in out.columns else None
+                        rid = str(run_ids.iloc[0]) if run_ids is not None and len(run_ids.dropna()) else None
+                        if rid:
+                            ts = datetime.now(timezone.utc).isoformat()
+                            for _, row in bt.iterrows():
+                                ctx = {k: row[k] for k in bt.columns if k != "Window"}
+                                insert_metric(rid, f"backtest_metrics:{row['Window']}", None, json.dumps(ctx), ts)
+                    except Exception:
+                        pass
             except Exception as bte:
                 logging.warning(f"Backtest Metrics sheet failed: {bte}")
 
@@ -632,13 +729,13 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
                 bt.to_csv(os.path.join(references_dir, "Backtest_Metrics.csv"), index=False, encoding="utf-8")
                 # Persist a simple summary row into DB (if available)
                 try:
-                    row = bt.iloc[0].to_dict()
-                    row["Run Path"] = output_dir
-                    with sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'outputs', 'backtest.db')) as conn:
-                        cols = ', '.join([f'"{k}"' for k in row.keys()])
-                        placeholders = ', '.join(['?'] * len(row))
-                        conn.execute(f"CREATE TABLE IF NOT EXISTS run_backtest_metrics ({cols})")
-                        conn.execute(f"INSERT INTO run_backtest_metrics ({cols}) VALUES ({placeholders})", list(row.values()))
+                    run_ids = out.get("Run ID") if "Run ID" in out.columns else None
+                    rid = str(run_ids.iloc[0]) if run_ids is not None and len(run_ids.dropna()) else None
+                    if rid:
+                        ts = datetime.now(timezone.utc).isoformat()
+                        for _, row in bt.iterrows():
+                            ctx = {k: row[k] for k in bt.columns if k != "Window"}
+                            insert_metric(rid, f"backtest_metrics:{row['Window']}", None, json.dumps(ctx), ts)
                 except Exception:
                     pass
         except Exception as bt_err:
@@ -752,6 +849,12 @@ def export_csv_report(df: pd.DataFrame, output_dir: str, metadata: Optional[dict
                 out[keep].to_csv(os.path.join(references_dir, "Signal_Report__Clean.csv"), index=False, encoding="utf-8")
         except Exception as clean_err:
             logging.warning(f"[EXPORT] Clean CSV failed: {clean_err}")
+
+        # Compute and persist daily IC/p@K tables (per-run + global)
+        try:
+            compute_and_save_daily_ic_pk(out, output_dir)
+        except Exception as dm_err:
+            logging.warning(f"[EXPORT] Daily IC/p@K generation failed: {dm_err}")
 
         logging.info(f"[EXPORT] CSV report saved to: {file_path}")
         return file_path

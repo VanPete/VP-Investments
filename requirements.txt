@@ -35,3 +35,4 @@ pyarrow
 duckdb
 APScheduler
 rich
+pydantic>=1.10

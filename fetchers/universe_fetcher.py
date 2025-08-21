@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Shared HTTP session with small cache to avoid hammering sources
 _sess = build_session(cache_name=os.path.join(os.path.dirname(__file__), "..", "cache", "universe_cache"), cache_expire_seconds=600, timeout=15)
-_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, name="universe")
 _breaker = CircuitBreaker(BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC)
 
 

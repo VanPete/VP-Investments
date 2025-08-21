@@ -136,10 +136,23 @@ def build_session(cache_name: Optional[str] = None, cache_expire_seconds: int = 
 
 # Shared, process-wide token bucket (opt-in by callers)
 _GLOBAL_BUCKET: Optional[TokenBucket] = None
+_NAMED_BUCKETS: dict[tuple[float, int, str], TokenBucket] = {}
 
 
-def get_token_bucket(rate_per_sec: float, burst: int) -> TokenBucket:
-    global _GLOBAL_BUCKET
-    if _GLOBAL_BUCKET is None:
-        _GLOBAL_BUCKET = TokenBucket(rate_per_sec, burst)
-    return _GLOBAL_BUCKET
+def get_token_bucket(rate_per_sec: float, burst: int, name: Optional[str] = None) -> TokenBucket:
+    """Return a TokenBucket.
+
+    - Default (name=None): shared global bucket for process-wide throttling.
+    - Named: per-client bucket keyed by (rate, burst, name) to isolate scrapers.
+    """
+    global _GLOBAL_BUCKET, _NAMED_BUCKETS
+    if name is None or str(name).strip() == "":
+        if _GLOBAL_BUCKET is None:
+            _GLOBAL_BUCKET = TokenBucket(rate_per_sec, burst)
+        return _GLOBAL_BUCKET
+    key = (float(rate_per_sec), int(burst), str(name))
+    bucket = _NAMED_BUCKETS.get(key)
+    if bucket is None:
+        bucket = TokenBucket(rate_per_sec, burst)
+        _NAMED_BUCKETS[key] = bucket
+    return bucket

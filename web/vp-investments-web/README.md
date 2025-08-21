@@ -88,20 +88,11 @@ Connect to SQLite or PostgreSQL where your Python script stores results.
 
 ## Deployment
 
-### Deploy to Vercel (Recommended)
+### Local or self-hosted deployment
 
-1. **Push to GitHub:**
-
-   ```bash
-   git add .
-   git commit -m "Initial dashboard commit"
-   git push origin main
-   ```
-
-2. **Connect to Vercel:**
-   - Go to [vercel.com](https://vercel.com)
-   - Import your GitHub repository
-   - Deploy automatically
+- Local dev: `npm run dev` and open <http://localhost:3000>
+- Static export: `npm run build` then serve `.next` with your preferred Node host or reverse proxy.
+- Alternatively, containerize with your own Docker setup if desired.
 
 ---
 

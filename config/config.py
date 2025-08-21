@@ -61,7 +61,8 @@ TOKEN_BUCKET_RATE = _env_float("TOKEN_BUCKET_RATE", 5.0)
 TOKEN_BUCKET_BURST = _env_int("TOKEN_BUCKET_BURST", 10)
 
 # Fine-grained fetch guards
-YF_PER_TICKER_TIMEOUT_SEC = _env_int("YF_PER_TICKER_TIMEOUT_SEC", 25)
+# Bump default per-ticker timeout to accommodate slower fundamentals calls in yfinance
+YF_PER_TICKER_TIMEOUT_SEC = _env_int("YF_PER_TICKER_TIMEOUT_SEC", 35)
 BREAKER_FAIL_THRESHOLD = _env_int("BREAKER_FAIL_THRESHOLD", 5)
 BREAKER_RESET_AFTER_SEC = _env_int("BREAKER_RESET_AFTER_SEC", 60)
 
@@ -123,13 +124,21 @@ MIN_AUTHOR_KARMA = 25
 TITLE_COMMENT_BLEND = (0.7, 0.3)
 COMMENT_WEIGHT_SCALING = 0.2
 ENABLE_REDDIT_SCRAPE = True
-DEBUG_REDDIT_SCRAPE = True
+DEBUG_REDDIT_SCRAPE = False
 REDDIT_PACING_SEC = _env_float("REDDIT_PACING_SEC", 0.3)
 REDDIT_RATE_PER_SEC = _env_float("REDDIT_RATE_PER_SEC", 2.0)
 REDDIT_BURST = _env_int("REDDIT_BURST", 5)
 REDDIT_BREAKER_FAILS = _env_int("REDDIT_BREAKER_FAILS", 5)
 REDDIT_BREAKER_RESET_SEC = _env_int("REDDIT_BREAKER_RESET_SEC", 60)
 REDDIT_SEEN_CACHE_TTL_MIN = _env_int("REDDIT_SEEN_CACHE_TTL_MIN", 120)
+# Optional on-disk cache for processed Reddit posts per subreddit/category during dev
+REDDIT_LISTING_CACHE_ENABLED = _env_bool("REDDIT_LISTING_CACHE_ENABLED", False)
+REDDIT_LISTING_CACHE_TTL_MIN = _env_int("REDDIT_LISTING_CACHE_TTL_MIN", 10)
+# Fast/run-budget controls (0 means no cap)
+FAST_MODE = _env_bool("FAST_MODE", False)
+FAST_REDDIT_CATEGORIES = _env("FAST_REDDIT_CATEGORIES", "hot,top")  # comma-separated subset of keys in REDDIT_LIMITS
+REDDIT_MAX_POSTS = _env_int("REDDIT_MAX_POSTS", 0)
+REDDIT_MAX_PER_SUB = _env_int("REDDIT_MAX_PER_SUB", 0)
 
 # === Sentiment Boosting ===
 KEYWORD_BOOSTS = {
@@ -230,6 +239,8 @@ EMERGING_SCORE_BOOST = 1.2
 REDDIT_FINANCIAL_WEIGHT_RATIO = 0.5
 FEATURE_NORMALIZATION = True
 PERCENT_NORMALIZE = _env_bool("PERCENT_NORMALIZE", True)
+# Optional: validate DB data contracts on upserts (dev-only default False)
+DB_CONTRACTS_VALIDATE = _env_bool("DB_CONTRACTS_VALIDATE", False)
 
 # === AI/ChatGPT Feature Flags ===
 # These control optional OpenAI enrichments. Toggle via environment variables.
@@ -328,3 +339,6 @@ GROUP_LABELS = {
 SENTRY_DSN = _env("SENTRY_DSN", "")
 SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
 SLACK_ENABLED = _env_bool("SLACK_ENABLED", False)
+
+# === Error Budget Targets (Observability) ===
+ERROR_BUDGET_SUCCESS_TARGET = _env_float("ERROR_BUDGET_SUCCESS_TARGET", 0.98)  # 98% success target per component

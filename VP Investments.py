@@ -3,7 +3,7 @@ import logging
 import warnings
 import sqlite3
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Tuple, Optional
 
 import pandas as pd
@@ -23,12 +23,14 @@ from processors.chatgpt_integrator import enhance_dataframe_with_chatgpt, genera
 from config.config import (
     MIN_MENTIONS, MIN_UPVOTES, SUBREDDIT_WEIGHTS, FEATURE_TOGGLES, DB_PATH, OUTPUTS_DIR_FORMAT,
     LIQUIDITY_WARNING_ADV, CURRENT_SIGNAL_PROFILE, OUTPUTS_DIR,
-    JSON_LOGS_ENABLED, COUNTERS_ENABLED
+    JSON_LOGS_ENABLED, COUNTERS_ENABLED, GROUP_LABELS
 )
 from config.labels import FINAL_COLUMN_ORDER
 from utils.logger import setup_logging
 from config.config import SLACK_WEBHOOK_URL, SLACK_ENABLED
 from utils.observability import JsonlLogger, RunCounters
+from utils.db import upsert_run, upsert_feature, insert_metric, upsert_signal_norm
+import json as _json
 
 setup_logging()
 warnings.filterwarnings("ignore", message=".*Downcasting object dtype arrays on .*fillna.* is deprecated.*")
@@ -79,7 +81,7 @@ def _ensure_db_tables() -> None:
 def initialize_run_directory() -> Tuple[str, str]:
     now = datetime.now()
     run_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
-        # Prefer RUN_DIR from environment when provided (e.g., orchestrated runs)
+    # Prefer RUN_DIR from environment when provided (e.g., orchestrated runs)
     env_run_dir = os.getenv("RUN_DIR")
     if env_run_dir:
         try:
@@ -87,7 +89,7 @@ def initialize_run_directory() -> Tuple[str, str]:
             return run_datetime, env_run_dir
         except Exception:
             pass
-        run_dir = os.path.join(OUTPUTS_DIR, now.strftime(OUTPUTS_DIR_FORMAT))
+    run_dir = os.path.join(OUTPUTS_DIR, now.strftime(OUTPUTS_DIR_FORMAT))
     os.makedirs(run_dir, exist_ok=True)
     return run_datetime, run_dir
 
@@ -290,10 +292,26 @@ def clean_and_validate_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # (all imports unchanged)
+import re
 
 def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     _ensure_db_tables()
     run_datetime, run_dir = initialize_run_directory()
+    # Define a stable run_id and log run start in DB
+    run_id = datetime.now(timezone.utc).isoformat()
+    try:
+        upsert_run(
+            run_id=run_id,
+            started_at=run_id,
+            config_json=_json.dumps({
+                "feature_toggles": FEATURE_TOGGLES,
+                "profile": CURRENT_SIGNAL_PROFILE,
+                "fast_mode": bool(os.getenv("FAST_MODE"))
+            }),
+            code_version=os.getenv("CODE_VERSION", "local")
+        )
+    except Exception:
+        pass
     obs = JsonlLogger(run_dir, enabled=JSON_LOGS_ENABLED)
     ctr = RunCounters(run_dir, enabled=COUNTERS_ENABLED)
     reddit_df = fetch_reddit_data(enable_scrape=True)
@@ -316,7 +334,34 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     reddit_df = reddit_df[reddit_df["Ticker"].str.len() <= 5]
     reddit_df = reddit_df[reddit_df["Ticker"].isin(valid_tickers)]
     if reddit_df.empty:
-        logging.warning("No Reddit posts left after ticker filtering.")
+        # Fallback: relax to any 1-5 uppercase token and validate via yfinance existence
+        logging.warning("No Reddit posts left after ticker filtering. Trying yfinance-backed validation fallback…")
+        try:
+            import yfinance as _yf
+            raw = fetch_reddit_data(enable_scrape=False)  # reuse last scraped posts if any
+            if raw is None or raw.empty:
+                raw = pd.DataFrame()
+            _cand = set()
+            for text in (raw.get("Title", pd.Series(dtype=str)).fillna("") + " " + raw.get("Reddit Summary", pd.Series(dtype=str)).fillna("") ):
+                for tok in re.findall(r"\b[A-Z]{1,5}\b", str(text)):
+                    _cand.add(tok)
+            valid = []
+            for t in sorted(_cand):
+                try:
+                    info = _yf.Ticker(t).fast_info
+                    if getattr(info, "last_price", None) is not None or getattr(info, "last_price", 0) != 0:
+                        valid.append(t)
+                except Exception:
+                    continue
+            if valid:
+                tmp = raw.copy()
+                tmp["Ticker"] = tmp["Ticker"].astype(str).str.upper().str.replace("$", "", regex=False)
+                tmp = tmp[tmp["Ticker"].isin(valid)]
+                if not tmp.empty:
+                    reddit_df = tmp
+        except Exception:
+            pass
+    if reddit_df.empty:
         return None, run_dir
 
     summary_lookup = reddit_df.groupby("Ticker")["Reddit Summary"].first().reset_index()
@@ -329,8 +374,10 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     try:
         extra = build_trending_universe()
         if extra:
+            before = len(tickers)
             tickers |= {t for t in extra if t in valid_tickers}
-            logging.info(f"[UNIVERSE] Added {len(extra)} trending tickers; total universe: {len(tickers)}")
+            added = len(tickers) - before
+            logging.info(f"[UNIVERSE] Added {added} trending tickers; total universe: {len(tickers)}")
     except Exception as e:
         logging.warning(f"[UNIVERSE] Failed to build trending universe: {e}")
     feature_matrix = reddit_agg.reset_index()
@@ -383,6 +430,11 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
             feature_matrix[col] = ""
 
     final_df = feature_matrix[FINAL_COLUMN_ORDER].sort_values(by="Weighted Score", ascending=False).reset_index(drop=True)
+    # Attach Run ID for normalized tables/labels usage downstream
+    try:
+        final_df["Run ID"] = run_id
+    except Exception:
+        pass
     final_df = clean_and_validate_df(final_df)
     # Basic validation flags + minimal imputation tag
     try:
@@ -443,8 +495,82 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     except Exception:
         final_df.to_csv(out_csv, index=False)
     write_to_db(final_df)
+
+    # Persist feature snapshots (numeric only) for normalized store
+    try:
+        snap_cols = set(GROUP_LABELS.keys()) | {"Weighted Score", "Reddit Sentiment", "News Sentiment", "Financial Score"}
+        snap_cols = [c for c in snap_cols if c in final_df.columns]
+        # numeric coercion; skip non-numeric
+        as_of = datetime.now(timezone.utc).isoformat()
+        for _, r in final_df.iterrows():
+            tkr = str(r.get("Ticker", "")).replace("$", "").upper()
+            if not tkr:
+                continue
+            for col in snap_cols:
+                try:
+                    val = pd.to_numeric(r.get(col), errors='coerce')
+                    if pd.notna(val):
+                        upsert_feature(run_id, tkr, col, float(val), as_of)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    # Persist compact normalized signals for modeling consistency
+    try:
+        as_of = datetime.now(timezone.utc).isoformat()
+        for _, r in final_df.iterrows():
+            tkr = str(r.get("Ticker", "")).replace("$", "").upper()
+            if not tkr:
+                continue
+            try:
+                score = float(pd.to_numeric(r.get("Weighted Score"), errors='coerce')) if pd.notna(r.get("Weighted Score")) else None
+            except Exception:
+                score = None
+            try:
+                rank = int(pd.to_numeric(r.get("Rank"), errors='coerce')) if pd.notna(r.get("Rank")) else None
+            except Exception:
+                rank = None
+            trade_type = str(r.get("Trade Type")) if pd.notna(r.get("Trade Type")) else None
+            risk_level = str(r.get("Risk Level")) if pd.notna(r.get("Risk Level")) else None
+            def _num(val):
+                try:
+                    vv = pd.to_numeric(val, errors='coerce')
+                    return float(vv) if pd.notna(vv) else None
+                except Exception:
+                    return None
+            upsert_signal_norm(
+                run_id,
+                tkr,
+                score,
+                rank,
+                trade_type,
+                risk_level,
+                _num(r.get("Reddit Score")),
+                _num(r.get("News Score")),
+                _num(r.get("Financial Score")),
+                as_of,
+            )
+    except Exception:
+        pass
+
+    # Lightweight run-level metrics
+    try:
+        insert_metric(run_id, "signals_count", float(len(final_df)), None, datetime.now(timezone.utc).isoformat())
+        if "Ticker" in final_df.columns:
+            insert_metric(run_id, "unique_tickers", float(final_df["Ticker"].nunique()), None, datetime.now(timezone.utc).isoformat())
+        if "Weighted Score" in final_df.columns and len(final_df) > 0:
+            top10 = final_df.sort_values("Weighted Score", ascending=False).head(10)
+            insert_metric(run_id, "top10_avg_score", float(pd.to_numeric(top10["Weighted Score"], errors='coerce').mean()), None, datetime.now(timezone.utc).isoformat())
+    except Exception:
+        pass
     try:
         ctr.flush()
+    except Exception:
+        pass
+    # Mark run end
+    try:
+        upsert_run(run_id=run_id, ended_at=datetime.now(timezone.utc).isoformat())
     except Exception:
         pass
     return final_df, run_dir
@@ -474,6 +600,19 @@ if __name__ == "__main__":
             # Picks and run README
             export_picks(combined, run_dir)
             write_run_readme(run_dir)
+            # Copy shortcuts to outputs/References for quick access to latest run artifacts
+            try:
+                outputs_refs = os.path.join(os.path.dirname(run_dir), "References")
+                os.makedirs(outputs_refs, exist_ok=True)
+                for name in [
+                    "Picks.csv", "Final Analysis.csv", os.path.join("References", "Signal_Report.csv"),
+                ]:
+                    src = os.path.join(run_dir, name)
+                    if os.path.isfile(src):
+                        dst = os.path.join(outputs_refs, os.path.basename(name))
+                        shutil.copy2(src, dst)
+            except Exception:
+                pass
             # Copy lightweight counters into References for observability
             try:
                 ref_dir = os.path.join(run_dir, "References")

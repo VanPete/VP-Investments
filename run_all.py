@@ -20,6 +20,7 @@ from config.config import (
     PRE_OPEN_OFFSET_MINUTES,
     POST_CLOSE_OFFSET_MINUTES,
 )
+from utils.db import ensure_schema, insert_metric
 
 # === Constants ===
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -54,6 +55,11 @@ def _ensure_outputs_structure():
 
 _ensure_outputs_structure()
 os.makedirs(BASE_LOG_DIR, exist_ok=True)
+try:
+    ensure_schema()
+except Exception:
+    # Non-fatal: legacy flow may still work, but we prefer to initialize early
+    pass
 
 def _write_root_index_to_latest_run():
     """Create outputs/index.html pointing to the latest per-run homepage when present.
@@ -92,7 +98,10 @@ def _write_root_index_to_latest_run():
 SCRIPTS = {
     "vp_investments": os.path.join(PROJECT_ROOT, "VP Investments.py"),
     "backtest": os.path.join(PROJECT_ROOT, "processors", "backtest.py"),
-    "scoring_trainer": os.path.join(PROJECT_ROOT, "processors", "scoring_trainer.py")
+    "scoring_trainer": os.path.join(PROJECT_ROOT, "processors", "scoring_trainer.py"),
+    "db_audit": os.path.join(PROJECT_ROOT, "processors", "db_audit.py"),
+    "yf_diagnose": os.path.join(PROJECT_ROOT, "processors", "yf_diagnose.py"),
+    "weekly_rollup": os.path.join(PROJECT_ROOT, "processors", "weekly_rollup.py"),
 }
 
 # === Utilities ===
@@ -235,9 +244,59 @@ def aggregate_fetch_reliability(run_dir: str) -> None:
         ).reset_index()
         # Derive failures
         agg["failures"] = agg["calls"] - agg["success"].fillna(0).astype(int)
+        # Success rate and error budget status
+        from config.config import ERROR_BUDGET_SUCCESS_TARGET as _EB_TARGET
+        agg["success_rate"] = (agg["success"].fillna(0) / agg["calls"].replace(0, 1)).astype(float)
+        agg["budget_target"] = float(_EB_TARGET)
+        agg["budget_ok"] = agg["success_rate"] >= agg["budget_target"]
         # Save
         out_path = os.path.join(refs_dir, "Fetch_Reliability.csv")
         agg.to_csv(out_path, index=False)
+        # Also save a focused Error_Budgets view
+        eb_path = os.path.join(refs_dir, "Error_Budgets.csv")
+        agg[["component", "success_rate", "budget_target", "budget_ok", "calls", "failures", "breaker_opens"]].to_csv(eb_path, index=False)
+        # Persist metrics to DB (global, run_id=None)
+        ts = datetime.now().isoformat()
+        for _, r in agg.iterrows():
+            try:
+                insert_metric(None, f"fetch_success_{r['component']}", float(r["success_rate"]), None, ts)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def prune_old_runs(keep_n: int = None) -> None:
+    """Keep only the most recent N run directories under outputs/ (dirs starting with '(').
+
+    Does not touch non-run subfolders like tables, logs, dashboard, weights, References.
+    """
+    try:
+        base = os.path.join(PROJECT_ROOT, "outputs")
+        if keep_n is None:
+            try:
+                keep_n = int(os.getenv("RUNS_KEEP_N", "10"))
+            except Exception:
+                keep_n = 10
+        dirs = []
+        for name in os.listdir(base):
+            p = os.path.join(base, name)
+            if os.path.isdir(p) and name.startswith("("):
+                try:
+                    m = os.path.getmtime(p)
+                except Exception:
+                    m = 0
+                dirs.append((m, p))
+        if len(dirs) <= keep_n:
+            return
+        dirs.sort(reverse=True)
+        to_delete = [p for _, p in dirs[keep_n:]]
+        for p in to_delete:
+            try:
+                import shutil
+                shutil.rmtree(p, ignore_errors=True)
+                print(f"[RETENTION] Deleted old run: {p}")
+            except Exception as e:
+                print(f"[RETENTION] Failed to delete {p}: {e}")
     except Exception:
         pass
 
@@ -246,8 +305,9 @@ def main():
     # CLI
     parser = argparse.ArgumentParser(description="Run VP Investments pipeline (scheduled or once).")
     parser.add_argument("--once", action="store_true", help="Run once immediately and exit.")
-    parser.add_argument("--steps", type=str, default="vp,backtest,trainer", help="Comma-separated steps to run: vp,backtest,trainer")
-    parser.add_argument("--timeout", type=int, default=0, help="Per-step timeout in seconds (0 = no timeout)")
+    parser.add_argument("--steps", type=str, default="vp,backtest,labels,trainer", help="Comma-separated steps to run: vp,backtest,labels,trainer,audit,diagnose,weekly")
+    parser.add_argument("--timeout", type=int, default=0, help="Per-step timeout in seconds (0 = no timeout). If omitted or 0, will use RUN_TIMEOUT_SEC env var when set.")
+    parser.add_argument("--fast", action="store_true", help="Enable FAST_MODE (reduced data volume) for this run.")
     parser.add_argument("--stream", action="store_true", help="Stream child process output to console while logging.")
     parser.add_argument("--args-vp", type=str, default="", help="Extra args for VP Investments script (quoted string)")
     parser.add_argument("--args-backtest", type=str, default="", help="Extra args for backtest script (quoted string)")
@@ -256,13 +316,33 @@ def main():
 
     run_immediately = args_cli.once
     selected_steps = [s.strip() for s in args_cli.steps.split(",") if s.strip()]
-    timeout_sec = args_cli.timeout if args_cli.timeout and args_cli.timeout > 0 else None
+    # Determine per-step timeout: CLI overrides, else env RUN_TIMEOUT_SEC, else unlimited
+    timeout_sec = None
+    if args_cli.timeout and args_cli.timeout > 0:
+        timeout_sec = args_cli.timeout
+    else:
+        env_timeout = os.getenv("RUN_TIMEOUT_SEC")
+        if env_timeout:
+            try:
+                timeout_sec = int(env_timeout)
+            except Exception:
+                timeout_sec = None
     stream = args_cli.stream
     extra_args = {
         "vp": shlex.split(args_cli.args_vp) if args_cli.args_vp else [],
-        "backtest": shlex.split(args_cli.args_backtest) if args_cli.args_backtest else [],
+        # Nudge backtest to fill in recent rows as they become eligible
+        "backtest": shlex.split(args_cli.args_backtest) if args_cli.args_backtest else ["--since-days", "7", "--only-pending"],
         "trainer": shlex.split(args_cli.args_trainer) if args_cli.args_trainer else [],
+        # Labels backfill should ensure targets exist for trainer; force a modest window to populate labels
+        # even when recent runs are too fresh for returns.
+        "labels": ["--force-all", "--since-days", "60"],
+        "audit": [],
+        "diagnose": [],
+        "weekly": ["--days", "7", "--windows", "3D,10D", "--ks", "10,20"],
     }
+    # Propagate FAST_MODE to child processes via environment when requested
+    if args_cli.fast:
+        os.environ["FAST_MODE"] = "1"
     def run_once():
         timestamp, date_str = get_et_timestamp()
         log_dir = os.path.join(BASE_LOG_DIR, date_str)
@@ -275,7 +355,8 @@ def main():
         print(f"📂 Run outputs directory: {run_dir}")
 
         # Step order
-        for step in ["vp", "backtest", "trainer"]:
+        # Run labels before trainer so models see targets.
+        for step in ["vp", "backtest", "labels", "trainer", "audit", "diagnose", "weekly"]:
             if step not in selected_steps:
                 continue
             if step == "vp":
@@ -294,13 +375,40 @@ def main():
             elif step == "backtest":
                 print("▶️ Running Backtest…")
                 run_script("backtest", SCRIPTS["backtest"], log_dir, args=extra_args["backtest"], timeout_sec=timeout_sec, stream=stream)
+            elif step == "labels":
+                print("▶️ Running Labels Backfill (DB normalized)…")
+                # Reuse backtest script with only-labels flags via CLI
+                args = extra_args.get("labels") or []
+                # Use only labels mode by appending flags
+                labels_args = args + ["--only-labels"]
+                run_script("backtest", SCRIPTS["backtest"], log_dir, args=labels_args, timeout_sec=timeout_sec, stream=stream)
             elif step == "trainer":
                 print("▶️ Running Scoring Trainer…")
                 run_script("scoring_trainer", SCRIPTS["scoring_trainer"], log_dir, args=extra_args["trainer"], timeout_sec=timeout_sec, stream=stream)
+            elif step == "audit":
+                print("▶️ Running DB Audit…")
+                run_script("db_audit", SCRIPTS["db_audit"], log_dir, args=extra_args["audit"], timeout_sec=timeout_sec, stream=stream)
+            elif step == "diagnose":
+                print("▶️ Running YF Diagnose…")
+                run_script("yf_diagnose", SCRIPTS["yf_diagnose"], log_dir, args=extra_args["diagnose"], timeout_sec=timeout_sec, stream=stream)
+            elif step == "weekly":
+                print("▶️ Running Weekly Rollup…")
+                run_script("weekly_rollup", SCRIPTS["weekly_rollup"], log_dir, args=extra_args["weekly"], timeout_sec=timeout_sec, stream=stream)
 
         # After run ends, aggregate reliability metrics into this run dir
         try:
             aggregate_fetch_reliability(run_dir)
+        except Exception:
+            pass
+        # Export error-budget trend table (last 30 days)
+        try:
+            from processors.error_budget_trend import export_error_budget_trend
+            export_error_budget_trend(30)
+        except Exception:
+            pass
+        # Prune old run directories per retention policy
+        try:
+            prune_old_runs()
         except Exception:
             pass
 

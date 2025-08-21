@@ -5,6 +5,7 @@ import yfinance as yf
 import requests
 import os
 import time
+import warnings
 from datetime import datetime, timedelta
 from typing import List, Tuple, Optional, Dict, Any
 from tqdm import tqdm
@@ -27,6 +28,13 @@ from typing import Tuple as _Tuple
 load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Silence noisy deprecation warnings from yfinance that we explicitly work around
+warnings.filterwarnings(
+    "ignore",
+    message=r"'Ticker\.earnings' is deprecated.*",
+    category=DeprecationWarning,
+)
 
 # Shared HTTP session for external APIs (FMP endpoints)
 from utils.http_client import build_session, get_token_bucket, CircuitBreaker
@@ -190,7 +198,7 @@ def sec_self_check() -> tuple[bool, str]:
 
 # Global token bucket and circuit breaker for external calls
 from config.config import TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, YF_PER_TICKER_TIMEOUT_SEC, BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC
-_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, name="finance")
 _breaker = CircuitBreaker(fail_threshold=BREAKER_FAIL_THRESHOLD, reset_after_sec=BREAKER_RESET_AFTER_SEC)
 
 # Perform a light self-check once on import; non-fatal but logs guidance
@@ -825,6 +833,7 @@ def fetch_yf_data(ticker_list: List[str], max_workers: int = YF_MAX_WORKERS) -> 
     batch_size = max(1, int(YF_BATCH_SIZE))
     pause_sec = max(0.0, float(YF_BATCH_PAUSE_SEC))
 
+    consecutive_slow = 0
     with tqdm(total=len(tickers), desc="📊 Fetching yfinance data", unit="ticker") as pbar:
         for i in range(0, len(tickers), batch_size):
             batch = tickers[i:i + batch_size]
@@ -836,6 +845,11 @@ def fetch_yf_data(ticker_list: List[str], max_workers: int = YF_MAX_WORKERS) -> 
                     try:
                         ticker, data = future.result()
                         results[ticker] = data
+                        # Heuristic: if prior fetch logged timeout warn (nan-heavy row), consider it slow
+                        if len(data) == 44 and not all(pd.isna(val) for val in data[1:]):
+                            consecutive_slow = max(0, consecutive_slow - 1)
+                        else:
+                            consecutive_slow += 1
                         if len(data) != 44 or all(pd.isna(val) for val in data[1:]):
                             delisted.append(ticker)
                     except Exception:
@@ -846,7 +860,9 @@ def fetch_yf_data(ticker_list: List[str], max_workers: int = YF_MAX_WORKERS) -> 
                         pbar.update(1)
             # Gentle pause between batches, but not after the last batch
             if i + batch_size < len(tickers) and pause_sec > 0:
-                time.sleep(pause_sec)
+                # Add a small adaptive backoff if many consecutive slow results observed
+                extra = 0.2 if consecutive_slow >= max(5, batch_size // 2) else 0.0
+                time.sleep(pause_sec + extra)
 
     col_labels = [
         "Ticker", "Company", "Current Price", "Price 1D %", "Price 7D %", "Market Cap", "Volume", "Sector",

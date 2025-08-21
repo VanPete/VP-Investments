@@ -17,6 +17,7 @@ import pandas as pd
 from flask import Flask, request, Response
 from flask import redirect
 from flask_cors import CORS
+import sqlite3
 
 # Optional imports with safe fallbacks
 try:
@@ -51,6 +52,8 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from config.config import WEB_API_DEBUG, WEB_API_PORT
+from config.config import DB_PATH
+from utils import db as db_utils
 
 # Import our ChatGPT integrator (after we install openai)
 # from processors.chatgpt_integrator import ChatGPTIntegrator, enhance_dataframe_with_chatgpt
@@ -165,6 +168,28 @@ def _latest_table(name: str) -> Optional[str]:
 
 def _json(data: Dict[str, Any], status: int = 200) -> Response:
     return Response(_dumps(data), status=status, mimetype="application/json")
+
+
+def _query_db(sql: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Run a parameterized SQL query against our SQLite DB and return records.
+
+    Safe, read-only helper for API endpoints.
+    """
+    try:
+        with db_utils.get_conn() as conn:  # type: ignore
+            cur = conn.cursor()
+            cur.execute(sql, params)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            return rows
+    except Exception:
+        # Fallback without helper if import path changes
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(sql, params)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            return rows
 
 
 @app.route('/api/outputs/final', methods=['GET'])
@@ -523,6 +548,125 @@ def market_outlook():
     except Exception as e:
         logger.error(f"Market outlook error: {e}")
         return _json({"error": "Analysis failed"}, 500)
+
+
+    # === DB API Endpoints (read-only) ===
+
+    @app.route('/api/db/runs', methods=['GET'])
+    @cache.cached()
+    def db_runs():
+        """List recent runs with optional limit."""
+        try:
+            limit = request.args.get('limit', default='50')
+            try:
+                n = max(1, min(500, int(limit)))
+            except Exception:
+                n = 50
+            # SQLite doesn't support NULLS LAST; emulate by ordering by nullness first
+            rows = _query_db(
+                "SELECT run_id, started_at, ended_at, code_version, notes FROM runs "
+                "ORDER BY (started_at IS NULL) ASC, started_at DESC LIMIT :n",
+                {"n": n},
+            )
+            return _json({"rows": rows, "limit": n})
+        except Exception as e:
+            logger.error(f"db_runs failed: {e}")
+            return _json({"error": "query failed"}, 500)
+
+
+    @app.route('/api/db/metrics', methods=['GET'])
+    @cache.cached()
+    def db_metrics():
+        """Query metrics; filter by run_id and/or name; limit results."""
+        try:
+            run_id = request.args.get('run_id')
+            name = request.args.get('name')
+            limit = request.args.get('limit', default='200')
+            try:
+                n = max(1, min(2000, int(limit)))
+            except Exception:
+                n = 200
+            where = []
+            params: Dict[str, Any] = {"n": n}
+            if run_id:
+                where.append("run_id = :run_id")
+                params["run_id"] = run_id
+            if name:
+                where.append("name = :name")
+                params["name"] = name
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            sql = f"SELECT id, run_id, name, value, context_json, created_at FROM metrics {where_sql} ORDER BY id DESC LIMIT :n"
+            rows = _query_db(sql, params)
+            return _json({"rows": rows, "limit": n})
+        except Exception as e:
+            logger.error(f"db_metrics failed: {e}")
+            return _json({"error": "query failed"}, 500)
+
+
+    @app.route('/api/db/labels', methods=['GET'])
+    @cache.cached()
+    def db_labels():
+        """Query labels; filter by run_id, ticker, window; limit results."""
+        try:
+            run_id = request.args.get('run_id')
+            ticker = request.args.get('ticker')
+            window = request.args.get('window')
+            limit = request.args.get('limit', default='200')
+            try:
+                n = max(1, min(2000, int(limit)))
+            except Exception:
+                n = 200
+            where = []
+            params: Dict[str, Any] = {"n": n}
+            if run_id:
+                where.append("run_id = :run_id")
+                params["run_id"] = run_id
+            if ticker:
+                where.append("ticker = :ticker")
+                params["ticker"] = ticker.upper()
+            if window:
+                where.append("window = :window")
+                params["window"] = window
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            sql = f"SELECT run_id, ticker, window, fwd_return, beat_spy, ready_at FROM labels {where_sql} ORDER BY ready_at DESC LIMIT :n"
+            rows = _query_db(sql, params)
+            return _json({"rows": rows, "limit": n})
+        except Exception as e:
+            logger.error(f"db_labels failed: {e}")
+            return _json({"error": "query failed"}, 500)
+
+
+    @app.route('/api/db/features', methods=['GET'])
+    @cache.cached()
+    def db_features():
+        """Query features; filter by run_id, ticker, key; limit results."""
+        try:
+            run_id = request.args.get('run_id')
+            ticker = request.args.get('ticker')
+            key = request.args.get('key')
+            limit = request.args.get('limit', default='200')
+            try:
+                n = max(1, min(2000, int(limit)))
+            except Exception:
+                n = 200
+            where = []
+            params: Dict[str, Any] = {"n": n}
+            if run_id:
+                where.append("run_id = :run_id")
+                params["run_id"] = run_id
+            if ticker:
+                where.append("ticker = :ticker")
+                params["ticker"] = ticker.upper()
+            if key:
+                where.append("key = :key")
+                params["key"] = key
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            sql = f"SELECT run_id, ticker, key, value, as_of FROM features {where_sql} ORDER BY as_of DESC LIMIT :n"
+            rows = _query_db(sql, params)
+            return _json({"rows": rows, "limit": n})
+        except Exception as e:
+            logger.error(f"db_features failed: {e}")
+            return _json({"error": "query failed"}, 500)
 
 if __name__ == '__main__':
     # Prefer waitress if available for production-like serving; otherwise Flask dev server

@@ -2,6 +2,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
+import sqlite3
 from datetime import datetime
 
 import pandas as pd
@@ -14,6 +15,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pathlib import Path
 from config.config import OUTPUTS_DIR, SLIPPAGE_BPS, FEES_BPS
 from config.config import TURNOVER_TOP_K
+from config.config import ERROR_BUDGET_SUCCESS_TARGET
+from config.config import DB_PATH
 
 # === Directory Setup ===
 PLOT_DIR = os.path.join(OUTPUTS_DIR, "plots")
@@ -353,6 +356,159 @@ def export_feature_correlations(df: pd.DataFrame):
         output_df = output_df.sort_values(by=sort_col, ascending=False)
     save_table(output_df.reset_index().rename(columns={"index": "Feature"}), os.path.join(TABLE_DIR, "feature_correlations.csv"))
 
+def export_model_comparison() -> None:
+    """Export a compact model comparison table from experiments+metrics.
+
+    Columns: exp_id, profile, target, model, started_at, ended_at, test_r2, test_mae, best_fold_r2, best_fold_mae
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            exps = pd.read_sql("SELECT id as exp_id, profile, params_json, started_at, ended_at FROM experiments", conn)
+            if exps.empty:
+                return
+            mets = pd.read_sql("SELECT exp_id, name, value FROM metrics", conn)
+    except Exception:
+        return
+    if mets.empty:
+        return
+    # Parse params for target/model
+    def _parse_params(s: str) -> tuple[str | None, str | None]:
+        try:
+            obj = json.loads(s) if isinstance(s, str) and s else {}
+            return obj.get("target"), obj.get("model")
+        except Exception:
+            return None, None
+    exps[["target", "model"]] = exps.apply(lambda r: pd.Series(_parse_params(r.get("params_json"))), axis=1)
+    # Aggregate metrics
+    pivot = mets.pivot_table(index=["exp_id"], columns="name", values="value", aggfunc="last")
+    pivot = pivot.reset_index()
+    # Derive best fold metrics if present
+    fold_cols_r2 = [c for c in pivot.columns if isinstance(c, str) and c.endswith("_test_r2")]
+    fold_cols_mae = [c for c in pivot.columns if isinstance(c, str) and c.endswith("_test_mae")]
+    def _best(series_like: pd.Series) -> float | None:
+        try:
+            s = pd.to_numeric(series_like, errors="coerce")
+            return float(s.max()) if s.notna().any() else None
+        except Exception:
+            return None
+    pivot["best_fold_r2"] = _best(pivot[fold_cols_r2]) if fold_cols_r2 else None
+    pivot["best_fold_mae"] = _best(pivot[fold_cols_mae]) if fold_cols_mae else None
+    # Keep key columns
+    keep = ["exp_id", "test_r2", "test_mae", "best_fold_r2", "best_fold_mae"]
+    for k in list(keep):
+        if k not in pivot.columns:
+            pivot[k] = None
+    out = exps.merge(pivot[keep], on="exp_id", how="left")
+    # Order and save
+    cols = ["exp_id", "profile", "target", "model", "started_at", "ended_at", "test_r2", "test_mae", "best_fold_r2", "best_fold_mae"]
+    out = out[cols]
+    save_table(out, os.path.join(TABLE_DIR, "Model_Comparison.csv"))
+
+def export_feature_standardization_audit() -> None:
+    """Export cross-sectional standardization audit for features.
+
+    Computes per-feature overall stats and per-run cross-sectional mean/std, then
+    aggregates across runs to assess centering and scaling.
+    Output: outputs/tables/feature_standardization_audit.csv
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            f = pd.read_sql("SELECT run_id, ticker, key, value FROM features", conn)
+    except Exception:
+        return
+    if f.empty:
+        return
+    # Coerce numeric and drop NaNs
+    f["value"] = pd.to_numeric(f["value"], errors="coerce")
+    f = f.dropna(subset=["value"]) 
+    if f.empty:
+        return
+    # Overall stats per key
+    overall = f.groupby("key").agg(
+        count=("value", "size"),
+        runs_covered=("run_id", pd.Series.nunique),
+        mean_all=("value", "mean"),
+        std_all=("value", "std"),
+        min_all=("value", "min"),
+        max_all=("value", "max"),
+    )
+    # Per-run cross-sectional mean/std
+    cs = f.groupby(["key", "run_id"]).agg(cs_mean=("value", "mean"), cs_std=("value", "std")).reset_index()
+    # Aggregate across runs
+    agg = cs.groupby("key").agg(
+        runs_with_values=("run_id", pd.Series.nunique),
+        avg_cs_mean=("cs_mean", "mean"),
+        med_cs_mean=("cs_mean", "median"),
+        avg_cs_std=("cs_std", "mean"),
+        med_cs_std=("cs_std", "median"),
+        std_of_cs_std=("cs_std", "std")
+    )
+    out = overall.join(agg, how="left")
+    # Centering and scaling proximity (informational)
+    out["center_bias"] = out["avg_cs_mean"].abs()
+    out["scale_bias"] = (out["avg_cs_std"] - 1.0).abs()
+    out = out.reset_index().rename(columns={"key": "feature"})
+    save_table(out, os.path.join(TABLE_DIR, "feature_standardization_audit.csv"))
+
+def export_feature_drift_summary(last_runs: int = 20) -> None:
+    """Export a simple drift summary for features across recent runs.
+
+    Uses cross-sectional means per run and reports volatility of cs_mean.
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            f = pd.read_sql("SELECT run_id, ticker, key, value FROM features", conn)
+            runs = pd.read_sql("SELECT run_id, started_at FROM runs", conn)
+    except Exception:
+        return
+    if f.empty or runs.empty:
+        return
+    runs = runs.dropna(subset=["started_at"]).copy()
+    runs["started_at"] = pd.to_datetime(runs["started_at"], errors="coerce")
+    runs = runs.dropna(subset=["started_at"]).sort_values("started_at").tail(last_runs)
+    f = f.merge(runs[["run_id"]], on="run_id", how="inner")
+    if f.empty:
+        return
+    f["value"] = pd.to_numeric(f["value"], errors="coerce")
+    f = f.dropna(subset=["value"]) 
+    cs = f.groupby(["key", "run_id"]).agg(cs_mean=("value", "mean")).reset_index()
+    # Drift = std of cs_mean across runs; also max abs deviation from overall mean
+    overall = f.groupby("key")["value"].mean().rename("overall_mean")
+    g = cs.groupby("key")["cs_mean"].agg(["std", "mean"]).rename(columns={"std": "cs_mean_std", "mean": "cs_mean_mean"})
+    out = g.join(overall, how="left")
+    out["max_abs_dev"] = (out["cs_mean_mean"] - out["overall_mean"]).abs()
+    out = out.reset_index().rename(columns={"key": "feature"})
+    save_table(out, os.path.join(TABLE_DIR, "feature_drift_summary.csv"))
+
+def export_feature_importance_corr(return_target: str = "3D Return") -> None:
+    """Quick correlation-based importance between features and target return.
+
+    Joins normalized features with labels for the requested window.
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            f = pd.read_sql("SELECT run_id, ticker, key, value FROM features", conn)
+            l = pd.read_sql("SELECT run_id, ticker, window, fwd_return FROM labels", conn)
+    except Exception:
+        return
+    if f.empty or l.empty:
+        return
+    win = return_target.replace(" Return", "")
+    l = l[l["window"].astype(str) == win].copy()
+    if l.empty:
+        return
+    piv = f.pivot_table(index=["run_id", "ticker"], columns="key", values="value", aggfunc="first").reset_index()
+    df = piv.merge(l[["run_id", "ticker", "fwd_return"]], on=["run_id", "ticker"], how="inner").dropna()
+    if df.shape[0] < 3:
+        return
+    X = df.drop(columns=["run_id", "ticker", "fwd_return"]).select_dtypes(include="number")
+    y = df["fwd_return"].astype(float)
+    if X.empty:
+        return
+    corr = X.apply(lambda col: pd.Series({"corr": pd.to_numeric(col, errors="coerce").corr(y)}))
+    corr = corr.reset_index().rename(columns={"index": "feature"})
+    save_table(corr, os.path.join(TABLE_DIR, "feature_importance_corr.csv"))
+
 def export_metadata_summary(df: pd.DataFrame):
     stats = {
         "Total Signals": len(df),
@@ -659,10 +815,20 @@ def generate_charts_and_tables(df: pd.DataFrame):
     plot_signal_duration_hist(df)
     plot_score_return_trend(df)
     plot_signaltype_vs_weekday(df)
+    # Observability: error budget trend
+    try:
+        plot_error_budget_trend()
+    except Exception:
+        pass
     summarize_factor_returns(df)
     export_top_signals(df)
     export_breakout_csvs(df)
     export_feature_correlations(df)
+    # DB-driven exports
+    export_model_comparison()
+    export_feature_standardization_audit()
+    export_feature_drift_summary()
+    export_feature_importance_corr()
     export_metadata_summary(df)
     export_score_quantile_performance(df)
     plot_score_quantile_performance()
@@ -680,6 +846,33 @@ def generate_charts_and_tables(df: pd.DataFrame):
         export_turnover_by_group(df, "Trade Type", top_k=TURNOVER_TOP_K, out_name="turnover_by_tradetype.csv")
         plot_turnover_by_group("turnover_by_tradetype.csv", "turnover_by_tradetype.png")
     generate_html_dashboard(df)
+    # Snapshot selected tables into current run's References folder if RUN_DIR is set
+    try:
+        run_dir = os.environ.get("RUN_DIR")
+        if run_dir:
+            refs = os.path.join(run_dir, "References")
+            os.makedirs(refs, exist_ok=True)
+            for name in [
+                "score_quantile_performance.csv",
+                "score_quantile_performance_net.csv",
+                "backtest_cost_summary.csv",
+                "turnover_summary.csv",
+                "turnover_by_sector.csv",
+                "turnover_by_tradetype.csv",
+                "daily_turnover.csv",
+                "Error_Budget_Trend.csv",
+                "Model_Comparison.csv",
+                "feature_standardization_audit.csv",
+                "feature_drift_summary.csv",
+                "feature_importance_corr.csv",
+                "metadata_summary.json",
+            ]:
+                src = os.path.join(TABLE_DIR, name)
+                if os.path.exists(src):
+                    import shutil
+                    shutil.copy2(src, os.path.join(refs, name))
+    except Exception:
+        pass
 
 def generate_html_dashboard(df: pd.DataFrame):
     """Generate charts dashboard with proper meta tags and external CSS.
@@ -698,16 +891,25 @@ def generate_html_dashboard(df: pd.DataFrame):
     for name in [
         "factor_return_summary",
         "feature_correlations",
+    "Model_Comparison",
+    "feature_standardization_audit",
+    "feature_drift_summary",
+    "feature_importance_corr",
         "score_quantile_performance",
         "score_quantile_performance_net",
         "backtest_cost_summary",
         "turnover_summary",
         "turnover_by_sector",
         "turnover_by_tradetype",
+        "Error_Budget_Trend",
     ]:
         csv_path = os.path.join(TABLE_DIR, f"{name}.csv")
         if os.path.exists(csv_path):
-            tables[name.replace("_", " ").title()] = pd.read_csv(csv_path)
+            label = name.replace("_", " ").title()
+            # Slightly nicer label for the error budget trend
+            if name == "Error_Budget_Trend":
+                label = "Error Budget Trend"
+            tables[label] = pd.read_csv(csv_path)
 
     top_signals = df.sort_values("Weighted Score", ascending=False).head(10).copy()
     display_cols = ["Rank", "Ticker", "Company", "Sector", "Trade Type",
@@ -784,3 +986,57 @@ def generate_html_dashboard(df: pd.DataFrame):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"[DASHBOARD] Saved: {output_path}")
+
+
+def plot_error_budget_trend(days: int = 30):
+    """Plot component success-rate trend over the last N days and export CSV if needed."""
+    # Try computing directly; fall back to CSV if present
+    try:
+        from processors.error_budget_trend import compute_error_budget_trend, export_error_budget_trend
+    except Exception:
+        return
+    try:
+        df = compute_error_budget_trend(days)
+    except Exception:
+        df = pd.DataFrame()
+    if df is None or df.empty:
+        # Try read from tables
+        csv_path = os.path.join(TABLE_DIR, "Error_Budget_Trend.csv")
+        if os.path.exists(csv_path):
+            try:
+                df = pd.read_csv(csv_path)
+            except Exception:
+                df = pd.DataFrame()
+    else:
+        # Save a fresh CSV for dashboard consumption
+        try:
+            export_error_budget_trend(days)
+        except Exception:
+            pass
+    if df is None or df.empty:
+        return
+    # Pivot for plotting lines per component
+    try:
+        df_plot = df.copy()
+        df_plot["day"] = pd.to_datetime(df_plot["day"], errors="coerce")
+        df_plot = df_plot.dropna(subset=["day"])  # ensure valid dates
+        wide = df_plot.pivot_table(index="day", columns="component", values="success_rate", aggfunc="mean")
+        if wide.empty:
+            return
+        plt.figure(figsize=(10, 5))
+        for col in wide.columns:
+            plt.plot(wide.index, wide[col] * 100.0, marker="o", linewidth=1.6, markersize=3, label=str(col))
+        # Target line
+        try:
+            target = float(ERROR_BUDGET_SUCCESS_TARGET) * 100.0
+            plt.axhline(target, color="#ef4444", linestyle="--", linewidth=1.2, label=f"Target {target:.0f}%")
+        except Exception:
+            pass
+        plt.title("Fetch Success Rate Trend (last 30 days)")
+        plt.ylabel("Success Rate %")
+        plt.xlabel("Day (UTC)")
+        plt.grid(True, color="#eaeaea")
+        plt.legend(fontsize=8, ncol=2, loc="lower right")
+        save_plot(os.path.join(PLOT_DIR, "error_budget_trend.png"), dpi=170)
+    except Exception:
+        pass

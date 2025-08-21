@@ -44,7 +44,7 @@ _rss_sess = build_session(
     cache_expire_seconds=int(CACHE_TTL.total_seconds()),
     timeout=NEWS_RSS_TIMEOUT_SEC,
 )
-_rss_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST)
+_rss_bucket = get_token_bucket(TOKEN_BUCKET_RATE, TOKEN_BUCKET_BURST, name="news")
 _rss_breaker = CircuitBreaker(BREAKER_FAIL_THRESHOLD, BREAKER_RESET_AFTER_SEC)
  
 
