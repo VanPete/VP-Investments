@@ -278,74 +278,85 @@ def enrich_future_returns_in_db(force_all: bool = True,
     print(f"[FETCH] Downloading price history for {len(uniq_tickers)} tickers from {start_global} to {end_global}…")
     price_map: Dict[str, pd.Series] = {}
     try:
-            data = yf.download(uniq_tickers, start=start_global.strftime("%Y-%m-%d"), end=end_global.strftime("%Y-%m-%d"),
-                               progress=False, group_by='ticker', auto_adjust=False, threads=True)
-            if isinstance(data.columns, pd.MultiIndex):
-                for t in uniq_tickers:
-                    try:
-                        if t in data.columns.get_level_values(0):
-                            frame = data[t].copy()
-                            # Upsert OHLCV into normalized prices table
-                            try:
-                                rows = []
-                                for idx, r in frame.iterrows():
-                                    rows.append({
-                                        "ticker": t,
-                                        "date": (idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else pd.Timestamp(idx)).strftime("%Y-%m-%d"),
-                                        "open": float(r.get("Open")) if pd.notna(r.get("Open")) else None,
-                                        "high": float(r.get("High")) if pd.notna(r.get("High")) else None,
-                                        "low": float(r.get("Low")) if pd.notna(r.get("Low")) else None,
-                                        "close": float(r.get("Close")) if pd.notna(r.get("Close")) else None,
-                                        "adj_close": float(r.get("Adj Close")) if pd.notna(r.get("Adj Close")) else None,
-                                        "volume": float(r.get("Volume")) if pd.notna(r.get("Volume")) else None,
-                                    })
-                                if rows:
-                                    upsert_prices(rows)
-                            except Exception:
-                                pass
-                            s = frame["Close"].dropna()
+        data = yf.download(
+            uniq_tickers,
+            start=start_global.strftime("%Y-%m-%d"),
+            end=end_global.strftime("%Y-%m-%d"),
+            progress=False,
+            group_by='ticker',
+            auto_adjust=False,
+            threads=True,
+        )
+        if isinstance(data.columns, pd.MultiIndex):
+            for t in uniq_tickers:
+                try:
+                    if t in data.columns.get_level_values(0):
+                        frame = data[t].copy()
+                        # Upsert OHLCV into normalized prices table
+                        try:
+                            rows = []
+                            for idx, r in frame.iterrows():
+                                rows.append({
+                                    "ticker": t,
+                                    "date": (idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else pd.Timestamp(idx)).strftime("%Y-%m-%d"),
+                                    "open": float(r.get("Open")) if pd.notna(r.get("Open")) else None,
+                                    "high": float(r.get("High")) if pd.notna(r.get("High")) else None,
+                                    "low": float(r.get("Low")) if pd.notna(r.get("Low")) else None,
+                                    "close": float(r.get("Close")) if pd.notna(r.get("Close")) else None,
+                                    "adj_close": float(r.get("Adj Close")) if pd.notna(r.get("Adj Close")) else None,
+                                    "volume": float(r.get("Volume")) if pd.notna(r.get("Volume")) else None,
+                                })
+                            if rows:
+                                upsert_prices(rows)
+                        except Exception:
+                            pass
+                        s = frame.get("Close")
+                        if s is not None:
+                            s = s.dropna()
                             if not s.empty:
                                 price_map[t] = s
-                    except Exception:
-                        continue
-            else:
-                # Single ticker path
-                try:
-                    # Attempt normalized upsert for single-ticker download
-                    if {'Open','High','Low','Close','Adj Close','Volume'}.issubset(set(data.columns)):
-                        rows = []
-                        for idx, r in data.iterrows():
-                            rows.append({
-                                "ticker": uniq_tickers[0],
-                                "date": (idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else pd.Timestamp(idx)).strftime("%Y-%m-%d"),
-                                "open": float(r.get("Open")) if pd.notna(r.get("Open")) else None,
-                                "high": float(r.get("High")) if pd.notna(r.get("High")) else None,
-                                "low": float(r.get("Low")) if pd.notna(r.get("Low")) else None,
-                                "close": float(r.get("Close")) if pd.notna(r.get("Close")) else None,
-                                "adj_close": float(r.get("Adj Close")) if pd.notna(r.get("Adj Close")) else None,
-                                "volume": float(r.get("Volume")) if pd.notna(r.get("Volume")) else None,
-                            })
-                        if rows:
-                            upsert_prices(rows)
                 except Exception:
-                    pass
-                if 'Close' in data:
-                    s = data['Close'].dropna()
-                    if not s.empty:
-                        price_map[uniq_tickers[0]] = s
-        except Exception as e:
-            print(f"[WARN] Bulk download failed: {e}. Falling back to per-ticker fetch.")
-            for t in uniq_tickers:
-                s = fetch_price_series(t, start_global, end_global)
-                if s is not None and not s.empty:
-                    price_map[t] = s
+                    continue
+        else:
+            # Single ticker path
+            try:
+                # Attempt normalized upsert for single-ticker download
+                if {'Open','High','Low','Close','Adj Close','Volume'}.issubset(set(data.columns)):
+                    rows = []
+                    for idx, r in data.iterrows():
+                        rows.append({
+                            "ticker": uniq_tickers[0],
+                            "date": (idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else pd.Timestamp(idx)).strftime("%Y-%m-%d"),
+                            "open": float(r.get("Open")) if pd.notna(r.get("Open")) else None,
+                            "high": float(r.get("High")) if pd.notna(r.get("High")) else None,
+                            "low": float(r.get("Low")) if pd.notna(r.get("Low")) else None,
+                            "close": float(r.get("Close")) if pd.notna(r.get("Close")) else None,
+                            "adj_close": float(r.get("Adj Close")) if pd.notna(r.get("Adj Close")) else None,
+                            "volume": float(r.get("Volume")) if pd.notna(r.get("Volume")) else None,
+                        })
+                    if rows:
+                        upsert_prices(rows)
+            except Exception:
+                pass
+            if 'Close' in data:
+                s = data['Close'].dropna()
+                if not s.empty:
+                    price_map[uniq_tickers[0]] = s
+    except Exception as e:
+        print(f"[WARN] Bulk download failed: {e}. Falling back to per-ticker fetch.")
+        for t in uniq_tickers:
+            s = fetch_price_series(t, start_global, end_global)
+            if s is not None and not s.empty:
+                price_map[t] = s
 
-        # Fetch SPY once (from bulk map if available; else fallback to per-ticker)
-        s_spy = price_map.get("SPY")
-        if s_spy is None or s_spy.empty:
-            s_spy = fetch_price_series("SPY", start_global, end_global)
-        spy_series = s_spy if s_spy is not None else pd.Series(dtype=float)
+    # Fetch SPY once (from bulk map if available; else fallback to per-ticker)
+    s_spy = price_map.get("SPY")
+    if s_spy is None or s_spy.empty:
+        s_spy = fetch_price_series("SPY", start_global, end_global)
+    spy_series = s_spy if s_spy is not None else pd.Series(dtype=float)
 
+    # Re-open a DB connection for updates and reporting
+    with sqlite3.connect(DB_PATH) as conn:
         updated, skipped, skipped_tickers = 0, [], []
         missing_detail: Dict[str, str] = {}
         # Cache existing column names to avoid repeated PRAGMA calls
