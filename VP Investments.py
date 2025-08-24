@@ -334,7 +334,8 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
     reddit_df = reddit_df[reddit_df["Ticker"].str.len() <= 5]
     reddit_df = reddit_df[reddit_df["Ticker"].isin(valid_tickers)]
     if reddit_df.empty:
-        # Fallback: relax to any 1-5 uppercase token and validate via yfinance existence
+        # Fallback: relax to any 1-5 uppercase token and validate via yfinance existence,
+        # but still enforce NYSE/NASDAQ-only by intersecting with company_names.csv universe.
         logging.warning("No Reddit posts left after ticker filtering. Trying yfinance-backed validation fallback…")
         try:
             import yfinance as _yf
@@ -353,10 +354,12 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
                         valid.append(t)
                 except Exception:
                     continue
-            if valid:
+            # Enforce canonical universe
+            valid_set = set(valid) & set(valid_tickers)
+            if valid_set:
                 tmp = raw.copy()
                 tmp["Ticker"] = tmp["Ticker"].astype(str).str.upper().str.replace("$", "", regex=False)
-                tmp = tmp[tmp["Ticker"].isin(valid)]
+                tmp = tmp[tmp["Ticker"].isin(valid_set)]
                 if not tmp.empty:
                     reddit_df = tmp
         except Exception:
@@ -380,6 +383,13 @@ def process_data() -> Tuple[Optional[pd.DataFrame], str]:
             logging.info(f"[UNIVERSE] Added {added} trending tickers; total universe: {len(tickers)}")
     except Exception as e:
         logging.warning(f"[UNIVERSE] Failed to build trending universe: {e}")
+    # Enforce NYSE/NASDAQ-only universe (company_names.csv) before any downstream merges
+    before_filter = len(tickers)
+    tickers = {t for t in tickers if t in valid_tickers}
+    dropped = before_filter - len(tickers)
+    if dropped > 0:
+        logging.info(f"[UNIVERSE] Dropped {dropped} non-listed tokens; final universe: {len(tickers)}")
+
     feature_matrix = reddit_agg.reset_index()
     logging.info(f"[PIPELINE] Merging optional sources (news/trends) for {len(tickers)} tickers…")
     feature_matrix = merge_with_optional_sources(feature_matrix, tickers)

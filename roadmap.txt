@@ -1,46 +1,45 @@
-Here’s a quick status of the 1–16 roadmap (updated 2025-08-18, post-commit) and the next concrete actions.
+Here’s a quick status of the 1–16 roadmap (updated 2025-08-21) and the next concrete actions.
 
 1) Database foundation — Done
 - Runs, prices, features, labels, signals_norm, experiments, metrics in place.
 
 2) Price ingestion — Improved
-- Bulk yfinance + DB upserts and price backfill CLI in tools/price_backfill.py.
-- Added gap diagnostics CSV and a simple retry/backoff queue for sparse tickers.
+- Bulk yfinance, widened window handling, normalized OHLCV upserts, price backfill CLI in tools/price_backfill.py.
+- Gap diagnostics CSV and simple retry/backoff for sparse tickers.
 
 3) Run and signal persistence — Done
 - Run rows + numeric feature snapshots persisted.
-- Normalized signals table (signals_norm) with score, rank, trade_type, risk_level, and subscores persisted per run/ticker.
+- Normalized signals table (signals_norm) with score, rank, trade_type, risk_level, and subscores per run/ticker.
 
-4) Label generation — Done
+4) Label generation — Done (capability)
 - Labels persisted during backtest; labels-only mode supported.
 - tools/labels_backfill.py wrapper added for backfilling 1D/3D/7D/10D.
+- Note: Recent runs lacked labels due to invalid tickers; see “Immediate Fixes”.
 
 5) Backtest metrics & exports — Done (with new metrics)
 - Deciles (gross/net), turnover, cost summary.
-- Daily Spearman IC and precision@K computed and exported per-run and globally.
+- Daily Spearman IC and precision@K per-run and global.
 
 6) Trainable scoring profile — Improved
-- Trainer supports optional rolling time-split CV with embargo; per-fold metrics persisted.
-- Next: cross-sectional standardization audit and model comparison dashboard.
+- Rolling time-split CV with embargo; per-fold metrics persisted.
+- Cross-sectional standardization audit and model comparison added to dashboard.
 
 7) Experiment tracking — Done
 - Experiments and metrics persisted for comparisons.
 
 8) Scheduling and retention — Done
-- Orchestrator supports scheduling toggles and added outputs retention sweep (keep last N runs via env).
+- Orchestrator supports scheduling toggles; outputs retention sweep (keep last N runs via env).
 
 9) Observability — Improved
 - JSONL logs, counters, aggregated fetch reliability.
-- Added an error budget target and per-component success-rate export to References/Error_Budgets.csv, plus persistence into metrics.
-- Trend chart + table from metrics for last 30 days added (Error_Budget_Trend.csv + plot on dashboard).
+- Error budget target; References/Error_Budgets.csv; 30-day trend table/plot.
 
 10) API endpoints — Done
 - Outputs and read-only DB endpoints: /api/db/{runs,metrics,labels,features} with caching and CORS.
 
 11) Tests (additions) — Improved
 - Added tests: price upsert dedupe/overwrite; label upsert idempotency; feature snapshot time integrity; label window correctness; weekly rollup smoke.
-- All tests pass locally (11 passed).
-- Added tiny synthetic E2E that runs enrich (labels-only) and trains via helpers.
+- Synthetic E2E (labels-only enrich + trainer) added.
 
 12) Refactors — Partial
 - IO isolation improved; labels centralized.
@@ -53,13 +52,20 @@ Here’s a quick status of the 1–16 roadmap (updated 2025-08-18, post-commit) 
 - WAL, indexes, batching, pacing/rate limiting.
 
 15) Documentation — Partial
-- README updated with DB schema overview, CLIs, weekly rollup, and observability/error budgets. Next: short dev guide and schema diagram.
- - Developer Guide added at docs/DEVELOPER_GUIDE.md; Schema overview added at docs/SCHEMA.md.
+- README updated with DB schema overview, CLIs, weekly rollup, and observability/error budgets.
+- Developer Guide at docs/DEVELOPER_GUIDE.md; Schema at docs/SCHEMA.md.
 
 16) Optional enhancements — Pending
 - Drift/shift checks, SHAP/permutation importance, SeenCache→SQLite, global cache TTLs.
- 
-Immediate Next Steps
-- Cross-sectional feature standardization audit: Done (feature_standardization_audit.csv + dashboard section).
-- Model comparison export + dashboard table: Done (Model_Comparison.csv + dashboard table).
-- Follow-up: add brief narrative in README/docs interpreting the standardization audit.
+
+Operational changes
+- GitHub Actions workflows removed; running via run_all locally is the default.
+
+Immediate Fixes (this week)
+- Universe quality: enforce valid ticker filter when building signals; drop junk symbols (e.g., TEST/UK/USA) so labels can populate.
+- Label coverage: re-run labels-only backfill after universe fix; verify trainer sees non-empty targets.
+
+Next 1–2 weeks
+- Contracts: add light Pydantic models for signals, prices, and labels; wire behind a flag.
+- Trainer: add precision@K and IC trend exports per model; simple model registry JSON.
+- Docs: add short narrative interpreting the standardization audit and model comparison table.

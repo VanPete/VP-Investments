@@ -245,10 +245,27 @@ def enrich_future_returns_in_db(force_all: bool = True,
         eastern = pytz.timezone("US/Eastern")
 
         # Restrict to known tickers from company list to avoid bad symbols in historical DB
+        valid_set: Set[str] = set()
         try:
-            companies = pd.read_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'company_names.csv'))
-            valid_set = set(companies['Ticker'].astype(str).str.upper().str.strip().str.replace('$','', regex=False))
-        except Exception:
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            paths = [
+                os.path.join(root, 'data', 'company_names.csv'),
+                os.path.join(os.getcwd(), 'data', 'company_names.csv'),
+            ]
+            last_err: Optional[Exception] = None
+            for p in paths:
+                try:
+                    companies = pd.read_csv(p)
+                    valid_set = set(companies['Ticker'].astype(str).str.upper().str.strip().str.replace('$','', regex=False))
+                    if valid_set:
+                        print(f"[FILTER] Loaded {len(valid_set)} valid tickers from {os.path.relpath(p, root)}")
+                        break
+                except Exception as e:
+                    last_err = e
+            if not valid_set and last_err:
+                print(f"[WARN] Could not load company_names.csv; ticker validation disabled ({last_err})")
+        except Exception as e:
+            print(f"[WARN] Ticker validation setup failed; proceeding without filter ({e})")
             valid_set = set()
 
         # Normalize Ticker for downstream use and optional filtering
@@ -257,10 +274,16 @@ def enrich_future_returns_in_db(force_all: bool = True,
         if valid_set:
             drop_syms = sorted(all_symbols - valid_set)
             if drop_syms:
-                print(f"[FILTER] Dropping {len(drop_syms)} unknown symbols (e.g., {drop_syms[:10]})")
+                example = ', '.join(drop_syms[:10])
+                print(f"[FILTER] Dropping {len(drop_syms)} unknown symbols (e.g., {example})")
             # Filter base_df rows to valid tickers only
             base_df = base_df[base_df["Ticker"].isin(valid_set)]
-            use_syms = sorted(set(base_df["Ticker"].unique()) & valid_set)
+            use_syms_set = set(base_df["Ticker"].unique()) & valid_set
+            # If validation is too strict (very few symbols), relax to all symbols
+            if len(use_syms_set) < 5:
+                print(f"[FILTER] Validation left only {len(use_syms_set)} symbols; relaxing filter to all {len(all_symbols)} symbols for this pass.")
+                use_syms_set = set(all_symbols)
+            use_syms = sorted(use_syms_set)
         else:
             use_syms = sorted(all_symbols)
 

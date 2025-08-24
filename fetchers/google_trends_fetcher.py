@@ -29,9 +29,28 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # === Load Company Data ===
 def load_company_data() -> pd.DataFrame:
-    df = pd.read_csv("data/company_names.csv")
-    df = df.dropna(subset=["Ticker", "Company", "Sector", "MarketCap"])
-    return df
+    """Load the canonical NYSE/NASDAQ universe from data/company_names.csv.
+
+    Only requires Ticker and Company columns. Sector is optional. MarketCap is
+    intentionally not required (removed from CSV by design).
+    """
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(project_root, "data", "company_names.csv")
+        df = pd.read_csv(path)
+        # Keep only essential columns; tolerate missing Sector
+        if "Ticker" not in df.columns or "Company" not in df.columns:
+            raise ValueError(f"Expected 'Ticker' and 'Company' columns in {path}")
+        df = df.dropna(subset=["Ticker", "Company"]).copy()
+        # Normalize
+        df["Ticker"] = df["Ticker"].astype(str).str.upper().str.strip().str.replace("$", "", regex=False)
+        df["Company"] = df["Company"].astype(str)
+        return df.drop_duplicates(subset="Ticker")
+    except FileNotFoundError:
+        raise
+    except Exception as e:
+        logging.warning(f"Failed to load company_names.csv for Trends: {e}")
+        return pd.DataFrame(columns=["Ticker", "Company"])  # safe empty frame
 
 # === Google Trends Fetch Core ===
 def fetch_trends_for_term(term: str, timeframe: str = TRENDS_TIMEFRAME) -> pd.DataFrame:

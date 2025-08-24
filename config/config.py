@@ -111,10 +111,10 @@ REDDIT_SUBREDDITS = [
     "economics", "quant"
 ]
 REDDIT_LIMITS = {
-    "hot": 2,
-    "new": 2,
-    "top": 2,
-    "rising": 2
+    "hot": 20,
+    "new": 20,
+    "top": 20,
+    "rising": 20
 }
 
 REDDIT_TICKER_PATTERN = r'\b[A-Z]{1,5}\b'
