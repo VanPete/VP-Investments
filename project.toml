@@ -1,0 +1,86 @@
+# VP Investments Project Configuration
+# This file centralizes key project settings for both development and deployment
+
+[project]
+name = "vp-investments"
+version = "2.0.0"
+description = "AI-powered trading analysis platform"
+authors = ["VP Team"]
+
+[development]
+# Backend settings
+backend_host = "127.0.0.1"
+backend_port = 8001
+api_docs_url = "/docs"
+api_redoc_url = "/redoc"
+
+# Frontend settings  
+frontend_host = "localhost"
+frontend_port = 3000
+frontend_dir = "frontend"
+
+# Development URLs
+backend_url = "http://127.0.0.1:8001"
+frontend_url = "http://localhost:3000"
+health_check_url = "http://127.0.0.1:8001/api/health"
+
+[database]
+# Primary database (Supabase PostgreSQL)
+provider = "supabase"
+pool_size = 10
+pool_timeout = 30
+
+[api]
+# API configuration
+timeout_seconds = 30
+rate_limit_per_minute = 100
+cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+[data_sources]
+# Data source configurations
+reddit_enabled = true
+news_enabled = true
+finance_enabled = true
+technical_enabled = true
+
+# Rate limits (requests per minute)
+reddit_rate_limit = 60
+news_rate_limit = 100
+finance_rate_limit = 300
+
+[ai]
+# AI/ML settings
+model = "gpt-4"
+temperature = 0.1
+max_tokens = 1000
+timeout_seconds = 30
+
+[logging]
+# Logging configuration
+level = "INFO"
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+file_max_bytes = 10485760  # 10MB
+backup_count = 5
+
+[cache]
+# Caching settings
+default_ttl = 3600  # 1 hour
+max_size = 1000
+
+[security]
+# Security settings
+allowed_hosts = ["localhost", "127.0.0.1"]
+cors_allow_credentials = true
+cors_max_age = 3600
+
+[deployment]
+# Production deployment settings
+backend_workers = 4
+frontend_build_dir = "frontend/dist"
+static_files_dir = "static"
+
+[testing]
+# Test configuration
+test_database_url = "sqlite:///./test.db"
+mock_external_apis = true
+test_timeout = 30

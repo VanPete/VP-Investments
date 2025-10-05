@@ -30,6 +30,19 @@ outputs/*/
 cache/
 !cache/.gitkeep
 
+# === Temporary Files and Development ===
+temp/
+!temp/README.md
+
+# === Frontend Development ===
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+frontend/.env.production
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
 # === Environment Files ===
 .env
 *.env
