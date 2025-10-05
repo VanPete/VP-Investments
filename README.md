@@ -1,5 +1,11 @@
 # VP Investments - Alternative Signal Investment Research Platform
 
+> **⚠️ VERSION 1.0 ARCHIVE**
+> 
+> This repository contains **Version 1.0** of VP Investments. This version is archived for reference purposes.
+> 
+> **Version 2.0** is under active development and will be pushed to this repository once ready.
+
 ## 🎯 Project Overview
 
 VP Investments is a comprehensive investment research platform that combines alternative data sources (Reddit sentiment, Google Trends, news sentiment) with traditional financial metrics to identify emerging stock opportunities. The system focuses on detecting early momentum signals and validating them with fundamental and technical analysis.
@@ -471,3 +477,23 @@ cp .env.template .env
 
 # Run the analysis
 python "VP Investments.py"
+```
+
+---
+
+## 📦 Version Information
+
+This is **Version 1.0 (ARCHIVED)** of VP Investments.
+
+### Version Files
+
+- `VERSION.txt` - Version information and archive notice
+- `MIGRATION_TO_V2.md` - Guide for transitioning to Version 2.0
+
+### Version 2.0
+
+Version 2.0 is under active development and will replace this codebase when ready. See `MIGRATION_TO_V2.md` for details on the transition plan.
+
+### Questions
+
+For questions about this archived version or Version 2.0, please contact the repository owner.

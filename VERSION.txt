@@ -1,0 +1,15 @@
+VP Investments Version 1.0
+==========================
+
+This is the archived Version 1.0 of VP Investments.
+
+Version: 1.0.0
+Status: ARCHIVED
+Date: 2024
+
+Notes:
+------
+This version is preserved for reference and historical purposes.
+Version 2.0 is under active development and will replace this codebase.
+
+For questions or to access the latest version, please contact the repository owner.

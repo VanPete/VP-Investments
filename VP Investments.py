@@ -1,3 +1,13 @@
+"""
+VP Investments - Version 1.0 (ARCHIVED)
+
+This is the archived Version 1.0 of the VP Investments platform.
+Version 2.0 is under active development.
+"""
+
+__version__ = "1.0.0"
+__status__ = "ARCHIVED"
+
 import os
 import logging
 import warnings
