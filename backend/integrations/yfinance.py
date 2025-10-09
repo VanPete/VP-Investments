@@ -563,6 +563,54 @@ class YahooFinanceIntegrator:
         except Exception as e:
             logger.warning(f"Enhanced financial data failed for {ticker}: {e}")
             return None
+    
+    def calculate_beta(self, ticker_data: Dict[str, Any]) -> Optional[float]:
+        """
+        Calculate Beta using scipy linear regression with cached data.
+        Moved from pipeline.py for better separation of concerns.
+        
+        Args:
+            ticker_data (Dict[str, Any]): Cached ticker data including history_1y
+            
+        Returns:
+            Optional[float]: Beta value or None if calculation fails
+        """
+        try:
+            from scipy.stats import linregress
+            
+            # Get SPY data for same period
+            spy = yf.Ticker("SPY")
+            spy_history = spy.history(period="1y", interval="1d")
+            
+            # Get stock data
+            stock_df = ticker_data.get('history_1y', pd.DataFrame())
+            if stock_df.empty or spy_history.empty:
+                return None
+                
+            # Align dates and calculate returns
+            common_dates = stock_df.index.intersection(spy_history.index)
+            if len(common_dates) < 30:  # Need minimum data points
+                return None
+                
+            stock_returns = stock_df.loc[common_dates]['Close'].pct_change().dropna()
+            spy_returns = spy_history.loc[common_dates]['Close'].pct_change().dropna()
+            
+            # Ensure same length
+            min_len = min(len(stock_returns), len(spy_returns))
+            if min_len < 20:
+                return None
+                
+            stock_returns = stock_returns.iloc[-min_len:]
+            spy_returns = spy_returns.iloc[-min_len:]
+            
+            # Linear regression: stock_returns = alpha + beta * spy_returns
+            slope, intercept, r_value, p_value, std_err = linregress(spy_returns, stock_returns)
+            
+            return float(slope)
+            
+        except Exception as e:
+            logger.debug(f"Beta calculation failed: {e}")
+            return None
 
 def main():
     """Run Yahoo Finance integration"""
