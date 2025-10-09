@@ -95,7 +95,7 @@ class TradeType(Enum):
 class RiskLevel(Enum):
     """Risk level classifications"""
     LOW = "low"
-    MEDIUM = "medium"
+    MODERATE = "moderate"  # Changed from MEDIUM to match signals.py usage
     HIGH = "high"
     EXTREME = "extreme"
 

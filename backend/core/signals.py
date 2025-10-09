@@ -20,44 +20,10 @@ import json
 import numpy as np
 import pandas as pd
 
-# Import from core module
-from .core import FeatureType
+# Import enums and constants from core module
+from .core import FeatureType, SignalType, TradeType, RiskLevel
 
 logger = logging.getLogger(__name__)
-
-
-class SignalType(Enum):
-    """Signal type classifications"""
-    REDDIT_SURGE = "reddit_surge"
-    NEWS_MOMENTUM = "news_momentum" 
-    EARNINGS_REACTION = "earnings_reaction"
-    TECHNICAL_MOMENTUM = "technical_momentum"
-    RETAIL_SPECULATIVE = "retail_speculative"
-    MULTI_FACTOR = "multi_factor"
-    BREAKOUT = "breakout"
-    REVERSAL = "reversal"
-    VOLUME_BREAKOUT = "volume_breakout"
-    PRICE_MOMENTUM = "price_momentum"
-
-
-class TradeType(Enum):
-    """Trade type classifications"""
-    LONG = "long"
-    SHORT = "short"
-    SWING = "swing"
-    MOMENTUM = "momentum"
-    GROWTH = "growth"
-    VALUE = "value"
-    SPECULATIVE = "speculative"
-    BALANCED = "balanced"
-
-
-class RiskLevel(Enum):
-    """Risk level classifications"""
-    LOW = "low"
-    MODERATE = "moderate"
-    HIGH = "high"
-    EXTREME = "extreme"
 
 
 @dataclass
