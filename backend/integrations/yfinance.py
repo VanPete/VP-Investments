@@ -514,9 +514,9 @@ class TechnicalIndicatorsCalculator:
         try:
             if len(closes) < 26:
                 return {
-                    'macd': np.nan,
                     'macd_line': np.nan,
-                    'macd_signal': np.nan
+                    'macd_signal': np.nan,
+                    'macd_histogram': np.nan
                 }
             
             # Calculate MACD line
@@ -531,24 +531,28 @@ class TechnicalIndicatorsCalculator:
             macd_histogram = macd_line - signal_line
             
             return {
-                'macd': macd_histogram.iloc[-1] if not macd_histogram.empty else np.nan,
                 'macd_line': macd_line.iloc[-1] if not macd_line.empty else np.nan,
-                'macd_signal': signal_line.iloc[-1] if not signal_line.empty else np.nan
+                'macd_signal': signal_line.iloc[-1] if not signal_line.empty else np.nan,
+                'macd_histogram': macd_histogram.iloc[-1] if not macd_histogram.empty else np.nan
             }
             
         except Exception as e:
             self.logger.warning(f"MACD calculation failed: {e}")
             return {
-                'macd': np.nan,
                 'macd_line': np.nan,
-                'macd_signal': np.nan
+                'macd_signal': np.nan,
+                'macd_histogram': np.nan
             }
     
     def _calculate_bollinger_bands(self, closes: pd.Series) -> Dict[str, float]:
-        """Calculate Bollinger Bands width."""
+        """Calculate Bollinger Bands (upper, lower, position)."""
         try:
             if len(closes) < self.TECH_BB_PERIOD:
-                return {'bollinger': np.nan}
+                return {
+                    'bollinger_upper': np.nan,
+                    'bollinger_lower': np.nan,
+                    'bollinger_position': np.nan
+                }
             
             bb_mean = closes.rolling(self.TECH_BB_PERIOD).mean()
             bb_std = closes.rolling(self.TECH_BB_PERIOD).std()
@@ -556,14 +560,26 @@ class TechnicalIndicatorsCalculator:
             upper_band = bb_mean + (2 * bb_std)
             lower_band = bb_mean - (2 * bb_std)
             
-            # Bollinger band width as percentage of price
-            bollinger_width = ((upper_band - lower_band) / closes).iloc[-1]
+            current_price = closes.iloc[-1]
+            upper_val = upper_band.iloc[-1]
+            lower_val = lower_band.iloc[-1]
             
-            return {'bollinger': bollinger_width if not np.isnan(bollinger_width) else np.nan}
+            # Position within bands (0 = at lower, 1 = at upper)
+            position = (current_price - lower_val) / (upper_val - lower_val) if (upper_val != lower_val) else 0.5
+            
+            return {
+                'bollinger_upper': upper_val if not np.isnan(upper_val) else np.nan,
+                'bollinger_lower': lower_val if not np.isnan(lower_val) else np.nan,
+                'bollinger_position': position if not np.isnan(position) else np.nan
+            }
             
         except Exception as e:
             self.logger.warning(f"Bollinger Bands calculation failed: {e}")
-            return {'bollinger': np.nan}
+            return {
+                'bollinger_upper': np.nan,
+                'bollinger_lower': np.nan,
+                'bollinger_position': np.nan
+            }
     
     def _calculate_volatility_metrics(self, closes: pd.Series) -> Dict[str, float]:
         """Calculate volatility metrics."""
@@ -931,6 +947,19 @@ class FinancialMetricsCalculator:
             # Volume and liquidity
             financial_data.update(self._get_liquidity_metrics(hist, info))
             
+            # PHASE 3: Analyst data
+            current_price = financial_data.get('current_price', info.get('previousClose', 0))
+            financial_data.update(self._get_analyst_data(stock, info, current_price))
+            
+            # PHASE 3: Earnings surprise data
+            financial_data.update(self._get_earnings_surprise_data(stock))
+            
+            # PHASE 3: Institutional ownership changes
+            financial_data.update(self._get_institutional_ownership_data(stock, info))
+            
+            # PHASE 3: Insider trading activity
+            financial_data.update(self._get_insider_trading_data(stock))
+            
             return financial_data
             
         except Exception as e:
@@ -1155,6 +1184,261 @@ class FinancialMetricsCalculator:
                 'dividend_date': None,
             }
     
+    def _get_analyst_data(self, stock: yf.Ticker, info: Dict[str, any], current_price: float) -> Dict[str, any]:
+        """
+        Collect analyst recommendations and price targets.
+        
+        Returns:
+            - target_price_mean: Average analyst price target
+            - target_price_high: Highest price target
+            - target_price_low: Lowest price target
+            - recommendation_mean: Average recommendation (1=Strong Buy, 5=Sell)
+            - num_analysts: Number of analysts covering stock
+            - target_upside_pct: Potential upside to mean target
+        """
+        try:
+            # Get analyst data from info dict
+            target_mean = info.get('targetMeanPrice')
+            target_high = info.get('targetHighPrice')
+            target_low = info.get('targetLowPrice')
+            recommendation_mean = info.get('recommendationMean')
+            num_analysts = info.get('numberOfAnalystOpinions')
+            
+            # Calculate target upside
+            target_upside_pct = None
+            if target_mean and current_price and current_price > 0:
+                target_upside_pct = round(((target_mean - current_price) / current_price) * 100, 2)
+            
+            return {
+                'target_price_mean': round(target_mean, 2) if target_mean else None,
+                'target_price_high': round(target_high, 2) if target_high else None,
+                'target_price_low': round(target_low, 2) if target_low else None,
+                'recommendation_mean': round(recommendation_mean, 2) if recommendation_mean else None,
+                'num_analysts': int(num_analysts) if num_analysts else None,
+                'target_upside_pct': target_upside_pct,
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Analyst data extraction failed: {e}")
+            return {
+                'target_price_mean': None,
+                'target_price_high': None,
+                'target_price_low': None,
+                'recommendation_mean': None,
+                'num_analysts': None,
+                'target_upside_pct': None,
+            }
+    
+    def _get_earnings_surprise_data(self, stock: yf.Ticker) -> Dict[str, any]:
+        """
+        Collect earnings surprise history.
+        
+        Returns:
+            - last_earnings_surprise_pct: Most recent earnings surprise
+            - avg_earnings_surprise_pct: Average of last 4 quarters
+            - earnings_surprise_trend: Improving/Declining/Stable
+        """
+        try:
+            # Get earnings history
+            earnings_history = stock.earnings_dates
+            
+            if earnings_history is None or earnings_history.empty:
+                return {
+                    'last_earnings_surprise_pct': None,
+                    'avg_earnings_surprise_pct': None,
+                    'earnings_surprise_trend': None,
+                }
+            
+            # Calculate surprise percentages
+            surprises = []
+            for idx, row in earnings_history.head(4).iterrows():
+                eps_actual = row.get('Reported EPS')
+                eps_estimate = row.get('EPS Estimate')
+                
+                if eps_actual is not None and eps_estimate is not None and eps_estimate != 0:
+                    surprise_pct = ((eps_actual - eps_estimate) / abs(eps_estimate)) * 100
+                    surprises.append(surprise_pct)
+            
+            if not surprises:
+                return {
+                    'last_earnings_surprise_pct': None,
+                    'avg_earnings_surprise_pct': None,
+                    'earnings_surprise_trend': None,
+                }
+            
+            last_surprise = surprises[0]
+            avg_surprise = sum(surprises) / len(surprises)
+            
+            # Determine trend
+            trend = None
+            if len(surprises) >= 3:
+                recent_avg = sum(surprises[:2]) / 2
+                older_avg = sum(surprises[2:]) / len(surprises[2:])
+                
+                if recent_avg > older_avg + 5:
+                    trend = 'Improving'
+                elif recent_avg < older_avg - 5:
+                    trend = 'Declining'
+                else:
+                    trend = 'Stable'
+            
+            return {
+                'last_earnings_surprise_pct': round(last_surprise, 2),
+                'avg_earnings_surprise_pct': round(avg_surprise, 2),
+                'earnings_surprise_trend': trend,
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Earnings surprise data extraction failed: {e}")
+            return {
+                'last_earnings_surprise_pct': None,
+                'avg_earnings_surprise_pct': None,
+                'earnings_surprise_trend': None,
+            }
+    
+    def _get_institutional_ownership_data(self, stock: yf.Ticker, info: Dict[str, any]) -> Dict[str, any]:
+        """
+        Collect institutional ownership changes.
+        
+        Returns:
+            - institutional_ownership_pct: Current institutional %
+            - institutional_change_qoq: Quarter-over-quarter change
+            - num_institutions: Number of institutional holders
+            - top_10_holders_pct: % held by top 10 institutions
+        """
+        try:
+            # Get current institutional ownership from info
+            inst_ownership_pct = info.get('heldPercentInstitutions')
+            if inst_ownership_pct is not None:
+                inst_ownership_pct = round(inst_ownership_pct * 100, 2)
+            
+            # Get institutional holders
+            institutional_holders = stock.institutional_holders
+            
+            institutional_change_qoq = None
+            num_institutions = None
+            top_10_pct = None
+            
+            if institutional_holders is not None and not institutional_holders.empty:
+                num_institutions = len(institutional_holders)
+                
+                # Calculate top 10 holders percentage
+                if 'Shares' in institutional_holders.columns:
+                    top_10_shares = institutional_holders.head(10)['Shares'].sum()
+                    total_shares = info.get('sharesOutstanding', 1)
+                    
+                    if total_shares and total_shares > 0:
+                        top_10_pct = round((top_10_shares / total_shares) * 100, 2)
+                
+                # Try to calculate QoQ change if Date Reported is available
+                if 'Date Reported' in institutional_holders.columns and len(institutional_holders) >= 2:
+                    # Sort by date
+                    sorted_holders = institutional_holders.sort_values('Date Reported', ascending=False)
+                    
+                    # Get most recent and previous quarter data
+                    recent_date = sorted_holders['Date Reported'].iloc[0]
+                    previous_quarter_data = sorted_holders[sorted_holders['Date Reported'] < recent_date]
+                    
+                    if not previous_quarter_data.empty:
+                        recent_total = sorted_holders[sorted_holders['Date Reported'] == recent_date]['Shares'].sum()
+                        previous_total = previous_quarter_data['Shares'].sum()
+                        
+                        if previous_total > 0:
+                            institutional_change_qoq = round(((recent_total - previous_total) / previous_total) * 100, 2)
+            
+            return {
+                'institutional_ownership_pct': inst_ownership_pct,
+                'institutional_change_qoq': institutional_change_qoq,
+                'num_institutions': num_institutions,
+                'top_10_holders_pct': top_10_pct,
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Institutional ownership data extraction failed: {e}")
+            return {
+                'institutional_ownership_pct': None,
+                'institutional_change_qoq': None,
+                'num_institutions': None,
+                'top_10_holders_pct': None,
+            }
+    
+    def _get_insider_trading_data(self, stock: yf.Ticker) -> Dict[str, any]:
+        """
+        Collect insider trading activity.
+        
+        Returns:
+            - insider_buy_transactions_3m: Buy transactions in last 3 months
+            - insider_sell_transactions_3m: Sell transactions in last 3 months
+            - insider_net_shares_3m: Net shares bought (positive) or sold (negative)
+            - insider_activity_score: 0-100 score (100 = strong buying)
+        """
+        try:
+            # Get insider transactions
+            insider_transactions = stock.insider_transactions
+            
+            if insider_transactions is None or insider_transactions.empty:
+                return {
+                    'insider_buy_transactions_3m': 0,
+                    'insider_sell_transactions_3m': 0,
+                    'insider_net_shares_3m': 0,
+                    'insider_activity_score': 50.0,  # Neutral
+                }
+            
+            # Filter to last 3 months
+            three_months_ago = datetime.now() - timedelta(days=90)
+            
+            if 'Start Date' in insider_transactions.columns:
+                recent_transactions = insider_transactions[
+                    pd.to_datetime(insider_transactions['Start Date']) >= three_months_ago
+                ]
+            else:
+                # If no date column, use all transactions as recent
+                recent_transactions = insider_transactions
+            
+            # Count buy and sell transactions
+            buy_transactions = 0
+            sell_transactions = 0
+            net_shares = 0
+            
+            if 'Transaction' in recent_transactions.columns and 'Shares' in recent_transactions.columns:
+                for _, row in recent_transactions.iterrows():
+                    transaction_type = str(row['Transaction']).lower()
+                    shares = row['Shares']
+                    
+                    if pd.notna(shares):
+                        if 'buy' in transaction_type or 'purchase' in transaction_type:
+                            buy_transactions += 1
+                            net_shares += abs(shares)
+                        elif 'sell' in transaction_type or 'sale' in transaction_type:
+                            sell_transactions += 1
+                            net_shares -= abs(shares)
+            
+            # Calculate insider activity score (0-100)
+            # 100 = strong buying, 50 = neutral, 0 = strong selling
+            total_transactions = buy_transactions + sell_transactions
+            
+            if total_transactions > 0:
+                buy_ratio = buy_transactions / total_transactions
+                insider_score = buy_ratio * 100
+            else:
+                insider_score = 50.0  # Neutral if no transactions
+            
+            return {
+                'insider_buy_transactions_3m': buy_transactions,
+                'insider_sell_transactions_3m': sell_transactions,
+                'insider_net_shares_3m': int(net_shares),
+                'insider_activity_score': round(insider_score, 2),
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Insider trading data extraction failed: {e}")
+            return {
+                'insider_buy_transactions_3m': 0,
+                'insider_sell_transactions_3m': 0,
+                'insider_net_shares_3m': 0,
+                'insider_activity_score': 50.0,
+            }
+    
     def _calculate_earnings_gap(self, stock: yf.Ticker) -> Optional[float]:
         """Calculate earnings reaction (price gap after earnings)."""
         try:
@@ -1278,6 +1562,24 @@ class FinancialMetricsCalculator:
             'payout_ratio': None,
             'ex_dividend_date': None,
             'dividend_date': None,
+            # Phase 3 fields
+            'target_price_mean': None,
+            'target_price_high': None,
+            'target_price_low': None,
+            'recommendation_mean': None,
+            'num_analysts': None,
+            'target_upside_pct': None,
+            'last_earnings_surprise_pct': None,
+            'avg_earnings_surprise_pct': None,
+            'earnings_surprise_trend': None,
+            'institutional_ownership_pct': None,
+            'institutional_change_qoq': None,
+            'num_institutions': None,
+            'top_10_holders_pct': None,
+            'insider_buy_transactions_3m': 0,
+            'insider_sell_transactions_3m': 0,
+            'insider_net_shares_3m': 0,
+            'insider_activity_score': 50.0,
         }
 
 
@@ -2173,8 +2475,8 @@ async def _calculate_sector_relative_strength(ticker: str, sector: str) -> Optio
         # Get 30-day returns for both ticker and sector ETF
         import yfinance as yf
         
-        ticker_data = yf.download(ticker, period='2mo', interval='1d')
-        etf_data = yf.download(sector_etf, period='2mo', interval='1d')
+        ticker_data = yf.download(ticker, period='2mo', interval='1d', auto_adjust=True)
+        etf_data = yf.download(sector_etf, period='2mo', interval='1d', auto_adjust=True)
         
         if len(ticker_data) < 30 or len(etf_data) < 30:
             return None

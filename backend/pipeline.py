@@ -567,7 +567,7 @@ class UnifiedPipeline:
         
         return {
             'news_score': None,
-            'news_sentiment': None,
+            'news_sentiment_score': None,
             'news_mentions': 0,
             'ai_news_summary': None
         }
@@ -659,7 +659,6 @@ class UnifiedPipeline:
                     'completed_at': datetime.now().isoformat(),
                     'total_signals': len(signals),
                     'status': 'completed',
-                    'error_message': None,
                     'metadata': {
                         'signals_count': len(signals),
                         'pipeline_version': '1.0',
@@ -752,7 +751,6 @@ class UnifiedPipeline:
                     'risk_tags': risk_desc if 'High' in risk_level else '',
                     'risk_assessment': risk_desc,
                     'rank': rank,
-                    'normalized_rank': self._safe_round(rank / max(len(signals), 1), 4),
                     'signal_confidence': self._safe_round(signal['weighted_score'], 4),
                     'top_factors': 'Reddit mentions, price momentum',
                     'signal_type': 'Multi-Factor',
@@ -764,7 +762,7 @@ class UnifiedPipeline:
                     
                     # Reddit metrics
                     'reddit_sentiment': self._safe_round(signal.get('reddit_data', {}).get('avg_sentiment'), 4),
-                    'news_sentiment': self._safe_round(signal.get('news_sentiment', 0), 4),
+                    'news_sentiment_score': self._safe_round(signal.get('news_sentiment_score', signal.get('news_sentiment', 0)), 4),
                     'mentions': signal.get('reddit_data', {}).get('mention_count', 0),
                     'news_mentions': signal.get('news_mentions', 0),
                     'upvotes': reddit_data.get('upvotes', 0),
@@ -781,6 +779,7 @@ class UnifiedPipeline:
                     # Technical indicators
                     'relative_strength': self._safe_round(financial_data.get('relative_strength'), 2),
                     'momentum_30d_pct': self._safe_round(financial_data.get('momentum_30d_pct'), 2),
+                    'momentum_consistency_score': self._safe_round(signal.get('momentum_consistency_score'), 2),  # Phase 1 ML metric
                     'rsi': self._safe_round(financial_data.get('rsi'), 2),
                     'macd_histogram': self._safe_round(financial_data.get('macd_histogram'), 4),
                     'bollinger_width': self._safe_round(financial_data.get('bollinger_width'), 4),
@@ -817,6 +816,28 @@ class UnifiedPipeline:
                     'short_pct_outstanding': self._safe_round(financial_data.get('short_pct_outstanding'), 2),
                     'shares_short': financial_data.get('shares_short'),
                     
+                    # Phase 3: Analyst Data
+                    'analyst_target_price': self._safe_round(financial_data.get('analyst_target_price'), 2),
+                    'analyst_target_upside_pct': self._safe_round(financial_data.get('analyst_target_upside_pct'), 2),
+                    'analyst_recommendation_mean': self._safe_round(financial_data.get('analyst_recommendation_mean'), 2),
+                    'analyst_count': financial_data.get('analyst_count'),
+                    
+                    # Phase 3: Earnings Surprise Data
+                    'last_earnings_surprise_pct': self._safe_round(financial_data.get('last_earnings_surprise_pct'), 2),
+                    'avg_earnings_surprise_pct': self._safe_round(financial_data.get('avg_earnings_surprise_pct'), 2),
+                    'earnings_surprise_trend': financial_data.get('earnings_surprise_trend'),
+                    
+                    # Phase 3: Institutional Activity
+                    'institutional_change_qoq': self._safe_round(financial_data.get('institutional_change_qoq'), 2),
+                    'top_10_institutional_holders_pct': self._safe_round(financial_data.get('top_10_institutional_holders_pct'), 2),
+                    'num_institutional_holders': financial_data.get('num_institutional_holders'),
+                    
+                    # Phase 3: Insider Trading
+                    'insider_activity_score': self._safe_round(financial_data.get('insider_activity_score'), 2),
+                    'insider_buy_count': financial_data.get('insider_buy_count'),
+                    'insider_sell_count': financial_data.get('insider_sell_count'),
+                    'insider_net_shares': financial_data.get('insider_net_shares'),
+                    
                     # Flags and metadata
                     'liquidity_warning': None,  # Can be populated by liquidity analysis
                     'emerging': False,  # Can be set based on market cap or other criteria
@@ -830,8 +851,6 @@ class UnifiedPipeline:
                     'score_explanation': signal.get('score_explanation', None),
                     
                     # Timestamps
-                    'run_datetime': current_time.isoformat(),
-                    'signal_datetime': current_time.isoformat(),
                     'created_at': current_time.isoformat(),
                     'updated_at': current_time.isoformat()
                 }
@@ -844,23 +863,39 @@ class UnifiedPipeline:
             # Debug: Check for potential overflow values
             for i, record in enumerate(enhanced_signals[:3]):  # Check first 3 records
                 for key, value in record.items():
-                    if isinstance(value, (int, float)) and value is not None:
-                        if abs(value) >= 10:
-                            self.logger.warning(f"Potential overflow in record {i}, field '{key}': {value}")
+                    if isinstance(value, (int, float)) and value is not None and not isinstance(value, bool):
+                        try:
+                            if abs(value) >= 10:
+                                self.logger.warning(f"Potential overflow in record {i}, field '{key}': {value}")
+                        except (TypeError, ValueError):
+                            # Skip comparison if value can't be used with abs()
+                            pass
             
-            # NEW 3-TABLE STRUCTURE: Split data into signals, signal_metrics, and signal_performance
+            # DENORMALIZED STRUCTURE: All signal data in signals table (including metrics)
             
-            # Step 1: Prepare core signal data (signals table)
+            # Helper function to convert float to int for bigint columns
+            def to_bigint(value):
+                """Convert numeric value to integer for bigint columns."""
+                if value is None:
+                    return None
+                try:
+                    return int(float(value))
+                except (ValueError, TypeError):
+                    return None
+            
+            # Step 1: Prepare COMPLETE signal data (signals table with ALL fields)
             core_signals = []
             metrics_data = []
             
             for record in enhanced_signals:
-                # Core signal fields only
+                # ALL signal fields including metrics (denormalized approach)
                 core_signal = {
+                    # Core identification
                     'run_id': record['run_id'],
                     'ticker': record['ticker'],
                     'company': record['company'],
                     'sector': record['sector'],
+                    # Scoring
                     'weighted_score': record['weighted_score'],
                     'reddit_score': record['reddit_score'],
                     'news_score': record['news_score'],
@@ -870,34 +905,113 @@ class UnifiedPipeline:
                     'risk_tags': record['risk_tags'],
                     'risk_assessment': record['risk_assessment'],
                     'rank': record['rank'],
-                    'normalized_rank': record['normalized_rank'],
                     'signal_confidence': record['signal_confidence'],
                     'top_factors': record['top_factors'],
                     'signal_type': record['signal_type'],
+                    # Price & market cap
                     'current_price': record['current_price'],
                     'market_cap': record['market_cap'],
                     'avg_daily_value_traded': record['avg_daily_value_traded'],
+                    # Social metrics
                     'reddit_sentiment': record['reddit_sentiment'],
-                    'news_sentiment': record['news_sentiment'],
+                    'news_sentiment_score': record.get('news_sentiment_score', record.get('news_sentiment', 0)),
                     'mentions': record['mentions'],
                     'news_mentions': record['news_mentions'],
                     'upvotes': record['upvotes'],
                     'post_recency': record['post_recency'],
+                    # Price action
                     'price_1d_pct': record['price_1d_pct'],
                     'price_7d_pct': record['price_7d_pct'],
                     'volume': record['volume'],
                     'liquidity_warning': record['liquidity_warning'],
                     'emerging': record['emerging'],
-                    'thread_tag': record['thread_tag'],
-                    'reddit_summary': record['reddit_summary'],
-                    'ai_news_summary': record['ai_news_summary'],
-                    'ai_trends_commentary': record['ai_trends_commentary'],
+                    # Commentary
                     'ai_commentary': record['ai_commentary'],
                     'score_explanation': record['score_explanation'],
-                    'run_datetime': record['run_datetime'],
-                    'signal_datetime': record['signal_datetime'],
+                    # Timestamps
                     'created_at': record['created_at'],
-                    'updated_at': record['updated_at']
+                    'updated_at': record['updated_at'],
+                    
+                    # METRICS FIELDS (v2.0 enhancements) - now included in signals table
+                    # Technical indicators - Momentum
+                    'relative_strength': record.get('relative_strength'),
+                    'momentum_30d_pct': record.get('momentum_30d_pct'),
+                    'rsi': record.get('rsi'),
+                    'macd_histogram': record.get('macd_histogram'),
+                    'macd_line': record.get('macd_line'),
+                    'macd_signal': record.get('macd_signal'),
+                    'signal_strength_percentile': record.get('signal_strength_percentile'),
+                    'sector_relative_strength': record.get('sector_relative_strength'),
+                    'momentum_consistency_score': record.get('momentum_consistency_score'),
+                    # Volatility
+                    'volatility': record.get('volatility'),
+                    'volatility_rank': record.get('volatility_rank'),
+                    'bollinger_width': record.get('bollinger_width'),
+                    'bollinger_upper': record.get('bollinger_upper'),
+                    'bollinger_lower': record.get('bollinger_lower'),
+                    'bollinger_position': record.get('bollinger_position'),
+                    'beta': record.get('beta'),
+                    # Moving averages
+                    'above_50d_ma_pct': record.get('above_50d_ma_pct'),
+                    'above_200d_ma_pct': record.get('above_200d_ma_pct'),
+                    # Volume
+                    'volume_spike_ratio': record.get('volume_spike_ratio'),
+                    'avg_daily_volume': to_bigint(record.get('avg_daily_volume')),
+                    'avg_volume_30d': to_bigint(record.get('avg_volume_30d')),
+                    'volume_price_correlation': record.get('volume_price_correlation'),
+                    'float_turnover_ratio': record.get('float_turnover_ratio'),
+                    # Fundamentals
+                    'pe_ratio': record.get('pe_ratio'),
+                    'earnings_gap_pct': record.get('earnings_gap_pct'),
+                    'eps_growth': record.get('eps_growth'),
+                    'roe': record.get('roe'),
+                    'debt_equity': record.get('debt_equity'),
+                    'fcf_margin': record.get('fcf_margin'),
+                    # Options
+                    'put_call_oi_ratio': record.get('put_call_oi_ratio'),
+                    'put_call_vol_ratio': record.get('put_call_vol_ratio'),
+                    'iv_spike_pct': record.get('iv_spike_pct'),
+                    'implied_volatility': record.get('implied_volatility'),
+                    # v2.0 New fields - Ownership
+                    'institutional_ownership_pct': record.get('institutional_ownership_pct'),
+                    'retail_holding_pct': record.get('retail_holding_pct'),
+                    'insider_buy_volume': to_bigint(record.get('insider_buy_volume')),
+                    # v2.0 New fields - Short interest
+                    'short_pct_float': record.get('short_pct_float'),
+                    'short_pct_outstanding': record.get('short_pct_outstanding'),
+                    'shares_short': to_bigint(record.get('shares_short')),
+                    'short_ratio': record.get('short_ratio'),
+                    # Phase 3: Analyst Data
+                    'analyst_target_price': record.get('analyst_target_price'),
+                    'analyst_target_upside_pct': record.get('analyst_target_upside_pct'),
+                    'analyst_recommendation_mean': record.get('analyst_recommendation_mean'),
+                    'analyst_count': record.get('analyst_count'),
+                    # Phase 3: Earnings Surprise Data
+                    'last_earnings_surprise_pct': record.get('last_earnings_surprise_pct'),
+                    'avg_earnings_surprise_pct': record.get('avg_earnings_surprise_pct'),
+                    'earnings_surprise_trend': record.get('earnings_surprise_trend'),
+                    # Phase 3: Institutional Activity
+                    'institutional_change_qoq': record.get('institutional_change_qoq'),
+                    'top_10_institutional_holders_pct': record.get('top_10_institutional_holders_pct'),
+                    'num_institutional_holders': record.get('num_institutional_holders'),
+                    # Phase 3: Insider Trading
+                    'insider_activity_score': record.get('insider_activity_score'),
+                    'insider_buy_count': record.get('insider_buy_count'),
+                    'insider_sell_count': record.get('insider_sell_count'),
+                    'insider_net_shares': to_bigint(record.get('insider_net_shares')),
+                    # Composite scores
+                    'exit_signal_strength': record.get('exit_signal_strength'),
+                    'risk_score': record.get('risk_score'),
+                    'liquidity_score': record.get('liquidity_score'),
+                    'risk_category': record.get('risk_category'),
+                    'max_position_size': record.get('max_position_size'),
+                    # Phase 1.2 composite metrics
+                    'market_cap_category': record.get('market_cap_category'),
+                    'expected_hold_duration': record.get('expected_hold_duration'),
+                    # Phase 1.3 calendar events
+                    'earnings_date': record.get('earnings_date'),
+                    'dividend_ex_date': record.get('dividend_ex_date'),
+                    'analyst_targets': record.get('analyst_targets'),
                 }
                 core_signals.append(core_signal)
             
@@ -905,7 +1019,7 @@ class UnifiedPipeline:
             result_signals = self.supabase.table('signals').insert(core_signals).execute()
             
             if not result_signals.data:
-                self.logger.error("❌ Database insertion failed for signals table")
+                self.logger.error("[ERROR] Database insertion failed for signals table")
                 return False
             
             # Step 3: Prepare metrics data with signal_id references
@@ -973,33 +1087,49 @@ class UnifiedPipeline:
                     'short_pct_float': record.get('short_pct_float'),
                     'short_pct_outstanding': record.get('short_pct_outstanding'),
                     'shares_short': to_bigint(record.get('shares_short')),
+                    # Phase 3: Analyst Data
+                    'analyst_target_price': record.get('analyst_target_price'),
+                    'analyst_target_upside_pct': record.get('analyst_target_upside_pct'),
+                    'analyst_recommendation_mean': record.get('analyst_recommendation_mean'),
+                    'analyst_count': record.get('analyst_count'),
+                    # Phase 3: Earnings Surprise Data
+                    'last_earnings_surprise_pct': record.get('last_earnings_surprise_pct'),
+                    'avg_earnings_surprise_pct': record.get('avg_earnings_surprise_pct'),
+                    'earnings_surprise_trend': record.get('earnings_surprise_trend'),
+                    # Phase 3: Institutional Activity
+                    'institutional_change_qoq': record.get('institutional_change_qoq'),
+                    'top_10_institutional_holders_pct': record.get('top_10_institutional_holders_pct'),
+                    'num_institutional_holders': record.get('num_institutional_holders'),
+                    # Phase 3: Insider Trading
+                    'insider_activity_score': record.get('insider_activity_score'),
+                    'insider_buy_count': record.get('insider_buy_count'),
+                    'insider_sell_count': record.get('insider_sell_count'),
+                    'insider_net_shares': to_bigint(record.get('insider_net_shares')),
                     # Metadata
                     'created_at': record['created_at'],
                     'updated_at': record['updated_at']
                 }
                 metrics_data.append(metrics_record)
             
-            # Step 4: Insert metrics data
-            result_metrics = self.supabase.table('signal_metrics').insert(metrics_data).execute()
+            # Step 4: All metrics data now stored in signals table (signal_metrics table dropped in Phase 4.1)
+            self.logger.info(f"[SUCCESS] Successfully saved {len(result_signals.data)} signals to database")
             
-            if result_metrics.data:
-                self.logger.info(f"✅ Successfully saved {len(result_signals.data)} signals + {len(result_metrics.data)} metrics to database")
-                
-                # Refresh materialized view if it exists
-                try:
-                    self.supabase.rpc('refresh_signals_norm').execute()
-                    self.logger.info(f"✅ Refreshed signals_norm materialized view")
-                except Exception as refresh_error:
-                    self.logger.warning(f"⚠️ signals_norm refresh skipped: {refresh_error}")
-                
-                return True
-            else:
-                self.logger.error("❌ Database insertion failed for signal_metrics table")
-                return False
+            # Note: signals_norm materialized view refresh removed - we now use signals table directly
+            # If you recreate signals_norm view in Supabase, uncomment this block:
+            # try:
+            #     self.supabase.rpc('refresh_signals_norm').execute()
+            #     self.logger.info(f"[SUCCESS] Refreshed signals_norm materialized view")
+            # except Exception as refresh_error:
+            #     self.logger.warning(f"[WARNING] signals_norm refresh skipped: {refresh_error}")
+            
+            # Return success and run_id
+            return {'success': True, 'run_id': run_id}
                 
         except Exception as e:
+            import traceback
             self.logger.error(f"Error saving signals to database: {e}")
-            return False
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return {'success': False, 'run_id': None}
     
     def _create_reddit_summary(self, mentions: List[Dict]) -> str:
         """Create a summary from Reddit mentions."""
@@ -1088,7 +1218,7 @@ class UnifiedPipeline:
         
         return factors[:5]  # Top 5 factors
     
-    async def _run_ai_strategy_generation(self) -> Dict[str, Any]:
+    async def _run_ai_strategy_generation(self, run_id: Optional[str] = None) -> Dict[str, Any]:
         """Run AI strategy generation for top signals"""
         try:
             # Check if AI strategies are enabled
@@ -1101,8 +1231,8 @@ class UnifiedPipeline:
             # Import AI strategy generator
             from backend.integrations.ai import AIStrategyGenerator
             
-            # Initialize and run AI strategy generator
-            generator = AIStrategyGenerator()
+            # Initialize and run AI strategy generator with run_id
+            generator = AIStrategyGenerator(run_id=run_id)
             
             if not generator.ai_enabled:
                 self.logger.warning("AI strategy generator not properly initialized")
@@ -1114,14 +1244,14 @@ class UnifiedPipeline:
             
             if strategies:
                 total_strategies = sum(len(s) for s in strategies.values())
-                self.logger.info(f"✅ Generated {total_strategies} AI strategies for {len(strategies)} tickers")
+                self.logger.info(f"[SUCCESS] Generated {total_strategies} AI strategies for {len(strategies)} tickers")
                 
                 # Log strategy summary
                 strategy_summary = []
                 for ticker, ticker_strategies in strategies.items():
                     strategy_types = [s.strategy_type for s in ticker_strategies]
                     strategy_summary.append(f"{ticker}: {len(ticker_strategies)} ({', '.join(strategy_types)})")
-                    self.logger.info(f"   📊 {ticker}: {len(ticker_strategies)} strategies")
+                    self.logger.info(f"   [STATS] {ticker}: {len(ticker_strategies)} strategies")
                 
                 return {
                     'success': True, 
@@ -1246,26 +1376,252 @@ class UnifiedPipeline:
         financial_signals.sort(key=lambda x: x['score'], reverse=True)
         return financial_signals
     
+    def generate_financial_signals_cached(self, tickers: List[str], ticker_cache: Dict[str, Dict]) -> List[Dict[str, Any]]:
+        """
+        Generate financial-based signals using PRE-CACHED ticker data.
+        NO API CALLS - all data already fetched!
+        
+        Args:
+            tickers: List of tickers to analyze
+            ticker_cache: Pre-fetched ticker data cache
+            
+        Returns:
+            List of financial signals with scores and metadata
+        """
+        financial_signals = []
+        
+        for ticker in tickers:
+            try:
+                # Get cached ticker data (NO API CALL!)
+                ticker_data = ticker_cache.get(ticker)
+                
+                if not ticker_data or ticker_data.get('stock') is None:
+                    self.logger.debug(f"No cached data for {ticker}, skipping")
+                    continue
+                
+                # Convert cached data to financial_data format
+                financial_data = self._convert_cache_to_financial_data(ticker_data)
+                
+                if not financial_data:
+                    continue
+                
+                # Calculate financial signal score
+                financial_score = self._calculate_financial_score(financial_data)
+                
+                # Create financial signal
+                financial_signal = {
+                    'ticker': ticker,
+                    'signal_type': 'financial',
+                    'score': financial_score,
+                    'confidence': 0.8,  # Financial data generally reliable
+                    'metadata': financial_data
+                }
+                
+                financial_signals.append(financial_signal)
+                
+            except Exception as e:
+                self.logger.warning(f"Error generating financial signal for {ticker}: {e}")
+                continue
+        
+        # Sort by score descending
+        financial_signals.sort(key=lambda x: x['score'], reverse=True)
+        self.logger.info(f"✅ Generated {len(financial_signals)} financial signals using cached data (0 API calls)")
+        return financial_signals
+    
+    def _convert_cache_to_financial_data(self, ticker_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert cached ticker data to financial_data format.
+        This bridges the cache format with what _calculate_financial_score expects.
+        """
+        try:
+            import pandas as pd
+            import numpy as np
+            import ta
+            
+            info = ticker_data.get('info', {})
+            history_1y = ticker_data.get('history_1y', pd.DataFrame())
+            history_3m = ticker_data.get('history_3m', pd.DataFrame())
+            history_1m = ticker_data.get('history_1m', pd.DataFrame())
+            
+            if history_1m.empty:
+                return None
+            
+            # Build financial_data dict matching expected format
+            financial_data = {}
+            
+            # Basic info
+            financial_data['ticker'] = ticker_data.get('ticker')
+            financial_data['market_cap_numeric'] = info.get('marketCap')
+            financial_data['pe_ratio'] = info.get('trailingPE')
+            financial_data['forward_pe'] = info.get('forwardPE')
+            financial_data['profit_margin'] = info.get('profitMargins')
+            financial_data['roe'] = info.get('returnOnEquity')
+            financial_data['revenue_growth'] = info.get('revenueGrowth')
+            financial_data['earnings_growth'] = info.get('earningsGrowth')
+            financial_data['debt_equity'] = info.get('debtToEquity')
+            
+            # Price and volume data
+            if not history_1m.empty:
+                prices = history_1m['Close']
+                volumes = history_1m['Volume']
+                
+                financial_data['current_price'] = float(prices.iloc[-1])
+                financial_data['volume'] = int(volumes.iloc[-1])
+                financial_data['avg_volume_30d'] = int(volumes.mean())
+                financial_data['volume_spike_ratio'] = float(volumes.iloc[-1] / volumes.mean()) if volumes.mean() > 0 else 1.0
+                
+                # Price momentum
+                if len(prices) >= 2:
+                    financial_data['price_1d_pct'] = float((prices.iloc[-1] / prices.iloc[-2] - 1) * 100)
+                if len(prices) >= 7:
+                    financial_data['price_7d_pct'] = float((prices.iloc[-1] / prices.iloc[-7] - 1) * 100)
+                if len(prices) >= 30:
+                    financial_data['momentum_30d_pct'] = float((prices.iloc[-1] / prices.iloc[-30] - 1) * 100)
+                
+                # Volatility
+                financial_data['volatility'] = float(prices.pct_change().std() * np.sqrt(252) * 100)
+                financial_data['volatility_rank'] = 50  # Placeholder
+                
+                # Volume-price correlation
+                if len(prices) >= 30 and len(volumes) >= 30:
+                    price_changes = prices.pct_change().dropna()
+                    volume_changes = volumes.pct_change().dropna()
+                    if len(price_changes) > 0 and len(volume_changes) > 0:
+                        correlation = price_changes.corr(volume_changes)
+                        financial_data['volume_price_correlation'] = float(correlation) if not np.isnan(correlation) else 0.0
+            
+            # Technical indicators from 3-month data
+            if not history_3m.empty and len(history_3m) >= 26:
+                df = history_3m
+                
+                # RSI
+                rsi = ta.momentum.RSIIndicator(df['Close']).rsi()
+                if not rsi.empty:
+                    financial_data['rsi'] = float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else None
+                
+                # MACD
+                macd = ta.trend.MACD(df['Close']).macd()
+                if not macd.empty:
+                    financial_data['macd'] = float(macd.iloc[-1]) if not pd.isna(macd.iloc[-1]) else None
+                
+                # Moving averages
+                if len(df) >= 50:
+                    ma_50 = df['Close'].rolling(50).mean().iloc[-1]
+                    current_price = df['Close'].iloc[-1]
+                    financial_data['above_50d_ma_pct'] = float((current_price / ma_50 - 1) * 100) if not np.isnan(ma_50) else None
+                
+                if len(df) >= 200 and not history_1y.empty and len(history_1y) >= 200:
+                    ma_200 = history_1y['Close'].rolling(200).mean().iloc[-1]
+                    current_price = history_1y['Close'].iloc[-1]
+                    financial_data['above_200d_ma_pct'] = float((current_price / ma_200 - 1) * 100) if not np.isnan(ma_200) else None
+                
+                # Bollinger Bands
+                bb = ta.volatility.BollingerBands(df['Close'])
+                bb_upper = bb.bollinger_hband().iloc[-1] if not bb.bollinger_hband().empty else None
+                bb_lower = bb.bollinger_lband().iloc[-1] if not bb.bollinger_lband().empty else None
+                current_price = df['Close'].iloc[-1]
+                
+                if bb_upper and bb_lower and not np.isnan(bb_upper) and not np.isnan(bb_lower):
+                    bb_range = bb_upper - bb_lower
+                    if bb_range > 0:
+                        financial_data['bollinger'] = float((current_price - bb_lower) / bb_range)
+            
+            # Options data
+            financial_data['put_call_ratio'] = info.get('putCallRatio')
+            financial_data['put_call_vol_ratio'] = info.get('putCallVolumeRatio')
+            
+            # Short interest
+            financial_data['short_interest'] = info.get('shortPercentOfFloat')
+            financial_data['short_ratio'] = info.get('shortRatio')
+            
+            # Sector/relative strength (placeholder - would need market data)
+            financial_data['sector_relative_strength'] = 0.0
+            financial_data['relative_strength'] = 0.0
+            
+            # Phase 3: Add Phase 3 fundamental data from cache
+            # Map field names from yfinance methods to database schema
+            phase3_data = ticker_data.get('phase3_data', {})
+            if phase3_data:
+                # Phase 3: Analyst Data (map field names)
+                financial_data['analyst_target_price'] = phase3_data.get('target_price_mean')
+                financial_data['analyst_target_upside_pct'] = phase3_data.get('target_upside_pct')
+                financial_data['analyst_recommendation_mean'] = phase3_data.get('recommendation_mean')
+                financial_data['analyst_count'] = phase3_data.get('num_analysts')
+                
+                # Phase 3: Earnings Surprise Data (field names match)
+                financial_data['last_earnings_surprise_pct'] = phase3_data.get('last_earnings_surprise_pct')
+                financial_data['avg_earnings_surprise_pct'] = phase3_data.get('avg_earnings_surprise_pct')
+                financial_data['earnings_surprise_trend'] = phase3_data.get('earnings_surprise_trend')
+                
+                # Phase 3: Institutional Activity (map field names)
+                financial_data['institutional_change_qoq'] = phase3_data.get('institutional_change_qoq')
+                financial_data['top_10_institutional_holders_pct'] = phase3_data.get('top_10_holders_pct')
+                financial_data['num_institutional_holders'] = phase3_data.get('num_institutions')
+                
+                # Phase 3: Insider Trading (map field names)
+                financial_data['insider_activity_score'] = phase3_data.get('insider_activity_score')
+                financial_data['insider_buy_count'] = phase3_data.get('insider_buy_transactions_3m')
+                financial_data['insider_sell_count'] = phase3_data.get('insider_sell_transactions_3m')
+                financial_data['insider_net_shares'] = phase3_data.get('insider_net_shares_3m')
+            
+            return financial_data
+            
+        except Exception as e:
+            self.logger.debug(f"Error converting cache to financial_data for {ticker_data.get('ticker')}: {e}")
+            return None
+    
     def _calculate_financial_score(self, financial_data: Dict[str, Any]) -> float:
         """
-        Calculate comprehensive financial score using ALL technical indicators.
+        Calculate comprehensive financial score using ALL available indicators.
+        
+        **PHASE 2 ENHANCED:** Now uses 30+ indicators with optimized weighting
         
         Formula: Technical (40%) + Fundamentals (30%) + Options (15%) + Short Interest (15%)
         
-        This method now uses all 29+ technical indicators to calculate a comprehensive score.
+        Technical Score (11 components):
+        - Momentum indicators (18%): 1d, 7d, 30d price changes
+        - RSI (12%): Overbought/oversold signals
+        - Moving averages (12%): 50d, 200d MA position
+        - MACD (10%): Trend direction and strength
+        - Volume analysis (12%): Spike ratio, correlation
+        - Volatility (10%): Level, rank, Bollinger bands
+        - Relative strength (10%): vs SPY and sector
+        - Beta (8%): Market correlation
+        - Momentum consistency (7%): Phase 1.4 metric
+        - Liquidity (6%): Phase 1.4 metric
+        - Exit signals (5%): Inverted exit strength
+        
+        Fundamentals Score (10 components):
+        - Market cap (12%): Size category scoring
+        - Valuation (18%): P/E (8%), PEG (5%), P/S (5%)
+        - Profitability (20%): Profit margin (8%), Op margin (6%), ROE (6%)
+        - Growth (15%): Revenue (8%), Earnings (7%)
+        - Financial health (15%): Debt/equity (8%), Current ratio (4%), Quick ratio (3%)
+        - Cash flow (10%): Free cash flow yield
+        - Ownership (10%): Institutional (5%), Retail (5%)
+        
+        Options Score: Put/call ratio sentiment
+        Short Interest Score: Short squeeze potential (3 metrics)
+        
+        Returns:
+            float: Composite score [0.0-1.0] with normalization for missing data
         """
         try:
             # ===== TECHNICAL INDICATORS SCORE (40%) =====
             technical_score = self._calculate_technical_score(financial_data)
+            self.logger.debug(f"Technical score: {technical_score:.3f}")
             
             # ===== FUNDAMENTALS SCORE (30%) =====
             fundamentals_score = self._calculate_fundamentals_score(financial_data)
+            self.logger.debug(f"Fundamentals score: {fundamentals_score:.3f}")
             
             # ===== OPTIONS SENTIMENT SCORE (15%) =====
             options_score = self._calculate_options_score(financial_data)
+            self.logger.debug(f"Options score: {options_score:.3f}")
             
             # ===== SHORT INTEREST SCORE (15%) =====
             short_score = self._calculate_short_interest_score(financial_data)
+            self.logger.debug(f"Short interest score: {short_score:.3f}")
             
             # Combine all components
             financial_score = (
@@ -1275,6 +1631,15 @@ class UnifiedPipeline:
                 short_score * 0.15
             )
             
+            self.logger.info(
+                f"Financial score breakdown - "
+                f"Tech: {technical_score:.3f} (40%), "
+                f"Fund: {fundamentals_score:.3f} (30%), "
+                f"Opt: {options_score:.3f} (15%), "
+                f"Short: {short_score:.3f} (15%) "
+                f"=> Final: {financial_score:.3f}"
+            )
+            
             return min(max(financial_score, 0), 1.0)
             
         except Exception as e:
@@ -1282,154 +1647,597 @@ class UnifiedPipeline:
             return 0.0
     
     def _calculate_technical_score(self, financial_data: Dict[str, Any]) -> float:
-        """Calculate technical indicators score from all available indicators."""
+        """
+        Calculate technical indicators score from all available indicators.
+        
+        ENHANCED Phase 2: Now uses ALL 15+ technical indicators with optimized weights.
+        Total weight distribution normalized to 100%.
+        """
         try:
             technical_components = []
+            weights_used = []  # Track which weights were actually used
             
-            # 1. MOMENTUM INDICATORS (25%)
-            # Price momentum (1d, 7d, 30d)
+            # 1. MOMENTUM INDICATORS (18%)
+            # Price momentum (1d, 7d, 30d) - Primary trend indicator
             price_1d = financial_data.get('price_1d_pct', 0)
             price_7d = financial_data.get('price_7d_pct', 0)
             momentum_30d = financial_data.get('momentum_30d_pct', 0)
             
-            momentum_score = min(
-                (abs(price_1d) / 10 + abs(price_7d) / 20 + abs(momentum_30d) / 30) / 3,
-                1.0
-            )
-            technical_components.append(momentum_score * 0.25)
+            if not all(np.isnan([price_1d, price_7d, momentum_30d])):
+                # Favor positive momentum, scale by typical ranges
+                momentum_score = min(
+                    (abs(price_1d) / 10 + abs(price_7d) / 20 + abs(momentum_30d) / 30) / 3,
+                    1.0
+                )
+                technical_components.append(momentum_score * 0.18)
+                weights_used.append(0.18)
             
-            # 2. RSI INDICATOR (15%)
+            # 2. RSI INDICATOR (12%)
             rsi = financial_data.get('rsi')
             if rsi and not np.isnan(rsi):
                 # Extreme RSI indicates opportunity (oversold <35 or overbought >65)
                 if rsi < 35:
-                    rsi_score = 1.0  # Oversold - buy opportunity
+                    rsi_score = 1.0  # Oversold - strong buy signal
                 elif rsi > 65:
-                    rsi_score = 0.8  # Overbought - potential reversal
-                else:
+                    rsi_score = 0.8  # Overbought - caution but momentum
+                elif 45 < rsi < 55:
                     rsi_score = 0.5  # Neutral
-                technical_components.append(rsi_score * 0.15)
+                else:
+                    rsi_score = 0.7  # Moderate signal
+                technical_components.append(rsi_score * 0.12)
+                weights_used.append(0.12)
             
-            # 3. MOVING AVERAGE POSITION (15%)
+            # 3. MOVING AVERAGE POSITION (12%)
             ma_50_pct = financial_data.get('above_50d_ma_pct')
             ma_200_pct = financial_data.get('above_200d_ma_pct')
             
             ma_score = 0.0
+            ma_factors = 0
             if ma_50_pct is not None and not np.isnan(ma_50_pct):
-                ma_score += 0.5 if ma_50_pct > 0 else 0.2
+                # Above MA is bullish, further above is more bullish
+                if ma_50_pct > 5:
+                    ma_score += 1.0
+                elif ma_50_pct > 0:
+                    ma_score += 0.7
+                else:
+                    ma_score += 0.3
+                ma_factors += 1
+                
             if ma_200_pct is not None and not np.isnan(ma_200_pct):
-                ma_score += 0.5 if ma_200_pct > 0 else 0.2
+                if ma_200_pct > 5:
+                    ma_score += 1.0
+                elif ma_200_pct > 0:
+                    ma_score += 0.7
+                else:
+                    ma_score += 0.3
+                ma_factors += 1
             
-            technical_components.append((ma_score / 1.0) * 0.15)
+            if ma_factors > 0:
+                technical_components.append((ma_score / ma_factors) * 0.12)
+                weights_used.append(0.12)
             
             # 4. MACD INDICATOR (10%)
             macd = financial_data.get('macd')
+            macd_line = financial_data.get('macd_line')
             if macd and not np.isnan(macd):
-                macd_score = 1.0 if macd > 0 else 0.3  # Positive MACD is bullish
+                # Positive MACD is bullish, strength depends on magnitude
+                if macd > 0:
+                    macd_score = min(0.7 + abs(macd) * 0.3, 1.0)
+                else:
+                    macd_score = 0.3
                 technical_components.append(macd_score * 0.10)
+                weights_used.append(0.10)
             
-            # 5. VOLUME ANALYSIS (15%)
+            # 5. VOLUME ANALYSIS (12%)
             volume_spike = financial_data.get('volume_spike_ratio', 1)
             avg_volume = financial_data.get('avg_volume_30d', 0)
             vol_price_corr = financial_data.get('volume_price_correlation', 0)
             
-            volume_score = min(max(volume_spike - 1, 0) / 2, 1.0)  # Spike above normal
-            if not np.isnan(vol_price_corr) and vol_price_corr > 0.3:
-                volume_score = min(volume_score * 1.2, 1.0)  # Boost if volume confirms price
+            if not np.isnan(volume_spike):
+                # Volume spike is bullish, correlation confirms direction
+                volume_score = min(max(volume_spike - 1, 0) / 2, 1.0)  # Scale spike above normal
+                
+                # Boost if volume confirms price movement
+                if not np.isnan(vol_price_corr):
+                    if vol_price_corr > 0.5:
+                        volume_score = min(volume_score * 1.3, 1.0)  # Strong confirmation
+                    elif vol_price_corr > 0.3:
+                        volume_score = min(volume_score * 1.15, 1.0)  # Moderate confirmation
+                
+                technical_components.append(volume_score * 0.12)
+                weights_used.append(0.12)
             
-            technical_components.append(volume_score * 0.15)
-            
-            # 6. VOLATILITY & BOLLINGER BANDS (10%)
+            # 6. VOLATILITY ANALYSIS (10%)
             volatility = financial_data.get('volatility', 0)
             volatility_rank = financial_data.get('volatility_rank', 0)
             bollinger = financial_data.get('bollinger', 0)
             
-            # Moderate volatility preferred (10-40%), avoid extreme volatility
-            if not np.isnan(volatility) and volatility > 0:
-                if 10 < volatility < 40:
-                    vol_score = 1.0
-                elif volatility < 10:
-                    vol_score = 0.6  # Too calm
-                else:
-                    vol_score = 0.4  # Too volatile
-            else:
-                vol_score = 0.5
+            vol_score = 0.0
+            vol_factors = 0
             
-            technical_components.append(vol_score * 0.10)
+            # Volatility level (prefer moderate 15-35%)
+            if not np.isnan(volatility) and volatility > 0:
+                if 15 < volatility < 35:
+                    vol_score += 1.0  # Ideal range
+                elif 10 < volatility <= 15 or 35 <= volatility < 50:
+                    vol_score += 0.7  # Acceptable
+                elif volatility < 10:
+                    vol_score += 0.5  # Too calm, less opportunity
+                else:
+                    vol_score += 0.3  # Too volatile, high risk
+                vol_factors += 1
+            
+            # Volatility rank (prefer moderate to high IV for options)
+            if not np.isnan(volatility_rank):
+                if 0.4 < volatility_rank < 0.8:
+                    vol_score += 1.0  # Good volatility level
+                elif volatility_rank <= 0.4:
+                    vol_score += 0.6  # Low volatility
+                else:
+                    vol_score += 0.7  # Very high volatility
+                vol_factors += 1
+            
+            if vol_factors > 0:
+                technical_components.append((vol_score / vol_factors) * 0.10)
+                weights_used.append(0.10)
             
             # 7. RELATIVE STRENGTH (10%)
+            # Compare to market (SPY) and sector performance
             relative_strength = financial_data.get('relative_strength', 0)
             sector_rs = financial_data.get('sector_relative_strength', 0)
             
             rs_score = 0.0
-            if not np.isnan(relative_strength):
-                rs_score += 0.5 if relative_strength > 0 else 0.2
-            if not np.isnan(sector_rs):
-                rs_score += 0.5 if sector_rs > 0 else 0.2
+            rs_factors = 0
             
-            technical_components.append((rs_score / 1.0) * 0.10)
+            if not np.isnan(relative_strength):
+                # Positive relative strength is bullish
+                if relative_strength > 5:
+                    rs_score += 1.0  # Significantly outperforming market
+                elif relative_strength > 0:
+                    rs_score += 0.7  # Outperforming
+                else:
+                    rs_score += 0.3  # Underperforming
+                rs_factors += 1
+                
+            if not np.isnan(sector_rs):
+                # Outperforming sector is a strong signal
+                if sector_rs > 5:
+                    rs_score += 1.0
+                elif sector_rs > 0:
+                    rs_score += 0.7
+                else:
+                    rs_score += 0.3
+                rs_factors += 1
+            
+            if rs_factors > 0:
+                technical_components.append((rs_score / rs_factors) * 0.10)
+                weights_used.append(0.10)
+            
+            # 8. BETA / RISK METRICS (8%)
+            # Market correlation and systematic risk
+            beta = financial_data.get('beta')
+            if beta and not np.isnan(beta):
+                # Beta 0.8-1.2 is ideal for swing trading
+                if 0.8 <= beta <= 1.2:
+                    beta_score = 1.0  # Market-like behavior
+                elif 0.5 <= beta < 0.8 or 1.2 < beta <= 1.5:
+                    beta_score = 0.7  # Moderate deviation
+                elif beta < 0.5:
+                    beta_score = 0.5  # Too defensive
+                else:
+                    beta_score = 0.4  # Too volatile vs market
+                
+                technical_components.append(beta_score * 0.08)
+                weights_used.append(0.08)
+            
+            # 9. MOMENTUM CONSISTENCY (7%) - Phase 1.4 metric
+            # Measures consistency of momentum across timeframes (1d, 7d, 30d)
+            momentum_consistency = financial_data.get('momentum_consistency_score')
+            if momentum_consistency and not np.isnan(momentum_consistency):
+                # Scale from 0-100 to 0-1
+                consistency_score = min(max(momentum_consistency / 100, 0), 1.0)
+                technical_components.append(consistency_score * 0.07)
+                weights_used.append(0.07)
+                self.logger.debug(f"Momentum consistency: {momentum_consistency:.1f} → score {consistency_score:.3f}")
+            
+            # 10. LIQUIDITY SCORE (6%) - Phase 1.4 metric  
+            # Measures ease of entry/exit based on daily dollar volume vs market cap
+            liquidity = financial_data.get('liquidity_score')
+            if liquidity and not np.isnan(liquidity):
+                liquidity_score = min(max(liquidity, 0), 1.0)
+                technical_components.append(liquidity_score * 0.06)
+                weights_used.append(0.06)
+                self.logger.debug(f"Liquidity score: {liquidity:.3f}")
+            
+            # 11. EXIT SIGNAL STRENGTH (5%) - INVERTED
+            # Lower exit signals = stronger hold/buy signal
+            exit_signal = financial_data.get('exit_signal_strength', 0)
+            if not np.isnan(exit_signal):
+                # Invert: low exit signal = high score
+                exit_score = 1.0 - min(exit_signal / 100, 1.0)
+                technical_components.append(exit_score * 0.05)
+                weights_used.append(0.05)
             
             # Calculate total technical score
-            return sum(technical_components)
+            # Normalize by actual weights used (in case some data is missing)
+            if technical_components and weights_used:
+                total_weight = sum(weights_used)
+                if total_weight > 0:
+                    # Scale up to 1.0 if we didn't use all weights
+                    normalization_factor = 1.0 / total_weight
+                    total_score = sum(technical_components) * normalization_factor
+                    
+                    self.logger.debug(
+                        f"Technical score breakdown: {len(technical_components)} components, "
+                        f"total weight {total_weight:.2f}, final score {total_score:.3f}"
+                    )
+                    return min(total_score, 1.0)  # Cap at 1.0
+                else:
+                    return 0.0
+            else:
+                return 0.0
             
         except Exception as e:
             self.logger.warning(f"Error calculating technical score: {e}")
             return 0.0
     
     def _calculate_fundamentals_score(self, financial_data: Dict[str, Any]) -> float:
-        """Calculate fundamentals score from financial metrics."""
+        """
+        Calculate fundamentals score from financial metrics.
+        
+        ENHANCED Phase 2: Now uses ALL 16+ fundamental metrics with optimized weights.
+        ENHANCED Phase 3: Added analyst data, earnings momentum, institutional activity, insider sentiment (20 metrics total).
+        """
         try:
             fundamental_components = []
+            weights_used = []
             
-            # Market cap (prefer mid-cap to large-cap)
+            # 1. MARKET CAP (11% - reduced from 12% for Phase 3)
+            # Prefer mid-cap to large-cap for swing trading
             market_cap = financial_data.get('market_cap_numeric', 0)
-            if market_cap:
-                if market_cap > 10_000_000_000:  # >$10B
-                    cap_score = 0.8
-                elif market_cap > 2_000_000_000:  # $2B-$10B
-                    cap_score = 1.0
-                else:
-                    cap_score = 0.6
-                fundamental_components.append(cap_score * 0.2)
+            if market_cap and market_cap > 0:
+                if market_cap > 50_000_000_000:  # >$50B - Mega cap
+                    cap_score = 0.7  # Stable but slower growth
+                elif market_cap > 10_000_000_000:  # $10B-$50B - Large cap
+                    cap_score = 0.9  # Good balance
+                elif market_cap > 2_000_000_000:  # $2B-$10B - Mid cap
+                    cap_score = 1.0  # Ideal for swing trading
+                elif market_cap > 500_000_000:  # $500M-$2B - Small cap
+                    cap_score = 0.8  # More volatile but good potential
+                else:  # <$500M - Micro cap
+                    cap_score = 0.5  # High risk
+                    
+                fundamental_components.append(cap_score * 0.11)
+                weights_used.append(0.11)
             
-            # P/E ratio (reasonable valuation)
+            # 2. VALUATION METRICS (16% total - reduced from 18% for Phase 3)
+            # P/E ratio (7% - reduced from 8%)
             pe_ratio = financial_data.get('pe_ratio')
             if pe_ratio and not np.isnan(pe_ratio) and pe_ratio > 0:
-                if 10 < pe_ratio < 30:
-                    pe_score = 1.0  # Reasonable valuation
-                elif pe_ratio < 10:
-                    pe_score = 0.7  # Potentially undervalued or issues
+                if 10 < pe_ratio < 25:
+                    pe_score = 1.0  # Fairly valued
+                elif 5 < pe_ratio <= 10:
+                    pe_score = 0.8  # Potentially undervalued or issues
+                elif 25 <= pe_ratio < 40:
+                    pe_score = 0.7  # Somewhat expensive
                 else:
-                    pe_score = 0.5  # Expensive
-                fundamental_components.append(pe_score * 0.2)
+                    pe_score = 0.5  # Very expensive or very cheap (issues)
+                    
+                fundamental_components.append(pe_score * 0.07)
+                weights_used.append(0.07)
             
-            # Profitability metrics
+            # PEG ratio (5%)
+            peg_ratio = financial_data.get('peg_ratio')
+            if peg_ratio and not np.isnan(peg_ratio) and peg_ratio > 0:
+                if peg_ratio < 1.0:
+                    peg_score = 1.0  # Undervalued relative to growth
+                elif peg_ratio < 1.5:
+                    peg_score = 0.8  # Fair value
+                elif peg_ratio < 2.0:
+                    peg_score = 0.6  # Somewhat overvalued
+                else:
+                    peg_score = 0.4  # Overvalued
+                    
+                fundamental_components.append(peg_score * 0.05)
+                weights_used.append(0.05)
+            
+            # Price to Sales (4% - reduced from 5%)
+            price_to_sales = financial_data.get('price_to_sales')
+            if price_to_sales and not np.isnan(price_to_sales) and price_to_sales > 0:
+                if price_to_sales < 2:
+                    ps_score = 1.0  # Good value
+                elif price_to_sales < 4:
+                    ps_score = 0.7  # Fair
+                else:
+                    ps_score = 0.5  # Expensive
+                    
+                fundamental_components.append(ps_score * 0.04)
+                weights_used.append(0.04)
+            
+            # 3. PROFITABILITY METRICS (18% total - reduced from 20% for Phase 3)
+            # Profit margin (7% - reduced from 8%)
             profit_margin = financial_data.get('profit_margin')
-            roe = financial_data.get('roe')
-            
             if profit_margin and not np.isnan(profit_margin):
-                profit_score = min(profit_margin * 5, 1.0)  # Scale 0-1
-                fundamental_components.append(profit_score * 0.15)
+                if profit_margin > 0.20:  # >20%
+                    profit_score = 1.0
+                elif profit_margin > 0.10:  # 10-20%
+                    profit_score = 0.8
+                elif profit_margin > 0.05:  # 5-10%
+                    profit_score = 0.6
+                elif profit_margin > 0:  # Positive
+                    profit_score = 0.4
+                else:  # Negative
+                    profit_score = 0.2
+                    
+                fundamental_components.append(profit_score * 0.07)
+                weights_used.append(0.07)
             
+            # Operating margin (6% - reduced from 6%)
+            operating_margin = financial_data.get('operating_margin')
+            if operating_margin and not np.isnan(operating_margin):
+                if operating_margin > 0.20:
+                    op_score = 1.0
+                elif operating_margin > 0.10:
+                    op_score = 0.7
+                elif operating_margin > 0:
+                    op_score = 0.5
+                else:
+                    op_score = 0.2
+                    
+                fundamental_components.append(op_score * 0.05)
+                weights_used.append(0.05)
+            
+            # ROE - Return on Equity (6% - reduced from 6%)
+            roe = financial_data.get('roe')
             if roe and not np.isnan(roe):
-                roe_score = min(roe * 5, 1.0)  # Scale 0-1
-                fundamental_components.append(roe_score * 0.15)
+                if roe > 0.15:  # >15%
+                    roe_score = 1.0
+                elif roe > 0.10:  # 10-15%
+                    roe_score = 0.7
+                elif roe > 0:
+                    roe_score = 0.5
+                else:
+                    roe_score = 0.2
+                    
+                fundamental_components.append(roe_score * 0.05)
+                weights_used.append(0.05)
             
-            # Growth metrics
+            # 4. GROWTH METRICS (13% total - reduced from 15% for Phase 3)
+            # Revenue growth (7% - reduced from 8%)
             revenue_growth = financial_data.get('revenue_growth')
-            earnings_growth = financial_data.get('earnings_growth')
-            
             if revenue_growth and not np.isnan(revenue_growth):
-                growth_score = min(max(revenue_growth * 2, 0), 1.0)
-                fundamental_components.append(growth_score * 0.15)
+                if revenue_growth > 0.20:  # >20%
+                    rev_score = 1.0
+                elif revenue_growth > 0.10:  # 10-20%
+                    rev_score = 0.8
+                elif revenue_growth > 0:  # Positive
+                    rev_score = 0.6
+                else:  # Negative
+                    rev_score = 0.3
+                    
+                fundamental_components.append(rev_score * 0.07)
+                weights_used.append(0.07)
             
-            # Debt levels
+            # Earnings growth (6% - reduced from 7%)
+            earnings_growth = financial_data.get('earnings_growth')
+            if earnings_growth and not np.isnan(earnings_growth):
+                if earnings_growth > 0.20:
+                    earn_score = 1.0
+                elif earnings_growth > 0.10:
+                    earn_score = 0.8
+                elif earnings_growth > 0:
+                    earn_score = 0.6
+                else:
+                    earn_score = 0.3
+                    
+                fundamental_components.append(earn_score * 0.06)
+                weights_used.append(0.06)
+            
+            # 5. FINANCIAL HEALTH (14% total - reduced from 15% for Phase 3)
+            # Debt to equity (7% - reduced from 8%)
             debt_to_equity = financial_data.get('debt_to_equity')
             if debt_to_equity and not np.isnan(debt_to_equity):
-                debt_score = 1.0 if debt_to_equity < 0.5 else max(1.0 - (debt_to_equity - 0.5), 0.3)
-                fundamental_components.append(debt_score * 0.15)
+                if debt_to_equity < 0.3:
+                    debt_score = 1.0  # Very healthy
+                elif debt_to_equity < 0.6:
+                    debt_score = 0.8  # Healthy
+                elif debt_to_equity < 1.0:
+                    debt_score = 0.6  # Moderate
+                else:
+                    debt_score = 0.3  # High leverage
+                    
+                fundamental_components.append(debt_score * 0.07)
+                weights_used.append(0.07)
             
-            return sum(fundamental_components)
+            # Current ratio (4% - reduced from 4%)
+            current_ratio = financial_data.get('current_ratio')
+            if current_ratio and not np.isnan(current_ratio):
+                if current_ratio >= 2.0:
+                    curr_score = 1.0  # Very liquid
+                elif current_ratio >= 1.5:
+                    curr_score = 0.8  # Healthy
+                elif current_ratio >= 1.0:
+                    curr_score = 0.6  # Adequate
+                else:
+                    curr_score = 0.3  # Liquidity concerns
+                    
+                fundamental_components.append(curr_score * 0.03)
+                weights_used.append(0.03)
+            
+            # Quick ratio (3%)
+            quick_ratio = financial_data.get('quick_ratio')
+            if quick_ratio and not np.isnan(quick_ratio):
+                if quick_ratio >= 1.5:
+                    quick_score = 1.0
+                elif quick_ratio >= 1.0:
+                    quick_score = 0.7
+                elif quick_ratio >= 0.5:
+                    quick_score = 0.5
+                else:
+                    quick_score = 0.3
+                    
+                fundamental_components.append(quick_score * 0.03)
+                weights_used.append(0.03)
+            
+            # 6. CASH FLOW (10% total)
+            # Free cash flow relative to market cap
+            free_cash_flow = financial_data.get('free_cash_flow')
+            if free_cash_flow and market_cap and not np.isnan(free_cash_flow) and market_cap > 0:
+                fcf_yield = free_cash_flow / market_cap
+                if fcf_yield > 0.08:  # >8% FCF yield
+                    fcf_score = 1.0
+                elif fcf_yield > 0.04:  # 4-8%
+                    fcf_score = 0.8
+                elif fcf_yield > 0:  # Positive
+                    fcf_score = 0.6
+                else:  # Negative FCF
+                    fcf_score = 0.3
+                    
+                fundamental_components.append(fcf_score * 0.10)
+                weights_used.append(0.10)
+            
+            # 7. OWNERSHIP METRICS (8% total - reduced from 10% for Phase 3)
+            # Institutional ownership (4% - reduced from 5%)
+            institutional_pct = financial_data.get('institutional_ownership_pct')
+            if institutional_pct and not np.isnan(institutional_pct):
+                # 40-70% is ideal (shows interest but not overleveraged)
+                if 40 <= institutional_pct <= 70:
+                    inst_score = 1.0
+                elif 30 <= institutional_pct < 40 or 70 < institutional_pct <= 85:
+                    inst_score = 0.7
+                else:
+                    inst_score = 0.5
+                    
+                fundamental_components.append(inst_score * 0.04)
+                weights_used.append(0.04)
+            
+            # Retail holding (4% - reduced from 5%)
+            retail_pct = financial_data.get('retail_holding_pct')
+            if retail_pct and not np.isnan(retail_pct):
+                # Higher retail can indicate meme potential
+                if retail_pct > 20:  # Strong retail interest
+                    retail_score = 1.0
+                elif retail_pct > 10:
+                    retail_score = 0.7
+                else:
+                    retail_score = 0.5
+                    
+                fundamental_components.append(retail_score * 0.04)
+                weights_used.append(0.04)
+            
+            # 8. PHASE 3: ANALYST CONSENSUS (5%)
+            target_upside_pct = financial_data.get('target_upside_pct')
+            recommendation_mean = financial_data.get('recommendation_mean')
+            
+            if target_upside_pct is not None and not np.isnan(target_upside_pct):
+                # Base score on target upside
+                if target_upside_pct > 20:
+                    analyst_score = 1.0  # Strong upside
+                elif target_upside_pct > 10:
+                    analyst_score = 0.7  # Good upside
+                elif target_upside_pct > 5:
+                    analyst_score = 0.5  # Modest upside
+                elif target_upside_pct > 0:
+                    analyst_score = 0.3  # Small upside
+                else:
+                    analyst_score = 0.0  # Downside
+                
+                # Adjust based on recommendation strength
+                if recommendation_mean is not None and not np.isnan(recommendation_mean):
+                    if recommendation_mean <= 2.0:  # Buy/Strong Buy
+                        analyst_score = min(analyst_score + 0.2, 1.0)
+                    elif recommendation_mean >= 3.5:  # Hold/Sell
+                        analyst_score = max(analyst_score - 0.2, 0.0)
+                
+                fundamental_components.append(analyst_score * 0.05)
+                weights_used.append(0.05)
+            
+            # 9. PHASE 3: EARNINGS MOMENTUM (4%)
+            avg_surprise = financial_data.get('avg_earnings_surprise_pct')
+            surprise_trend = financial_data.get('earnings_surprise_trend')
+            
+            if avg_surprise is not None and not np.isnan(avg_surprise):
+                # Base score on average surprise
+                if avg_surprise > 10:
+                    earnings_score = 1.0  # Consistently beating
+                elif avg_surprise > 5:
+                    earnings_score = 0.7  # Good performance
+                elif avg_surprise > 0:
+                    earnings_score = 0.5  # Meeting expectations
+                elif avg_surprise > -5:
+                    earnings_score = 0.3  # Slight misses
+                else:
+                    earnings_score = 0.0  # Missing badly
+                
+                # Trend bonus
+                if surprise_trend == 'Improving':
+                    earnings_score = min(earnings_score + 0.2, 1.0)
+                elif surprise_trend == 'Declining':
+                    earnings_score = max(earnings_score - 0.2, 0.0)
+                
+                fundamental_components.append(earnings_score * 0.04)
+                weights_used.append(0.04)
+            
+            # 10. PHASE 3: INSTITUTIONAL ACTIVITY (3%)
+            inst_change_qoq = financial_data.get('institutional_change_qoq')
+            top_10_holders_pct = financial_data.get('top_10_holders_pct')
+            
+            if inst_change_qoq is not None and not np.isnan(inst_change_qoq):
+                # QoQ change in institutional holdings
+                if inst_change_qoq > 5:
+                    inst_activity_score = 1.0  # Strong buying
+                elif inst_change_qoq > 2:
+                    inst_activity_score = 0.7  # Moderate buying
+                elif inst_change_qoq > 0:
+                    inst_activity_score = 0.5  # Slight increase
+                elif inst_change_qoq > -2:
+                    inst_activity_score = 0.3  # Slight decrease
+                else:
+                    inst_activity_score = 0.0  # Significant selling
+                
+                # Concentration bonus (high concentration = conviction)
+                if top_10_holders_pct is not None and not np.isnan(top_10_holders_pct):
+                    if top_10_holders_pct > 40:
+                        inst_activity_score = min(inst_activity_score + 0.1, 1.0)
+                
+                fundamental_components.append(inst_activity_score * 0.03)
+                weights_used.append(0.03)
+            
+            # 11. PHASE 3: INSIDER SENTIMENT (3%)
+            insider_score_value = financial_data.get('insider_activity_score', 50.0)
+            
+            if insider_score_value is not None and not np.isnan(insider_score_value):
+                # Normalize insider score (0-100 to 0-1)
+                if insider_score_value >= 80:
+                    insider_sentiment = 1.0  # Strong buying
+                elif insider_score_value >= 60:
+                    insider_sentiment = 0.7  # Moderate buying
+                elif insider_score_value >= 40:
+                    insider_sentiment = 0.5  # Neutral
+                elif insider_score_value >= 20:
+                    insider_sentiment = 0.3  # Moderate selling
+                else:
+                    insider_sentiment = 0.0  # Strong selling
+                
+                fundamental_components.append(insider_sentiment * 0.03)
+                weights_used.append(0.03)
+            
+            # Normalize by actual weights used
+            if fundamental_components and weights_used:
+                total_weight = sum(weights_used)
+                if total_weight > 0:
+                    normalization_factor = 1.0 / total_weight
+                    total_score = sum(fundamental_components) * normalization_factor
+                    
+                    self.logger.debug(
+                        f"Fundamentals score breakdown: {len(fundamental_components)} components, "
+                        f"total weight {total_weight:.2f}, final score {total_score:.3f}"
+                    )
+                    return min(total_score, 1.0)
+                else:
+                    return 0.0
+            else:
+                return 0.0
             
         except Exception as e:
             self.logger.warning(f"Error calculating fundamentals score: {e}")
@@ -1454,24 +2262,46 @@ class UnifiedPipeline:
             return 0.5
     
     def _calculate_short_interest_score(self, financial_data: Dict[str, Any]) -> float:
-        """Calculate short squeeze potential score."""
+        """Calculate short squeeze potential score - ENHANCED v2.0"""
         try:
-            short_pct = financial_data.get('short_pct_float', 0)
-            short_ratio = financial_data.get('short_ratio', 0)
+            short_components = []
             
-            if short_pct and not np.isnan(short_pct):
-                if short_pct > 20:
-                    return 1.0  # High short squeeze potential
-                elif short_pct > 10:
-                    return 0.7  # Moderate potential
-                elif short_pct > 5:
-                    return 0.5  # Some potential
+            # Short % of float (primary metric)
+            short_pct_float = financial_data.get('short_pct_float', 0)
+            if short_pct_float and not np.isnan(short_pct_float):
+                if short_pct_float > 20:
+                    short_components.append(1.0 * 0.5)  # High short squeeze potential
+                elif short_pct_float > 10:
+                    short_components.append(0.7 * 0.5)  # Moderate potential
+                elif short_pct_float > 5:
+                    short_components.append(0.5 * 0.5)  # Some potential
                 else:
-                    return 0.3  # Low potential
+                    short_components.append(0.3 * 0.5)  # Low potential
             
-            return 0.3  # Default low potential
+            # NEW v2.0: Short % of outstanding (additional confirmation)
+            short_pct_outstanding = financial_data.get('short_pct_outstanding', 0)
+            if short_pct_outstanding and not np.isnan(short_pct_outstanding):
+                if short_pct_outstanding > 15:
+                    short_components.append(1.0 * 0.3)
+                elif short_pct_outstanding > 7:
+                    short_components.append(0.7 * 0.3)
+                else:
+                    short_components.append(0.4 * 0.3)
             
-        except Exception:
+            # Short ratio (days to cover)
+            short_ratio = financial_data.get('short_ratio', 0)
+            if short_ratio and not np.isnan(short_ratio):
+                if short_ratio > 5:  # More than 5 days to cover = squeeze risk
+                    short_components.append(1.0 * 0.2)
+                elif short_ratio > 3:
+                    short_components.append(0.7 * 0.2)
+                else:
+                    short_components.append(0.4 * 0.2)
+            
+            return sum(short_components) if short_components else 0.3  # Default low potential
+            
+        except Exception as e:
+            self.logger.debug(f"Error calculating short interest score: {e}")
             return 0.3
     
     async def generate_news_signals(self, tickers: List[str]) -> List[Dict[str, Any]]:
@@ -1714,16 +2544,16 @@ class UnifiedPipeline:
                 else:
                     enhanced['market_cap_category'] = 'Mega'
             else:
-                enhanced['market_cap_category'] = 'Unknown'
+                enhanced['market_cap_category'] = None  # NULL for missing data, not 'Unknown'
             
             # Basic risk score calculation
-            volatility = signal.get('volatility', 0.15)
-            debt_equity = signal.get('debt_equity', 25)
+            volatility = signal.get('volatility') or 0.15
+            debt_equity = signal.get('debt_equity') or 25  # Handle None explicitly
             
             risk_score = min(100, max(0, 
                 volatility * 30 +  # Volatility component
                 (25 if debt_equity > 100 else 10 if debt_equity > 50 else 5) +  # Debt component
-                (15 if market_cap and market_cap < 1_000_000_000 else 5)  # Size component
+                (15 if market_cap and market_cap > 0 and market_cap < 1_000_000_000 else 5)  # Size component
             ))
             enhanced['risk_score'] = self._safe_round(risk_score, 2)
             
@@ -1759,12 +2589,55 @@ class UnifiedPipeline:
         self.logger.info(f"Applied basic enhancements to {len(enhanced_signals)} signals")
         return enhanced_signals
     
-    async def _comprehensive_signal_enhancement(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _fetch_all_ticker_data_once(self, tickers: List[str]) -> Dict[str, Dict]:
         """
-        Comprehensive enhancement that eliminates duplicate yfinance API calls
+        Fetch comprehensive data for all tickers in parallel - ONCE!
+        This eliminates duplicate API calls between generate_financial_signals and enhancement.
+        
+        Returns:
+            Dict mapping ticker -> comprehensive_data
+        """
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        self.logger.info(f"📊 Fetching comprehensive data for {len(tickers)} tickers (SINGLE PASS)...")
+        
+        ticker_cache = {}
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            loop = asyncio.get_event_loop()
+            
+            # Fetch all tickers in parallel
+            tasks = [
+                loop.run_in_executor(executor, self._fetch_ticker_data_sync, ticker) 
+                for ticker in tickers
+            ]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Build cache from results
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.debug(f"Ticker fetch failed: {result}")
+                    continue
+                    
+                if result and 'ticker' in result:
+                    ticker_cache[result['ticker']] = result
+        
+        self.logger.info(f"✅ Successfully cached data for {len(ticker_cache)}/{len(tickers)} tickers")
+        return ticker_cache
+    
+    async def _comprehensive_signal_enhancement(self, signals: List[Dict[str, Any]], 
+                                               ticker_cache: Dict[str, Dict] = None) -> List[Dict[str, Any]]:
+        """
+        Comprehensive enhancement using PRE-CACHED ticker data.
+        NO MORE DUPLICATE API CALLS!
+        
+        Args:
+            signals: List of signals to enhance
+            ticker_cache: Pre-fetched ticker data cache (if None, will fetch - inefficient fallback)
         
         Consolidates Steps 4.5-4.8 into single efficient process:
-        - Single API call per ticker with caching
+        - Uses pre-cached ticker data (no API calls!)
         - All technical indicators (MACD, Bollinger, RSI, Beta)
         - All performance metrics (1d, 3d, 7d returns)
         - Basic enhancements and AI data preparation
@@ -1776,7 +2649,13 @@ class UnifiedPipeline:
         import ta
         from scipy.stats import linregress
         
-        # Group signals by ticker to minimize API calls
+        # If no cache provided, fetch data (fallback - shouldn't happen)
+        if ticker_cache is None:
+            self.logger.warning("⚠️  No ticker cache provided! Fetching data (inefficient fallback)...")
+            unique_tickers = list(set(s.get('ticker', '').upper() for s in signals if s.get('ticker')))
+            ticker_cache = await self._fetch_all_ticker_data_once(unique_tickers)
+        
+        # Group signals by ticker
         ticker_groups = {}
         for signal in signals:
             ticker = signal.get('ticker', '').upper()
@@ -1785,32 +2664,31 @@ class UnifiedPipeline:
                     ticker_groups[ticker] = []
                 ticker_groups[ticker].append(signal)
         
-        self.logger.info(f"Grouped {len(signals)} signals into {len(ticker_groups)} unique tickers")
+        self.logger.info(f"Enhancing {len(signals)} signals grouped into {len(ticker_groups)} unique tickers")
         
-        # Cache for ticker data to avoid duplicate API calls
-        ticker_cache = {}
+        # Apply enhancements using cached data
         enhanced_signals = []
-        
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            for ticker, ticker_signals in ticker_groups.items():
-                try:
-                    # Single comprehensive API call per ticker
-                    if ticker not in ticker_cache:
-                        ticker_cache[ticker] = await self._get_comprehensive_ticker_data(ticker, executor)
-                    
-                    ticker_data = ticker_cache[ticker]
-                    
-                    # Apply all enhancements to ticker signals
-                    for signal in ticker_signals:
-                        enhanced_signal = self._apply_all_enhancements_to_signal(signal, ticker_data)
-                        enhanced_signals.append(enhanced_signal)
-                        
-                except Exception as e:
-                    self.logger.warning(f"Enhancement failed for {ticker}: {e}")
-                    # Add original signals without enhancement
+        for ticker, ticker_signals in ticker_groups.items():
+            try:
+                # Get cached data (NO API CALL!)
+                ticker_data = ticker_cache.get(ticker)
+                
+                if not ticker_data:
+                    self.logger.debug(f"No cached data for {ticker}, skipping enhancement")
                     enhanced_signals.extend(ticker_signals)
+                    continue
+                
+                # Apply all enhancements to ticker signals
+                for signal in ticker_signals:
+                    enhanced_signal = self._apply_all_enhancements_to_signal(signal, ticker_data)
+                    enhanced_signals.append(enhanced_signal)
+                    
+            except Exception as e:
+                self.logger.warning(f"Enhancement failed for {ticker}: {e}")
+                # Add original signals without enhancement
+                enhanced_signals.extend(ticker_signals)
         
-        self.logger.info(f"✅ Comprehensive enhancement complete: {len(enhanced_signals)} signals")
+        self.logger.info(f"[SUCCESS] Comprehensive enhancement complete: {len(enhanced_signals)} signals")
         return enhanced_signals
     
     async def _get_comprehensive_ticker_data(self, ticker: str, executor: ThreadPoolExecutor) -> Dict[str, Any]:
@@ -1834,13 +2712,48 @@ class UnifiedPipeline:
             history_1m = stock.history(period="1mo", interval="1d")
             info = stock.info
             
+            # Phase 3: Fetch Phase 3 fundamental data from yfinance integration
+            phase3_data = {}
+            try:
+                from backend.integrations.yfinance import FinancialMetricsCalculator
+                metrics_calc = FinancialMetricsCalculator()
+                
+                # Get current price for analyst data
+                current_price = info.get('currentPrice', info.get('regularMarketPrice'))
+                if not history_1m.empty:
+                    current_price = float(history_1m['Close'].iloc[-1])
+                
+                # Get analyst data (requires info and current_price)
+                if current_price:
+                    analyst_data = metrics_calc._get_analyst_data(stock, info, current_price)
+                    phase3_data.update(analyst_data)
+                
+                # Get earnings surprise data (requires only stock)
+                earnings_data = metrics_calc._get_earnings_surprise_data(stock)
+                phase3_data.update(earnings_data)
+                
+                # Get institutional ownership data (requires stock and info)
+                institutional_data = metrics_calc._get_institutional_ownership_data(stock, info)
+                phase3_data.update(institutional_data)
+                
+                # Get insider trading data (requires only stock)
+                insider_data = metrics_calc._get_insider_trading_data(stock)
+                phase3_data.update(insider_data)
+                
+                self.logger.debug(f"Phase 3 data collected for {ticker}: {len(phase3_data)} fields")
+                
+            except Exception as e:
+                self.logger.debug(f"Phase 3 data fetch failed for {ticker}: {e}")
+                phase3_data = {}
+            
             return {
                 'ticker': ticker,
                 'stock': stock,
                 'info': info,
                 'history_1y': history_1y,
                 'history_3m': history_3m,
-                'history_1m': history_1m
+                'history_1m': history_1m,
+                'phase3_data': phase3_data  # Phase 3 fields
             }
             
         except Exception as e:
@@ -1851,7 +2764,8 @@ class UnifiedPipeline:
                 'info': {},
                 'history_1y': pd.DataFrame(),
                 'history_3m': pd.DataFrame(),
-                'history_1m': pd.DataFrame()
+                'history_1m': pd.DataFrame(),
+                'phase3_data': {}
             }
     
     def _apply_all_enhancements_to_signal(self, signal: Dict[str, Any], ticker_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1869,6 +2783,23 @@ class UnifiedPipeline:
         
         # AI commentary data preparation (replaces Step 4.7 prep)
         enhanced_signal = self._prepare_ai_commentary_data_cached(enhanced_signal, ticker_data)
+        
+        # ML Analytics - Phase 1 metrics (momentum_consistency_score, pattern_match_score, etc.)
+        try:
+            from backend.integrations.signal_processing import SignalMLAnalyzer
+            analyzer = SignalMLAnalyzer()
+            before_keys = set(enhanced_signal.keys())
+            enhanced_signal = analyzer.enhance_signal_with_ml_analytics(enhanced_signal)
+            after_keys = set(enhanced_signal.keys())
+            new_keys = after_keys - before_keys
+            if 'momentum_consistency_score' in new_keys:
+                self.logger.info(f"[ML] Added momentum_consistency_score={enhanced_signal.get('momentum_consistency_score')} to {enhanced_signal.get('ticker')}")
+            else:
+                self.logger.warning(f"[ML] momentum_consistency_score NOT added to {enhanced_signal.get('ticker')}")
+        except Exception as e:
+            import traceback
+            self.logger.error(f"ML analytics enhancement failed for {enhanced_signal.get('ticker')}: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Score components and explanation (NEW)
         enhanced_signal = self._calculate_score_components(enhanced_signal)
@@ -2346,12 +3277,99 @@ class UnifiedPipeline:
                 enhanced_signals.append(signal)
                 
             commentary_count = len([s for s in enhanced_signals if s.get('ai_commentary')])
-            self.logger.info(f"✅ AI commentary generated for {commentary_count} signals")
+            self.logger.info(f"[SUCCESS] AI commentary generated for {commentary_count} signals")
             return enhanced_signals
             
         except Exception as e:
             self.logger.warning(f"AI commentary enhancement failed: {e}")
             return signals
+    
+    async def generate_single_signal(self, ticker: str, include_reddit: bool = True) -> Dict[str, Any]:
+        """
+        Generate a complete signal for a single ticker (for on-demand user requests).
+        
+        This is the primary method for generating signals on-demand from the frontend.
+        It handles the complete flow: data collection → scoring → enhancement → storage.
+        
+        Args:
+            ticker (str): Stock ticker symbol (e.g., 'AAPL', 'TSLA')
+            include_reddit (bool): Whether to include Reddit sentiment data (default: True)
+            
+        Returns:
+            Dict[str, Any]: Complete signal with all enhancements, or None if failed
+            
+        Example:
+            >>> pipeline = UnifiedPipeline()
+            >>> signal = await pipeline.generate_single_signal('AAPL')
+            >>> print(f"Score: {signal['signal_score']}, Beta: {signal['beta']}")
+        """
+        try:
+            self.logger.info(f"🎯 Generating signal for {ticker}...")
+            start_time = datetime.now()
+            
+            # Validate ticker
+            ticker = ticker.upper().strip()
+            if not ticker or len(ticker) > 10:
+                raise ValueError(f"Invalid ticker: {ticker}")
+            
+            # Step 1: Generate base financial signal
+            self.logger.info(f"Step 1/4: Fetching financial data for {ticker}...")
+            financial_signals = self.generate_financial_signals([ticker])
+            
+            if not financial_signals:
+                self.logger.error(f"Failed to generate financial signal for {ticker}")
+                return None
+            
+            signal = financial_signals[0]
+            
+            # Step 2: Add Reddit data if requested
+            # Note: For now, Reddit data requires full pipeline run with scraping
+            # Individual ticker Reddit lookup can be added in future enhancement
+            self.logger.info(f"Step 2/4: Setting default Reddit values (full scraping not in single signal mode)")
+            signal['upvotes'] = 0
+            signal['reddit_score'] = 0
+            signal['sentiment_score'] = 0
+            signal['mention_count'] = 0
+            
+            # Step 3: Comprehensive enhancement (technical indicators, beta, etc.)
+            self.logger.info(f"Step 3/4: Enhancing signal with technical data...")
+            enhanced_signals = await self._comprehensive_signal_enhancement(
+                [signal],
+                ticker_cache=None  # Will fetch fresh data
+            )
+            
+            if not enhanced_signals:
+                self.logger.error(f"Enhancement failed for {ticker}")
+                return None
+            
+            enhanced_signal = enhanced_signals[0]
+            
+            # Step 4: Save to database
+            self.logger.info(f"Step 4/4: Saving signal to database...")
+            
+            # Add weighted_score default if missing (for database compatibility)
+            if 'weighted_score' not in enhanced_signal:
+                enhanced_signal['weighted_score'] = enhanced_signal.get('signal_score', 0)
+            
+            save_success = await self.save_signals_to_database([enhanced_signal])
+            
+            if save_success:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                self.logger.info(f"✅ SUCCESS: Signal for {ticker} generated and saved in {elapsed:.2f}s")
+                self.logger.info(f"   Score: {enhanced_signal.get('signal_score', 'N/A')}")
+                self.logger.info(f"   Beta: {enhanced_signal.get('beta', 'N/A')}")
+                self.logger.info(f"   MACD: {enhanced_signal.get('macd_line', 'N/A')}")
+                self.logger.info(f"   Upvotes: {enhanced_signal.get('upvotes', 'N/A')}")
+            else:
+                self.logger.warning(f"⚠️  Signal generated but database save failed")
+            
+            return enhanced_signal
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate signal for {ticker}: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            return None
     
     async def run_pipeline(self, 
                     subreddits: List[str] = None,
@@ -2403,21 +3421,26 @@ class UnifiedPipeline:
             
             self.logger.info(f"Processing top {len(sorted_tickers)} tickers...")
             
-            # Step 3: Generate Individual Signals from Each Data Source
-            self.logger.info("Step 3: Generating individual signals...")
-            
             # Get list of all tickers to analyze
             all_tickers = list(filtered_tickers.keys())
             self.logger.info(f"Analyzing {len(all_tickers)} tickers for signal generation")
+            
+            # Step 2.5: Fetch ALL ticker data ONCE (eliminates duplicate API calls)
+            self.logger.info("Step 2.5: Fetching comprehensive ticker data (SINGLE PASS - eliminates duplicates)...")
+            ticker_data_cache = await self._fetch_all_ticker_data_once(all_tickers)
+            self.logger.info(f"✅ Cached comprehensive data for {len(ticker_data_cache)} tickers")
+            
+            # Step 3: Generate Individual Signals from Each Data Source
+            self.logger.info("Step 3: Generating individual signals...")
             
             # Generate Reddit signals
             self.logger.info("Generating Reddit signals...")
             reddit_signals = self.generate_reddit_signals(filtered_tickers)
             self.logger.info(f"Generated {len(reddit_signals)} Reddit signals")
             
-            # Generate Financial signals  
-            self.logger.info("Generating Financial signals...")
-            financial_signals = self.generate_financial_signals(all_tickers)
+            # Generate Financial signals using cached data (NO API CALLS)
+            self.logger.info("Generating Financial signals (using cached data)...")
+            financial_signals = self.generate_financial_signals_cached(all_tickers, ticker_data_cache)
             self.logger.info(f"Generated {len(financial_signals)} Financial signals")
             
             # Generate News signals (if enabled)
@@ -2429,12 +3452,11 @@ class UnifiedPipeline:
             self.logger.info("Step 4: Combining signals into final scores...")
             signals = self.combine_signals_to_scored_signals(reddit_signals, financial_signals, news_signals)
             
-            # Step 4.5: Comprehensive Signal Enhancement (CONSOLIDATED - ELIMINATES DUPLICATE API CALLS)
-            self.logger.info("Step 4.5: Applying comprehensive signal enhancement...")
-            signals = await self._comprehensive_signal_enhancement(signals)
-            self.logger.info("✅ Comprehensive enhancement complete (technical + performance + AI prep)")
-            
-            # Step 4.6: Comprehensive AI Commentary Generation (TOP 10 ONLY) + Unified Commentary
+            # Step 4.5: Comprehensive Signal Enhancement (using cached data - NO MORE DUPLICATE API CALLS!)
+            self.logger.info("Step 4.5: Applying comprehensive signal enhancement (using cached data)...")
+            signals = await self._comprehensive_signal_enhancement(signals, ticker_data_cache)
+        
+            self.logger.info("[SUCCESS] Comprehensive enhancement complete (technical + performance + AI prep)")            # Step 4.6: Comprehensive AI Commentary Generation (TOP 10 ONLY) + Unified Commentary
             try:
                 self.logger.info("Step 4.6: Generating unified commentary for signals...")
                 
@@ -2471,8 +3493,8 @@ class UnifiedPipeline:
                         'version': '1.0'
                     }
                 
-                self.logger.info(f"✅ AI commentary generated (10 full, {len(other_signals)} basic)")
-                self.logger.info(f"✅ Unified commentary generated for all {len(signals)} signals")
+                self.logger.info(f"[SUCCESS] AI commentary generated (10 full, {len(other_signals)} basic)")
+                self.logger.info(f"[SUCCESS] Unified commentary generated for all {len(signals)} signals")
                 
             except Exception as e:
                 self.logger.warning(f"Comprehensive AI commentary failed: {e}")
@@ -2494,8 +3516,8 @@ class UnifiedPipeline:
                     for signal in signals:
                         signal['commentary'] = self._generate_unified_commentary(signal)
                     
-                    self.logger.info("✅ AI commentary generated (fallback, top 10 only)")
-                    self.logger.info(f"✅ Unified commentary generated for all {len(signals)} signals (fallback)")
+                    self.logger.info("[SUCCESS] AI commentary generated (fallback, top 10 only)")
+                    self.logger.info(f"[SUCCESS] Unified commentary generated for all {len(signals)} signals (fallback)")
                 except Exception as e2:
                     self.logger.warning(f"AI commentary fallback also failed: {e2}")
             
@@ -2509,10 +3531,10 @@ class UnifiedPipeline:
                 
                 eligible_count = backtest_results.get('successful_backtests', 0)
                 if eligible_count > 0:
-                    self.logger.info(f"✅ Smart backtest complete: {eligible_count} signals updated")
+                    self.logger.info(f"[SUCCESS] Smart backtest complete: {eligible_count} signals updated")
                     self.logger.info(f"   Processed intervals: {list(backtest_results.get('interval_results', {}).keys())}")
                 else:
-                    self.logger.info("✅ Smart backtest: No eligible signals (intervals not elapsed)")
+                    self.logger.info("[SUCCESS] Smart backtest: No eligible signals (intervals not elapsed)")
                 
                 # Mark new signals for future backtesting (no immediate backtest)
                 new_signal_count = 0
@@ -2534,9 +3556,8 @@ class UnifiedPipeline:
                         signal['backtest_timestamp'] = datetime.now().isoformat()
             
             # Step 4.8: Enhancement Complete
-            self.logger.info("✅ All signal enhancements complete (comprehensive + AI + backtest scheduling)")
             
-            # Limit to max_signals
+            self.logger.info("[SUCCESS] All signal enhancements complete (comprehensive + AI + backtest scheduling)")            # Limit to max_signals
             signals = signals[:max_signals]
             
             self.logger.info(f"Combined into {len(signals)} final scored signals")
@@ -2561,13 +3582,13 @@ class UnifiedPipeline:
                     total = backtest_results.get('total_eligible', 0)
                     
                     if backtested > 0:
-                        self.logger.info(f"✅ Backtested {backtested}/{total} previous signals")
+                        self.logger.info(f"[SUCCESS] Backtested {backtested}/{total} previous signals")
                     else:
-                        self.logger.info("⭕ No eligible signals to backtest yet (need 1+ day elapsed)")
+                        self.logger.info("[INFO] No eligible signals to backtest yet (need 1+ day elapsed)")
                 else:
-                    self.logger.warning(f"⚠️ Backtest had issues: {backtest_results.get('error')}")
+                    self.logger.warning(f"[WARNING] Backtest had issues: {backtest_results.get('error')}")
             except Exception as e:
-                self.logger.warning(f"⚠️ Backtest failed: {e}")
+                self.logger.warning(f"[WARNING] Backtest failed: {e}")
             
             # Step 5: Save to Database
             self.logger.info("Step 5: Saving signals to database...")
@@ -2577,7 +3598,9 @@ class UnifiedPipeline:
                 signals.sort(key=lambda x: x['weighted_score'], reverse=True)
                 
                 # Save to database
-                save_success = await self.save_signals_to_database(signals)
+                save_result = await self.save_signals_to_database(signals)
+                save_success = save_result.get('success', False) if isinstance(save_result, dict) else save_result
+                run_id = save_result.get('run_id') if isinstance(save_result, dict) else None
                 
                 # Step 6: Generate AI Strategies (NEW)
                 ai_strategies_success = False
@@ -2586,7 +3609,7 @@ class UnifiedPipeline:
                 if save_success:
                     self.logger.info("Step 6: Generating AI strategies for top signals...")
                     try:
-                        ai_strategies_result = await self._run_ai_strategy_generation()
+                        ai_strategies_result = await self._run_ai_strategy_generation(run_id=run_id)
                         ai_strategies_success = ai_strategies_result['success']
                         ai_strategies_count = ai_strategies_result.get('strategies_count', 0)
                         
@@ -2677,34 +3700,71 @@ async def main():
             print(f"\nPipeline failed: {results.get('error', 'Unknown error')}")
             
     except Exception as e:
-        print(f"\n💥 Fatal error: {e}")
+        print(f"\n[ERROR] Fatal error: {e}")
         sys.exit(1)
-    finally:
-        # Clean up any pending tasks and connections
-        try:
-            # Get current event loop
-            loop = asyncio.get_event_loop()
+
+
+async def cleanup_async_resources():
+    """Properly cleanup async resources to prevent event loop errors."""
+    try:
+        # Give pending tasks a moment to complete naturally
+        await asyncio.sleep(0.1)
+        
+        # Get current event loop
+        loop = asyncio.get_running_loop()
+        
+        # Get all pending tasks except the current one
+        current_task = asyncio.current_task()
+        pending_tasks = [
+            task for task in asyncio.all_tasks(loop) 
+            if not task.done() and task is not current_task
+        ]
+        
+        if pending_tasks:
+            logger.info(f"[CLEANUP] Cancelling {len(pending_tasks)} pending tasks...")
             
-            # Cancel any pending tasks
-            pending_tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
-            if pending_tasks:
-                logger.info(f"Cancelling {len(pending_tasks)} pending tasks...")
-                for task in pending_tasks:
-                    task.cancel()
-                
-                # Wait for tasks to cancel with timeout
-                try:
-                    await asyncio.wait_for(
-                        asyncio.gather(*pending_tasks, return_exceptions=True),
-                        timeout=5.0
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("Some tasks did not cancel within timeout")
+            # Cancel all pending tasks
+            for task in pending_tasks:
+                task.cancel()
             
-            logger.info("Pipeline cleanup completed")
-        except Exception as cleanup_error:
-            logger.error(f"Error during cleanup: {cleanup_error}")
+            # Wait for all tasks to finish cancellation with timeout
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending_tasks, return_exceptions=True),
+                    timeout=2.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("[CLEANUP] Some tasks did not cancel within timeout")
+            except Exception as e:
+                logger.warning(f"[CLEANUP] Error during task cancellation: {e}")
+        
+        # Give the event loop time to clean up
+        await asyncio.sleep(0.05)
+        
+        logger.info("[CLEANUP] Async resources cleaned up successfully")
+        
+    except Exception as cleanup_error:
+        # Don't raise errors during cleanup - just log them
+        logger.warning(f"[CLEANUP] Non-critical cleanup warning: {cleanup_error}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        # Run the main pipeline
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[INFO] Pipeline interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n[ERROR] Pipeline execution failed: {e}")
+        sys.exit(1)
+    finally:
+        # Run cleanup in a separate event loop to avoid conflicts
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(cleanup_async_resources())
+            loop.close()
+        except Exception:
+            # Suppress any cleanup errors on Windows
+            pass

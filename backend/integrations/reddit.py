@@ -309,9 +309,19 @@ class RedditDataIntegrator:
         ticker_scores = {}
         for ticker, mentions in all_ticker_data.items():
             reddit_score = self.calculate_reddit_score(ticker, mentions)
+            
+            # Calculate total upvotes (sum of all post/comment scores)
+            total_upvotes = sum(mention.get('score', 0) for mention in mentions)
+            
+            # Calculate average sentiment
+            sentiments = [mention.get('sentiment', 0) for mention in mentions if mention.get('sentiment') is not None]
+            avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
+            
             ticker_scores[ticker] = {
                 'reddit_score': reddit_score,
                 'mention_count': len(mentions),
+                'upvotes': total_upvotes,  # ✅ PHASE 4.4.2: Now capturing total upvotes
+                'avg_sentiment': avg_sentiment,
                 'mentions': mentions  # Store raw data for analysis
             }
         

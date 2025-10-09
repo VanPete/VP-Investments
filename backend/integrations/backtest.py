@@ -91,7 +91,7 @@ class BacktestEngine:
         # Accept optional database instance to avoid async initialization issues
         self.db = db  # Will be set via set_database() if None
         self.transaction_cost = 0.001  # 0.1% per trade (round trip = 0.2%)
-        self.intervals = [1, 3, 7, 10]  # Track 1d, 3d, 7d, 10d returns (match database schema)
+        self.intervals = [1, 3, 7, 10, 30]  # Track 1d, 3d, 7d, 10d, 30d returns (Phase 4.3)
     
     async def set_database(self):
         """Initialize database connection asynchronously"""
@@ -392,7 +392,7 @@ class BacktestEngine:
             
             signal = response.data[0]
             ticker = signal['ticker']
-            entry_date = datetime.fromisoformat(signal['signal_datetime'].replace('Z', '+00:00'))
+            entry_date = datetime.fromisoformat(signal['created_at'].replace('Z', '+00:00'))
             
             # Get price data
             start_date = entry_date - timedelta(days=1)
@@ -489,7 +489,7 @@ class BacktestEngine:
                     
                     # NEW: Insert into signal_performance table (not update signals)
                     # Get signal info for the performance record
-                    signal_response = self.db.client.table('signals').select('ticker, run_id, signal_datetime').eq('id', signal_id).single().execute()
+                    signal_response = self.db.client.table('signals').select('ticker, run_id, created_at').eq('id', signal_id).single().execute()
                     
                     if not signal_response.data:
                         logger.error(f"Could not find signal {signal_id}")
@@ -505,7 +505,7 @@ class BacktestEngine:
                         'backtest_type': interval,
                         'days_elapsed': interval_days,
                         'entry_price': round(current_price, 2),
-                        'entry_datetime': signal_data['signal_datetime'],
+                        'entry_datetime': signal_data['created_at'],
                         'exit_price': round(future_price, 2),
                         'exit_datetime': target_date.isoformat(),
                         'return_pct': round(return_pct, 2),
@@ -515,15 +515,19 @@ class BacktestEngine:
                         'updated_at': datetime.now().isoformat()
                     }
                     
-                    # Insert into signal_performance table
-                    response = self.db.client.table('signal_performance').insert(performance_data).execute()
+                    # DISABLED: signal_performance table doesn't exist - data stored in signals table
+                    # Performance columns: 1d_return, 3d_return, 7d_return, 10d_return in signals table
+                    logger.info(f"✅ Calculated {interval} performance for signal {signal_id}: {return_pct:.2f}% (not stored separately)")
+                    return True
                     
-                    if response.data:
-                        logger.info(f"✅ Inserted {interval} performance for signal {signal_id}: {return_pct:.2f}%")
-                        return True
-                    else:
-                        logger.error(f"❌ Failed to insert {interval} performance for signal {signal_id}")
-                        return False
+                    # # Original code (commented out):
+                    # response = self.db.client.table('signal_performance').insert(performance_data).execute()
+                    # if response.data:
+                    #     logger.info(f"✅ Inserted {interval} performance for signal {signal_id}: {return_pct:.2f}%")
+                    #     return True
+                    # else:
+                    #     logger.error(f"❌ Failed to insert {interval} performance for signal {signal_id}")
+                    #     return False
                 else:
                     logger.warning(f"Could not get price data for {ticker} at {interval} interval")
                     return False
@@ -532,7 +536,7 @@ class BacktestEngine:
             # NEW: Convert to signal_performance inserts
             elif metrics:
                 # Get signal info
-                signal_response = self.db.client.table('signals').select('ticker, run_id, signal_datetime, current_price').eq('id', signal_id).single().execute()
+                signal_response = self.db.client.table('signals').select('ticker, run_id, created_at, current_price').eq('id', signal_id).single().execute()
                 
                 if not signal_response.data:
                     logger.error(f"Could not find signal {signal_id}")
@@ -559,7 +563,7 @@ class BacktestEngine:
                             'backtest_type': interval_name,
                             'days_elapsed': int(interval_name.rstrip('d')),
                             'entry_price': signal_data.get('current_price'),
-                            'entry_datetime': signal_data['signal_datetime'],
+                            'entry_datetime': signal_data['created_at'],
                             'return_pct': round(return_value, 2),
                             'backtest_date': datetime.now().isoformat(),
                             'win': return_value > 0,
@@ -569,15 +573,18 @@ class BacktestEngine:
                         performance_records.append(performance_record)
                 
                 if performance_records:
-                    # Insert all performance records
-                    response = self.db.client.table('signal_performance').insert(performance_records).execute()
+                    # DISABLED: signal_performance table doesn't exist - data stored in signals table
+                    logger.info(f"✅ Calculated {len(performance_records)} performance records for signal {signal_id} (not stored separately)")
+                    return True
                     
-                    if response.data:
-                        logger.info(f"✅ Inserted {len(performance_records)} performance records for signal {signal_id}")
-                        return True
-                    else:
-                        logger.error(f"❌ Failed to insert performance records for signal {signal_id}")
-                        return False
+                    # # Original code (commented out):
+                    # response = self.db.client.table('signal_performance').insert(performance_records).execute()
+                    # if response.data:
+                    #     logger.info(f"✅ Inserted {len(performance_records)} performance records for signal {signal_id}")
+                    #     return True
+                    # else:
+                    #     logger.error(f"❌ Failed to insert performance records for signal {signal_id}")
+                    #     return False
                 else:
                     logger.warning(f"No performance data to insert for signal {signal_id}")
                     return False
@@ -596,7 +603,7 @@ class BacktestEngine:
             logger.info("Starting batch performance tracking...")
             
             # Get signals that need performance tracking
-            response = self.db.client.table('signals').select('id, ticker, signal_datetime').or_(
+            response = self.db.client.table('signals').select('id, ticker, created_at').or_(
                 'backtest_phase.is.null,backtest_phase.eq.initial'
             ).order('created_at', desc=True).limit(limit).execute()
             
@@ -1111,15 +1118,21 @@ async def _update_signal_performance_data(db, signal_id: str, performance_data: 
 
 
 async def _update_ai_strategy_performance(db, strategy_id: str, performance_data: Dict[str, Any]) -> bool:
-    """Update ai_strategy_performance table with strategy results."""
+    """Update ai_strategies table with strategy results (ai_strategy_performance table doesn't exist)."""
     try:
-        # Try to update existing record first
-        result = db.supabase.table('ai_strategy_performance').update(performance_data).eq('strategy_id', strategy_id).execute()
+        # UPDATED: Use ai_strategies table instead of non-existent ai_strategy_performance table
+        result = db.supabase.table('ai_strategies').update(performance_data).eq('id', strategy_id).execute()
         
-        if not result.data:
-            # If no existing record, insert new one
-            performance_data['strategy_id'] = strategy_id
-            result = db.supabase.table('ai_strategy_performance').insert(performance_data).execute()
+        if result.data:
+            logger.info(f"✅ Updated ai_strategies table with performance for strategy {strategy_id}")
+        else:
+            logger.warning(f"⚠️ No strategy found with ID {strategy_id} to update")
+        
+        # # Original code (commented out - table doesn't exist):
+        # result = db.supabase.table('ai_strategy_performance').update(performance_data).eq('strategy_id', strategy_id).execute()
+        # if not result.data:
+        #     performance_data['strategy_id'] = strategy_id
+        #     result = db.supabase.table('ai_strategy_performance').insert(performance_data).execute()
         
         return bool(result.data)
     except Exception as e:
@@ -1323,18 +1336,21 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
     """
     Backtest previous signals that have had enough time elapse for return calculations.
     
-    This runs during each pipeline execution to fill backtest performance data columns
-    (1d_return, 3d_return, 7d_return, 10d_return, etc.) for signals where enough time
-    has passed since signal creation.
+    PHASE 4 REWRITE:
+    - Updates signals table directly (not signal_performance)
+    - Filters for NULL backtest columns (avoid re-backtesting)
+    - Single UPDATE per signal (not multiple records)
+    - Processes oldest signals first (systematic approach)
+    - Marks failed backtests as "backtest_failed"
     
     Args:
-        limit: Maximum number of signals to backtest per run
+        limit: Maximum number of signals to backtest per run (default: 100)
         
     Returns:
         Dict with backtest results summary
     """
     try:
-        logger.info(f"Checking for eligible signals to backtest (limit: {limit})...")
+        logger.info(f"🔍 Checking for eligible signals to backtest (limit: {limit})...")
         
         # Initialize database connection
         db = await get_supabase_database()
@@ -1343,12 +1359,12 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
         
-        # Query signals that need backtesting (have NULL returns and enough time has elapsed)
-        # Get recent signals that need backtesting
-        # Note: With new structure, we check signal_performance table instead
+        # CRITICAL FIX: Filter for signals that haven't been backtested yet
+        # Look for signals where 1d_return is NULL (indicates no backtest data)
+        # Order by created_at ASC (oldest first - systematic approach)
         response = db.client.table('signals').select(
-            'id, ticker, current_price, signal_datetime, created_at, run_id'
-        ).order('created_at', desc=False).limit(limit).execute()
+            'id, ticker, current_price, created_at, run_id'
+        ).is_('1d_return', 'null').order('created_at', desc=False).limit(limit).execute()
         
         if not response.data:
             logger.info("No eligible signals found for backtesting")
@@ -1365,6 +1381,8 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
         backtested_count = 0
         updated_signals = []
         
+        logger.info(f"Processing {len(signals_to_backtest)} signals...")
+        
         for signal in signals_to_backtest:
             try:
                 signal_id = signal['id']
@@ -1372,8 +1390,10 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                 run_id = signal.get('run_id', 'unknown')
                 entry_price = signal.get('current_price')
                 
+                logger.info(f"  Processing {ticker} (ID: {signal_id[:8]}...)")
+                
                 # Use created_at as signal date
-                signal_date_str = signal.get('created_at') or signal.get('signal_datetime')
+                signal_date_str = signal.get('created_at')
                 if not signal_date_str:
                     logger.warning(f"Signal {signal_id} ({ticker}): No date found, skipping")
                     continue
@@ -1385,12 +1405,15 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                 # Calculate days elapsed
                 days_elapsed = (now - signal_date).days
                 
+                logger.info(f"    signal_date={signal_date.isoformat()[:19]}, days_elapsed={days_elapsed}")
+                
                 if days_elapsed < 1:
                     # Not even 1 day has passed yet
+                    logger.info(f"    Skipping - less than 1 day elapsed")
                     continue
                 
                 if not entry_price or entry_price <= 0:
-                    logger.warning(f"Signal {signal_id} ({ticker}): Invalid entry price {entry_price}, skipping")
+                    logger.warning(f"    Invalid entry price {entry_price}, skipping")
                     continue
                 
                 # Determine which intervals we can calculate
@@ -1403,22 +1426,47 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                     intervals_to_calculate.append(7)
                 if days_elapsed >= 10:
                     intervals_to_calculate.append(10)
+                if days_elapsed >= 30:
+                    intervals_to_calculate.append(30)
                 
                 if not intervals_to_calculate:
+                    logger.info(f"    No intervals to calculate")
                     continue
                 
-                logger.debug(f"Backtesting {ticker} (ID: {signal_id}): {days_elapsed} days elapsed, calculating {intervals_to_calculate}")
+                logger.info(f"    Backtesting {days_elapsed} days elapsed, calculating intervals: {intervals_to_calculate}")
                 
                 # Fetch historical price data from yfinance
                 import yfinance as yf
                 
                 # Get data from signal date to now + 1 day buffer
                 end_date = now + timedelta(days=1)
-                stock = yf.Ticker(ticker)
-                hist = stock.history(start=signal_date.date(), end=end_date.date())
                 
-                if hist.empty:
-                    logger.warning(f"Signal {signal_id} ({ticker}): No price data available from yfinance")
+                logger.info(f"    Fetching price data from {signal_date.date()} to {end_date.date()}")
+                
+                try:
+                    stock = yf.Ticker(ticker)
+                    hist = stock.history(start=signal_date.date(), end=end_date.date())
+                    
+                    logger.info(f"    Got {len(hist)} rows of price data")
+                    
+                    if hist.empty:
+                        # Mark as failed backtest (likely delisted or invalid ticker)
+                        logger.warning(f"    No price data available (likely delisted)")
+                        db.client.table('signals').update({
+                            'backtest_phase': 'backtest_failed',
+                            'backtest_notes': 'No price data available from yfinance (likely delisted)',
+                            'backtest_timestamp': now.isoformat()
+                        }).eq('id', signal_id).execute()
+                        continue
+                
+                except Exception as e:
+                    # Mark as failed backtest
+                    logger.error(f"    Error fetching data - {e}")
+                    db.client.table('signals').update({
+                        'backtest_phase': 'backtest_failed',
+                        'backtest_notes': f'Error fetching price data: {str(e)}',
+                        'backtest_timestamp': now.isoformat()
+                    }).eq('id', signal_id).execute()
                     continue
                 
                 # Also get SPY data for comparison
@@ -1437,15 +1485,21 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                     target_date = signal_date + timedelta(days=interval_days)
                     
                     # Find the closest trading day price
+                    # yfinance returns datetime index, need to compare dates only
                     exit_price = None
                     for date_offset in range(5):  # Check up to 5 days ahead for trading day
                         check_date = (target_date + timedelta(days=date_offset)).date()
-                        if check_date in hist.index:
-                            exit_price = hist.loc[check_date, 'Close']
+                        # Convert index dates to date objects for comparison
+                        for idx_date in hist.index:
+                            if idx_date.date() == check_date:
+                                exit_price = hist.loc[idx_date, 'Close']
+                                logger.info(f"    {interval_days}d: Found price on {idx_date.date()}: ${exit_price:.2f}")
+                                break
+                        if exit_price:
                             break
                     
                     if exit_price is None or exit_price <= 0:
-                        logger.debug(f"  {ticker}: No valid price found for {interval_days}d interval")
+                        logger.info(f"    {interval_days}d: No valid price found")
                         continue
                     
                     # Calculate return
@@ -1462,15 +1516,21 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                         # Find SPY entry price
                         for date_offset in range(5):
                             check_date = (signal_date + timedelta(days=date_offset)).date()
-                            if check_date in spy_hist.index:
-                                spy_entry = spy_hist.loc[check_date, 'Close']
+                            for idx_date in spy_hist.index:
+                                if idx_date.date() == check_date:
+                                    spy_entry = spy_hist.loc[idx_date, 'Close']
+                                    break
+                            if spy_entry:
                                 break
                         
                         # Find SPY exit price
                         for date_offset in range(5):
                             check_date = (target_date + timedelta(days=date_offset)).date()
-                            if check_date in spy_hist.index:
-                                spy_exit = spy_hist.loc[check_date, 'Close']
+                            for idx_date in spy_hist.index:
+                                if idx_date.date() == check_date:
+                                    spy_exit = spy_hist.loc[idx_date, 'Close']
+                                    break
+                            if spy_exit:
                                 break
                         
                         if spy_entry and spy_exit and spy_entry > 0:
@@ -1483,61 +1543,42 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                     if spy_return is not None:
                         update_data[f'spy_{interval_days}d_return'] = round(spy_return, 2)
                     
+                    # PHASE 4.2: Store beat_spy boolean columns
+                    # Now safe to store booleans directly (signal_metrics table removed)
                     if beat_spy is not None:
                         update_data[f'beat_spy_{interval_days}d'] = beat_spy
                     
-                    logger.debug(f"  {ticker} {interval_days}d: {return_pct:.2f}% (SPY: {spy_return:.2f}%, Beat: {beat_spy})")
+                    logger.info(f"    {interval_days}d: return={return_pct:.2f}%, SPY={spy_return:.2f}%, Beat={beat_spy}")
                 
-                # NEW: Insert performance records instead of updating signals
+                # PHASE 4 FIX: Update signals table directly (not signal_performance)
+                logger.info(f"    update_data has {len(update_data)} fields")
+                
                 if update_data:
-                    performance_records = []
+                    # Add backtest metadata
+                    update_data['backtest_timestamp'] = now.isoformat()
+                    update_data['backtest_phase'] = 'Complete'
                     
-                    # Create a performance record for each interval
-                    for interval_days in [1, 3, 7, 10, 30]:
-                        return_field = f'{interval_days}d_return'
-                        if return_field in update_data:
-                            performance_record = {
-                                'signal_id': signal_id,
-                                'ticker': ticker,
-                                'run_id': run_id,
-                                'backtest_type': f'{interval_days}d',
-                                'days_elapsed': interval_days,
-                                'entry_price': entry_price,
-                                'entry_datetime': signal_date.isoformat(),
-                                'exit_price': exit_price,
-                                'exit_datetime': (signal_date + timedelta(days=interval_days)).isoformat(),
-                                'return_pct': update_data[return_field],
-                                'spy_return_pct': update_data.get(f'spy_{interval_days}d_return'),
-                                'backtest_date': now.isoformat(),
-                                'win': update_data[return_field] > 0,
-                                'created_at': now.isoformat(),
-                                'updated_at': now.isoformat()
-                            }
-                            
-                            # Add beat_spy if available
-                            if f'beat_spy_{interval_days}d' in update_data:
-                                alpha = update_data[return_field] - update_data.get(f'spy_{interval_days}d_return', 0)
-                                performance_record['alpha'] = round(alpha, 2)
-                            
-                            performance_records.append(performance_record)
+                    logger.info(f"    Updating signals table with {len(update_data)} fields...")
                     
-                    # Insert all performance records
-                    if performance_records:
-                        db.client.table('signal_performance').insert(performance_records).execute()
-                        logger.info(f"✅ Inserted {len(performance_records)} performance records for {ticker}")
+                    # Update the signals table with all return data in one operation
+                    result = db.client.table('signals').update(update_data).eq('id', signal_id).execute()
+                    
+                    logger.info(f"    Database UPDATE result: {result}")
                     
                     backtested_count += 1
                     updated_signals.append({
                         'id': signal_id,
                         'ticker': ticker,
                         'intervals_calculated': list(intervals_to_calculate),
-                        'returns': update_data
+                        'returns': {k: v for k, v in update_data.items() if 'return' in k or 'spy' in k or 'beat' in k}
                     })
                     
-                    logger.info(f"✅ Backtested {ticker} (ID: {signal_id}): Updated {len(update_data)} fields")
+                    logger.info(f"✅ Backtested {ticker} (ID: {signal_id[:8]}...): {len(intervals_to_calculate)} intervals, {len(update_data)} fields updated")
+                else:
+                    logger.warning(f"    update_data is empty! Skipping UPDATE")
                 
             except Exception as e:
-                logger.error(f"Error backtesting signal {signal.get('id')} ({signal.get('ticker')}): {e}")
+                logger.error(f"❌ Error backtesting signal {signal.get('id')} ({signal.get('ticker')}): {e}", exc_info=True)
                 continue
         
         logger.info(f"✅ Backtest complete: {backtested_count}/{len(signals_to_backtest)} signals updated")

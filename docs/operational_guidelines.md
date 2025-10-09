@@ -1,8 +1,27 @@
 # VP Investments - Operational Guidelines
 *Development Framework for Consolidated Backend Structure*
 
-**Last Updated:** 2025-10-04  
+**Last Updated:** 2025-10-08  
 **Status:** Active Development Framework
+
+---
+
+## 👥 Role Definition
+
+### User Role: Project Orchestrator
+- Provides ideas, features, and strategic direction
+- Makes architectural decisions and approves changes
+- Reviews results and guides project priorities
+- Defines business logic and requirements
+
+### AI Agent Role: Implementation Engineer
+- Implements features based on user requirements
+- Makes tactical coding decisions within guidelines
+- Tests and validates changes thoroughly
+- Uses `tables.py` to understand database schema before making changes
+- Updates documentation after implementations
+
+**Key Principle**: User provides the "what" and "why" - AI determines the "how"
 
 ---
 
@@ -500,7 +519,79 @@ python safe_clear_data.py
 - **Migrations**: `migrations/` - Database schema change history
 
 ### Utility Scripts
-- `tables.py` - Data quality validation with `--detailed` flag
+
+#### tables.py - Database Schema Inspector (PRIMARY TOOL)
+**Purpose:** Comprehensive Supabase schema inspection and analysis
+
+**Usage:**
+```bash
+# Interactive mode (recommended for exploration)
+python tables.py
+
+# List all tables with row counts
+python tables.py --list
+
+# Show table schema
+python tables.py --schema signals
+
+# Analyze NULL coverage and data quality
+python tables.py --nulls signals
+
+# Get optimization recommendations
+python tables.py --recommend
+
+# Generate full report
+python tables.py --report
+
+# Export report to file
+python tables.py --export schema_report.md
+```
+
+**When to Use:**
+- ✅ Before making any database changes (understand current state)
+- ✅ When planning migrations (identify issues)
+- ✅ During debugging (check data quality)
+- ✅ For documentation (generate schema reports)
+- ❌ Do NOT create new check scripts - use tables.py instead
+
+**Importable Functions** (for use in other scripts):
+```python
+from tables import (
+    check_table_exists,      # Check if table exists
+    get_row_count,           # Get table row count
+    get_column_names,        # List all columns
+    check_column_exists,     # Check if column exists
+    get_table_schema,        # Get full schema details
+    analyze_column_nulls     # Get NULL coverage stats
+)
+
+# Example usage
+if check_table_exists('signals'):
+    row_count = get_row_count('signals')
+    columns = get_column_names('signals')
+    print(f"signals table has {row_count} rows and {len(columns)} columns")
+```
+
+**Features:**
+- Lists all tables with row counts and status
+- Shows detailed schema (columns, types, constraints)
+- Analyzes NULL coverage and data quality
+- Identifies redundant/useless columns
+- Detects constant values and low variance
+- Recommends schema optimizations
+- Exports reports in Markdown format
+
+**Recommendations Engine:**
+- ❌ DROP EMPTY TABLE - 0 rows, no data
+- ❌ DROP NULL COLUMN - 100% NULL, no useful data
+- ⚠️ CONSTANT COLUMN - 100% same value, verify calculation
+- ⚠️ LOW VARIANCE - <5% unique values, check data quality
+- ⚠️ HIGH NULL RATE - >80% NULL, improve data collection
+- 🔄 REDUNDANT COLUMNS - combine or remove duplicates
+- 🔄 CALCULATED COLUMN - can derive from other columns
+- ❌ REDUNDANT TABLE - duplicates another table's data
+
+#### Other Utility Scripts
 - `refresh_signals_norm.py` - Manual materialized view refresh
 - `safe_clear_data.py` - Safe data deletion for testing
 

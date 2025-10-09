@@ -611,8 +611,12 @@ class SupabaseBacktestEngine:
                     "win_rate": float(result.metrics.win_rate)
                 })
             
-            # Store in Supabase using the interface
-            await self.db.upsert_data("backtests", [backtest_data])
+            # DISABLED: backtests table doesn't exist - data stored in signals table
+            logger.info(f"✅ Backtest result calculated (not stored in separate backtests table)")
+            
+            # # Original code (commented out - table doesn't exist):
+            # # Store in Supabase using the interface
+            # await self.db.upsert_data("backtests", [backtest_data])
             
             # Store trade history
             if result.trade_history:

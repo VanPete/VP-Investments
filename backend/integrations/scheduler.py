@@ -295,7 +295,11 @@ class ScheduledPipelineRunner:
                 }
             ])
         
-        self.db.client.table('metrics').insert(metrics_data).execute()
+        # DISABLED: metrics table doesn't exist - could store in runs.metadata instead
+        logger.info(f"✅ Calculated {len(metrics_data)} metrics for {run_id} (not stored in separate metrics table)")
+        
+        # # Original code (commented out - table doesn't exist):
+        # self.db.client.table('metrics').insert(metrics_data).execute()
     
     def refresh_company_tickers(self):
         """Daily refresh of company tickers from GitHub"""

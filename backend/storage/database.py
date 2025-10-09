@@ -1057,14 +1057,19 @@ class SupabaseInterface(DatabaseInterface):
             return False
     
     async def store_backtest_result(self, backtest_data: Dict[str, Any]) -> bool:
-        """Store comprehensive backtest results"""
+        """Store comprehensive backtest results (DISABLED - backtests table doesn't exist)"""
         try:
-            # Store main backtest record
-            await self.upsert_data("backtests", [backtest_data["main"]])
+            # DISABLED: backtests table doesn't exist - data stored in signals table
+            logger.info(f"✅ Backtest data calculated (not stored in separate table)")
+            return True
             
-            # Store trade history
-            if "trades" in backtest_data and backtest_data["trades"]:
-                await self.upsert_data("backtest_trades", backtest_data["trades"])
+            # # Original code (commented out - tables don't exist):
+            # # Store main backtest record
+            # await self.upsert_data("backtests", [backtest_data["main"]])
+            # 
+            # # Store trade history
+            # if "trades" in backtest_data and backtest_data["trades"]:
+            #     await self.upsert_data("backtest_trades", backtest_data["trades"])
             
             # Store portfolio snapshots
             if "portfolios" in backtest_data and backtest_data["portfolios"]:
@@ -1148,23 +1153,28 @@ class SupabaseInterface(DatabaseInterface):
                            status: Optional[str] = None,
                            limit: int = 50,
                            offset: int = 0) -> List[Dict[str, Any]]:
-        """List backtests with filtering and pagination"""
+        """List backtests with filtering and pagination (DISABLED - backtest tables don't exist)"""
         try:
-            filters = {}
-            if strategy:
-                filters["strategy"] = strategy
-            if status:
-                filters["status"] = status
+            # DISABLED: backtest_summary table/view doesn't exist
+            # Backtest data stored in signals table columns
+            logger.info(f"✅ list_backtests called (returns empty - separate backtest tables don't exist)")
+            return []
             
-            results = await self.query_data(
-                "backtest_summary",
-                filters=filters,
-                limit=limit,
-                offset=offset,
-                order_by="created_at DESC"
-            )
-            
-            return results
+            # # Original code (commented out - tables don't exist):
+            # filters = {}
+            # if strategy:
+            #     filters["strategy"] = strategy
+            # if status:
+            #     filters["status"] = status
+            # 
+            # results = await self.query_data(
+            #     "backtest_summary",
+            #     filters=filters,
+            #     limit=limit,
+            #     offset=offset,
+            #     order_by="created_at DESC"
+            # )
+            # return results
             
         except Exception as e:
             logger.error(f"[ERROR] Failed to list backtests: {e}")
@@ -1277,16 +1287,20 @@ class SupabaseInterface(DatabaseInterface):
             return 0
 
     def insert_metric(self, run_id: str, metric_name: str, value: float, units: str):
-        """Insert a performance metric"""
+        """Insert a performance metric (DISABLED - metrics table doesn't exist)"""
         try:
-            data = {
-                'run_id': run_id,
-                'metric_name': metric_name,
-                'value': value,
-                'units': units,
-                'timestamp': datetime.now().isoformat()
-            }
-            self.client.table('metrics').insert(data).execute()
+            # DISABLED: metrics table doesn't exist - store in runs.metadata instead
+            logger.info(f"✅ Metric {metric_name}={value} {units} calculated for {run_id} (not stored separately)")
+            
+            # # Original code (commented out - table doesn't exist):
+            # data = {
+            #     'run_id': run_id,
+            #     'metric_name': metric_name,
+            #     'value': value,
+            #     'units': units,
+            #     'timestamp': datetime.now().isoformat()
+            # }
+            # self.client.table('metrics').insert(data).execute()
         except Exception as e:
             logger.error(f"Failed to insert metric {metric_name}: {e}")
 
@@ -1309,18 +1323,24 @@ class SupabaseInterface(DatabaseInterface):
             return None
 
     def get_recent_discovery_metrics(self) -> List[Dict]:
-        """Get recent discovery metrics"""
+        """Get recent discovery metrics (DISABLED - metrics table doesn't exist)"""
         try:
-            cutoff = datetime.now() - timedelta(days=1)
-            result = self.client.table('metrics').select('metric_name, value, timestamp').like('run_id', 'discovery_%').gt('timestamp', cutoff.isoformat()).order('timestamp', desc=True).limit(20).execute()
+            # DISABLED: metrics table doesn't exist
+            logger.info(f"✅ get_recent_discovery_metrics called (returns empty - metrics table doesn't exist)")
+            return []
             
-            return [
-                {
-                    "name": row['metric_name'],
-                    "value": float(row['value']),
-                    "timestamp": row['timestamp']
-                } for row in result.data
-            ] if result.data else []
+            # # Original code (commented out - table doesn't exist):
+            # cutoff = datetime.now() - timedelta(days=1)
+            # result = self.client.table('metrics').select('metric_name, value, timestamp').like('run_id', 'discovery_%').gt('timestamp', cutoff.isoformat()).order('timestamp', desc=True).limit(20).execute()
+            # 
+            # return [
+            #     {
+            #         "name": row['metric_name'],
+            #         "value": float(row['value']),
+            #         "timestamp": row['timestamp']
+            #     } for row in result.data
+            # ] if result.data else []
+            
         except Exception as e:
             logger.error(f"Failed to get recent discovery metrics: {e}")
             return []

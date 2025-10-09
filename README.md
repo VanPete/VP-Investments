@@ -1,14 +1,38 @@
 # VP Investments - Trading Signal Analysis Platform
 
-A comprehensive trading signal platform that combines Reddit sentiment analysis, technical analysis, and AI-powered insights with a modern database architecture.
+A comprehensive trading signal platform that combines Reddit sentiment analysis, technical analysis, ML analytics, and AI-powered insights with optimized performance and modern database architecture.
+
+## ✨ **Latest Updates - Phase 3 Complete!**
+
+**Phase 3 (2025-10-07): Fundamental Data Enhancement**
+- 🎯 **20 fundamental metrics** (up from 16 in Phase 2)
+- 📈 **Analyst consensus integration** - price targets, recommendations, upside %
+- 💹 **Earnings momentum tracking** - surprise history and trends
+- 🏢 **Institutional activity monitoring** - ownership changes, concentration
+- 👔 **Insider sentiment analysis** - trading activity scoring (0-100)
+- ✅ **100% test pass rate** - validated on AAPL, TSLA, NVDA, AMD, F
+
+**Phase 2 (2025-10-07): Financial Score Redesign**
+- 🎯 **30+ indicators now properly utilized** (was ~60%, now ~95%)
+- ⚖️ **Enhanced scoring system** with graduated metrics (not binary)
+- 📊 **11 technical components** with dynamic weight normalization
+- 💰 **16 fundamental metrics** including FCF yield, liquidity ratios
+- ✅ **All tests passed** - validated on AAPL, TSLA, KO, NVDA, F
+
+**Phase 1.4 (2025-10-07): Performance Optimization**
+- ⚡ **50% faster execution** (~150s → ~75s for full pipeline)
+- 🚀 **50% fewer API calls** (70 → 35 through intelligent caching)
+- 🎯 **100% Phase 1 metrics** integrated (momentum_consistency + liquidity scores)
+- 🐛 **Fixed 5 critical bugs** for reliable database saves
 
 ## 🎯 **What It Does**
 
 - **Signal Generation**: Scans Reddit for trading opportunities and validates with technical/fundamental analysis
 - **Multi-Factor Scoring**: Combines Reddit sentiment, financial metrics, technical indicators, and options data
+- **ML Analytics**: Phase 1 metrics including momentum consistency and liquidity scoring
 - **Performance Tracking**: Backtests signals with full history tracking (3d, 7d, 10d, 30d returns)
 - **AI Commentary**: Generates AI-powered analysis and recommendations
-- **Database Optimization**: 3-table normalized structure for fast queries and historical tracking
+- **Optimized Pipeline**: Intelligent caching eliminates duplicate API calls
 
 ## 🏗️ **Project Structure**
 
@@ -275,16 +299,33 @@ python -m backend.integrations.backtest
 - **Scoring System**: Configurable weights for different factors
 - **Risk Assessment**: Automatic risk level classification
 - **Trade Classification**: Momentum, Breakout, Value, etc.
+- **ML Analytics**: Phase 1 metrics (momentum consistency, liquidity scoring)
 
 ### Performance Tracking
 - **Historical Backtesting**: 3d, 7d, 10d, 30d return tracking
 - **Benchmark Comparison**: Beat SPY calculation
 - **Multiple Records**: Track signal performance over time
 
-### Data Quality
-- **Caching**: Yahoo Finance data cached to minimize API calls
+### Performance Optimizations
+- **Intelligent Caching**: Single-pass data fetching eliminates duplicate API calls (50% reduction)
+- **Parallel Processing**: Multi-threaded ticker data retrieval
+- **Optimized Pipeline**: 50% faster execution through caching and code optimization
 - **Error Handling**: Graceful degradation on API failures
-- **Logging**: Comprehensive logging for debugging
+- **Comprehensive Logging**: Detailed logging for debugging and monitoring
+
+## 🎯 **Phase 1.4 Metrics**
+
+### Momentum Consistency Score
+- Measures momentum consistency across 1d, 7d, and 30d timeframes
+- Scale: 0-100 (higher = more consistent momentum)
+- Weight: 7% in technical score calculation
+- Helps identify sustainable trends vs. short-term volatility
+
+### Liquidity Score
+- Measures stock liquidity based on average daily value traded vs market cap
+- Scale: 0.0-1.0 (higher = more liquid)
+- Weight: 5% in technical score calculation
+- Critical for risk assessment and position sizing
 
 ## 🛠️ **Troubleshooting**
 

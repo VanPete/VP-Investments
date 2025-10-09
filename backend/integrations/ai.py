@@ -85,8 +85,9 @@ class AIStrategy:
 class AIStrategyGenerator:
     """Generates AI-powered trading strategies from enhanced signals"""
     
-    def __init__(self):
+    def __init__(self, run_id: Optional[str] = None):
         self.db = None  # Will be initialized async
+        self.run_id = run_id  # Store run_id for strategy tracking
         
         # Pipeline compatibility attributes
         self.ai_enabled = True
@@ -313,7 +314,7 @@ class AIStrategyGenerator:
             # Determine strategy characteristics based on signal analysis
             horizon = self._determine_time_horizon(analysis)
             risk_reward = self._calculate_risk_reward_ratio(analysis)
-            entry_sizing = min(analysis.get('max_position_size', 0.05), 0.10)  # Cap at 10%
+            entry_sizing = min(self._safe_float(analysis.get('max_position_size'), 0.05), 0.10)  # Cap at 10%
             
             # Create strategy name
             strategy_name = f"{ticker} {self._get_strategy_descriptor(analysis)} Play"
@@ -335,7 +336,7 @@ class AIStrategyGenerator:
                 entry_conditions=json.dumps(entry_conditions),
                 entry_sizing=entry_sizing,
                 exit_conditions=exit_conditions,
-                liquidity_score=self._safe_float(analysis.get('liquidity_score'), 0.5) * 100,
+                liquidity_score=self._safe_float(analysis.get('liquidity_score'), 0.5),  # Already 0-1 scale
                 passes_guardrails=self._passes_risk_guardrails(analysis),
                 signal_provenance={
                     'signal_id': signal_id,
@@ -389,7 +390,7 @@ class AIStrategyGenerator:
                 entry_conditions=json.dumps(entry_conditions),
                 entry_sizing=min(self._safe_float(analysis.get('max_position_size'), 0.05), 0.05),
                 exit_conditions=self._generate_exit_conditions(analysis),
-                liquidity_score=self._safe_float(analysis.get('liquidity_score'), 0.5) * 100,
+                liquidity_score=self._safe_float(analysis.get('liquidity_score'), 0.5),  # Already 0-1 scale
                 passes_guardrails=self._passes_risk_guardrails(analysis),
                 signal_provenance={
                     'signal_id': signal_id,
@@ -438,7 +439,7 @@ class AIStrategyGenerator:
                 entry_conditions=json.dumps(entry_conditions),
                 entry_sizing=min(self._safe_float(analysis.get('max_position_size'), 0.05), 0.05),
                 exit_conditions=self._generate_exit_conditions(analysis),
-                liquidity_score=self._safe_float(analysis.get('liquidity_score'), 0.5) * 100,
+                liquidity_score=self._safe_float(analysis.get('liquidity_score'), 0.5),  # Already 0-1 scale
                 passes_guardrails=self._passes_risk_guardrails(analysis),
                 signal_provenance={
                     'signal_id': signal_id,
@@ -595,15 +596,15 @@ class AIStrategyGenerator:
     def _passes_risk_guardrails(self, analysis: Dict[str, Any]) -> bool:
         """Check if strategy passes basic risk guardrails"""
         try:
-            position_size = analysis.get('max_position_size', 0.05)
+            position_size = self._safe_float(analysis.get('max_position_size'), 0.05)
             if position_size > 0.15:
                 return False
             
-            liquidity = analysis.get('liquidity_score', 0.5)
+            liquidity = self._safe_float(analysis.get('liquidity_score'), 0.5)
             if liquidity < 0.2:
                 return False
             
-            risk_score = analysis.get('risk_score', 50)
+            risk_score = self._safe_float(analysis.get('risk_score'), 50)
             if risk_score > 85:
                 return False
             
@@ -630,6 +631,8 @@ class AIStrategyGenerator:
             for strategy in strategies:
                 record = {
                     'signal_id': strategy.signal_id,
+                    # Note: run_id removed - ai_strategies.run_id is UUID type, 
+                    # but self.run_id is string format. Use signal_id for tracking instead.
                     'ticker': strategy.ticker,
                     'strategy_name': strategy.strategy_name,
                     'strategy_type': strategy.strategy_type,
