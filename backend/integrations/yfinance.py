@@ -376,6 +376,193 @@ class YahooFinanceIntegrator:
         except Exception as e:
             logger.error(f"❌ Failed to calculate financial score for {ticker}: {e}")
             return 0.5
+    
+    def get_comprehensive_financial_data(self, ticker: str, use_cache: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve comprehensive financial data for a ticker with all requested metrics.
+        Moved from pipeline.py for better separation of concerns.
+        
+        Args:
+            ticker (str): Stock ticker symbol
+            use_cache (bool): Whether to use cached data if available
+            
+        Returns:
+            Optional[Dict[str, Any]]: Comprehensive financial data or None if unavailable
+        """
+        try:
+            # Try to use integrators if available
+            try:
+                from backend.integrations.signal_processing import get_technical_calculator, get_financial_calculator
+                
+                technical_calc = get_technical_calculator()
+                financial_calc = get_financial_calculator()
+                
+                # Get comprehensive financial data
+                financial_data = financial_calc.get_comprehensive_financial_data(ticker)
+                
+                # Get technical indicators
+                technical_data = technical_calc.calculate_all_indicators(ticker)
+                
+                # Merge technical data into financial data
+                financial_data.update(technical_data)
+                
+                # Ensure current_price is not limited to 10 (remove artificial limits)
+                if financial_data.get('current_price'):
+                    financial_data['current_price'] = round(float(financial_data['current_price']), 2)
+                
+                return financial_data
+            except ImportError:
+                # Fallback to enhanced basic method
+                return self.get_enhanced_financial_data(ticker)
+                
+        except Exception as e:
+            logger.error(f"Comprehensive financial data failed for {ticker}: {e}")
+            # Final fallback
+            return self.get_basic_financial_data(ticker)
+    
+    def get_basic_financial_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Basic financial data fallback method.
+        Moved from pipeline.py for better separation of concerns.
+        """
+        try:
+            stock = yf.Ticker(ticker)
+            
+            # Get basic info
+            info = stock.info
+            
+            # Get recent price data
+            hist = stock.history(period='5d')
+            
+            if hist.empty or not info:
+                return None
+            
+            # Calculate basic metrics
+            current_price = hist['Close'].iloc[-1] if not hist.empty else None
+            prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
+            price_change = ((current_price - prev_close) / prev_close * 100) if prev_close and current_price else 0
+            
+            # Calculate additional metrics
+            avg_volume = info.get('averageVolume', 1)
+            current_volume = int(hist['Volume'].iloc[-1]) if not hist.empty else 1
+            volume_spike_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+            
+            # Extract key financial metrics
+            financial_data = {
+                'ticker': ticker,
+                'company': info.get('shortName', info.get('longName', ticker)),
+                'current_price': round(float(current_price), 2) if current_price else None,
+                'price_1d_pct': round(float(price_change), 2),
+                'market_cap': info.get('marketCap'),
+                'volume': current_volume,
+                'volume_spike_ratio': round(volume_spike_ratio, 2),
+                'pe_ratio': round(info.get('trailingPE'), 2) if info.get('trailingPE') else None,
+                'forward_pe': info.get('forwardPE'),
+                'peg_ratio': info.get('pegRatio'),
+                'price_to_book': info.get('priceToBook'),
+                'dividend_yield': info.get('dividendYield'),
+                'beta': round(info.get('beta'), 2) if info.get('beta') else None,
+                'fifty_two_week_high': info.get('fiftyTwoWeekHigh'),
+                'fifty_two_week_low': info.get('fiftyTwoWeekLow'),
+                'avg_volume': avg_volume,
+                'sector': info.get('sector'),
+                'industry': info.get('industry'),
+                # Financial ratios
+                'roe': round(info.get('returnOnEquity') * 100, 2) if info.get('returnOnEquity') else None,
+                'debt_equity': round(info.get('debtToEquity'), 2) if info.get('debtToEquity') else None,
+                'eps_growth': round(info.get('earningsGrowth') * 100, 2) if info.get('earningsGrowth') else None,
+                'short_pct_float': round(info.get('shortPercentOfFloat') * 100, 2) if info.get('shortPercentOfFloat') else None,
+                'shares_short': info.get('sharesShort'),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return financial_data
+            
+        except Exception as e:
+            logger.warning(f"Could not retrieve basic financial data for {ticker}: {e}")
+            return None
+    
+    def get_enhanced_financial_data(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Get enhanced financial data using advanced calculations.
+        Moved from pipeline.py for better separation of concerns.
+        """
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            hist = stock.history(period='1y')  # Get more data for technical analysis
+            
+            if hist.empty or not info:
+                return None
+            
+            # Calculate enhanced metrics
+            current_price = hist['Close'].iloc[-1] if not hist.empty else None
+            
+            # Price changes
+            price_1d_pct = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2] * 100) if len(hist) > 1 else 0
+            price_7d_pct = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-8]) / hist['Close'].iloc[-8] * 100) if len(hist) > 7 else 0
+            
+            # Volume analysis
+            volume = hist['Volume'].iloc[-1] if not hist.empty else 0
+            avg_volume_10d = hist['Volume'].tail(10).mean() if len(hist) >= 10 else volume
+            volume_spike_ratio = (volume / avg_volume_10d) if avg_volume_10d > 0 else 1.0
+            
+            # Technical indicators
+            close_prices = hist['Close']
+            
+            # Moving averages
+            ma_50 = close_prices.rolling(50).mean().iloc[-1] if len(close_prices) >= 50 else None
+            ma_200 = close_prices.rolling(200).mean().iloc[-1] if len(close_prices) >= 200 else None
+            
+            above_50_ma_pct = ((current_price - ma_50) / ma_50 * 100) if ma_50 else None
+            above_200_ma_pct = ((current_price - ma_200) / ma_200 * 100) if ma_200 else None
+            
+            # RSI calculation (simplified)
+            def calculate_rsi(prices, periods=14):
+                if len(prices) < periods + 1:
+                    return None
+                delta = prices.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
+                rs = gain / loss
+                return 100 - (100 / (1 + rs)).iloc[-1]
+            
+            rsi = calculate_rsi(close_prices)
+            
+            # Volatility
+            volatility = close_prices.pct_change().rolling(20).std().iloc[-1] * 100 if len(close_prices) >= 20 else None
+            
+            # Comprehensive financial data
+            enhanced_data = {
+                'ticker': ticker,
+                'company': info.get('longName'),
+                'sector': info.get('sector'),
+                'current_price': float(current_price) if current_price else None,
+                'price_1d_pct': float(price_1d_pct),
+                'price_7d_pct': float(price_7d_pct),
+                'market_cap': info.get('marketCap'),
+                'volume': int(volume) if volume else None,
+                'volume_spike_ratio': float(volume_spike_ratio),
+                'above_50d_ma_pct': float(above_50_ma_pct) if above_50_ma_pct else None,
+                'above_200d_ma_pct': float(above_200_ma_pct) if above_200_ma_pct else None,
+                'pe_ratio': info.get('trailingPE'),
+                'eps_growth': info.get('earningsGrowth'),
+                'roe': info.get('returnOnEquity'),
+                'debt_equity': info.get('debtToEquity'),
+                'rsi': float(rsi) if rsi else None,
+                'volatility': float(volatility) if volatility else None,
+                'beta': info.get('beta'),
+                'dividend_yield': info.get('dividendYield'),
+                'short_pct_float': info.get('shortPercentOfFloat'),
+                'shares_short': info.get('sharesShort'),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return enhanced_data
+            
+        except Exception as e:
+            logger.warning(f"Enhanced financial data failed for {ticker}: {e}")
+            return None
 
 def main():
     """Run Yahoo Finance integration"""
