@@ -629,6 +629,206 @@ class RedditAnalytics:
             return "Negative sentiment"
         else:
             return "Very negative sentiment"
+    
+    def extract_tickers_pipeline(self, text: str) -> List[str]:
+        """
+        Extract stock tickers from text using regex patterns and intelligent filtering.
+        Moved from pipeline.py for better separation of concerns.
+        
+        Args:
+            text (str): Text to extract tickers from
+            
+        Returns:
+            List[str]: List of unique tickers found
+        """
+        # Comprehensive list of common English words, financial terms, and other non-tickers
+        non_tickers = {
+            # Common words
+            'THE', 'TO', 'AND', 'IN', 'OF', 'IS', 'THAT', 'THIS', 'WITH', 'BUT', 
+            'MY', 'HAVE', 'WHAT', 'AT', 'IF', 'LIKE', 'NOT', 'FROM', 'MORE', 
+            'WILL', 'DO', 'STOCK', 'ABOUT', 'WAS', 'HOW', 'THEY', 'WOULD', 
+            'THERE', 'THEIR', 'CAN', 'ALL', 'SOME', 'THAN', 'BEEN', 'WHO', 
+            'ITS', 'NOW', 'FIND', 'ANY', 'NEW', 'MAY', 'SAY', 'GET', 'USE',
+            'HER', 'HIM', 'HIS', 'SHE', 'HAS', 'HAD', 'ONE', 'TWO', 'WAY',
+            'OUT', 'DAY', 'TIME', 'YEAR', 'WORK', 'FIRST', 'LAST', 'LONG',
+            'LITTLE', 'OWN', 'OTHER', 'OLD', 'RIGHT', 'BIG', 'HIGH', 'DIFFERENT',
+            'SMALL', 'LARGE', 'NEXT', 'EARLY', 'YOUNG', 'IMPORTANT', 'FEW',
+            'PUBLIC', 'BAD', 'SAME', 'ABLE', 'MUCH', 'MANY', 'MOST', 'VERY',
+            'WHICH', 'HTTPS', 'ME', 'ALSO', 'STILL', 'YOUR', 'THINK', 'MONEY',
+            'YEARS', 'HERE', 'OVER', 'NO', 'TODAY', 'THESE', 'NEWS', 'AFTER',
+            'BUY', 'WE', 'PRICE', 'DOWN', 'ONLY', 'TERM', 'VE', 'THEM', 'WHILE',
+            'WHY', 'WHERE', 'WHEN', 'GOING', 'MAKE', 'GOOD', 'JUST', 'UP',
+            'NEED', 'LOOK', 'SEE', 'EVEN', 'TAKE', 'BACK', 'INTO', 'WELL',
+            'KNOW', 'COME', 'SHOULD', 'COULD', 'WANT', 'PEOPLE', 'MARKET',
+            # Financial terms that aren't tickers
+            'ETF', 'ETFs', 'REIT', 'REITs', 'IPO', 'IPOs', 'SPY', 'QQQ', 'IWM',
+            'CEO', 'CFO', 'SEC', 'FDA', 'NYSE', 'NASDAQ', 'BULL', 'BEAR',
+            'CALLS', 'PUTS', 'YOLO', 'HODL', 'DD', 'TA', 'FA', 'PE', 'EPS',
+            'ROI', 'GDP', 'CPI', 'FED', 'JPY', 'EUR', 'GBP', 'USD', 'CAD',
+            'AUD', 'CHF', 'CNY', 'INR', 'BTC', 'ETH', 'DOGE',
+            # Time/Date related
+            'AM', 'PM', 'EST', 'PST', 'GMT', 'UTC', 'MON', 'TUE', 'WED', 'THU',
+            'FRI', 'SAT', 'SUN', 'JAN', 'FEB', 'MAR', 'APR', 'JUN', 'JUL',
+            'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+            # Other common abbreviations
+            'USA', 'UK', 'EU', 'US', 'CA', 'AU', 'JP', 'CN', 'IN', 'DE', 'FR',
+            'IT', 'ES', 'BR', 'MX', 'RU', 'KR', 'TW', 'HK', 'SG', 'NZ', 'ZA',
+            'CEO', 'CTO', 'CMO', 'COO', 'CFO', 'CIO', 'CISO', 'VP', 'SVP', 'EVP',
+            # Reddit/social media terms
+            'DD', 'TLDR', 'TL', 'DR', 'ELI5', 'IMHO', 'IMO', 'FYI', 'PSA',
+            'AMA', 'TIL', 'LPT', 'YSK', 'CMV', 'EDIT', 'UPDATE', 'REMINDER'
+        }
+        
+        # Only match tickers with $ prefix for high confidence, 
+        # or well-known ticker patterns
+        dollar_ticker_pattern = r'\$([A-Z]{1,5})\b'
+        
+        matches = re.findall(dollar_ticker_pattern, text.upper())
+        tickers = []
+        
+        for ticker in matches:
+            if (ticker and 
+                len(ticker) >= 1 and 
+                len(ticker) <= 5 and 
+                ticker not in non_tickers and
+                not ticker.isdigit()):  # Exclude pure numbers
+                tickers.append(ticker)
+        
+        # Also look for well-known ticker patterns (2-5 caps followed by specific contexts)
+        # This catches tickers mentioned without $ prefix in stock-specific contexts
+        context_ticker_pattern = r'\b([A-Z]{2,5})\b(?:\s+(?:stock|shares|ticker|symbol|company|corp|inc|ltd))'
+        context_matches = re.findall(context_ticker_pattern, text.upper())
+        
+        for ticker in context_matches:
+            if (ticker and 
+                len(ticker) >= 2 and 
+                len(ticker) <= 5 and 
+                ticker not in non_tickers and
+                not ticker.isdigit()):
+                tickers.append(ticker)
+        
+        return list(set(tickers))
+    
+    def scrape_subreddits_pipeline(self, subreddits: List[str] = None, post_limit: int = 100, 
+                                   sentiment_analyzer = None) -> Dict[str, Any]:
+        """
+        Scrape Reddit data from specified subreddits.
+        Moved from pipeline.py for better separation of concerns.
+        
+        Args:
+            subreddits (List[str]): List of subreddits to scrape
+            post_limit (int): Maximum number of posts to process per subreddit
+            sentiment_analyzer: VADER sentiment analyzer instance (optional)
+            
+        Returns:
+            Dict[str, Any]: Scraped data with ticker mentions and metadata
+        """
+        if subreddits is None:
+            subreddits = ['stocks', 'investing', 'wallstreetbets']
+        
+        logger.info(f"Starting Reddit scraping from subreddits: {subreddits}")
+        
+        ticker_data = {}
+        total_posts = 0
+        total_mentions = 0
+        
+        # Use provided sentiment analyzer or fall back to simple sentiment
+        use_vader = sentiment_analyzer is not None
+        
+        for subreddit_name in subreddits:
+            try:
+                subreddit = self.reddit.subreddit(subreddit_name)
+                posts_processed = 0
+                
+                logger.info(f"Scraping r/{subreddit_name}...")
+                
+                # Get hot posts from the subreddit
+                for post in subreddit.hot(limit=post_limit):
+                    try:
+                        # Combine title and selftext for ticker extraction
+                        text_content = f"{post.title} {post.selftext if post.selftext else ''}"
+                        
+                        # Extract tickers from the post
+                        tickers = self.extract_tickers_pipeline(text_content)
+                        
+                        if tickers:
+                            # Analyze sentiment
+                            if use_vader:
+                                sentiment_scores = sentiment_analyzer.polarity_scores(text_content)
+                                sentiment_value = sentiment_scores['compound']
+                            else:
+                                # Use TextBlob if available
+                                sentiment_value = self.analyze_sentiment(text_content)
+                                # Convert from 0-1 scale to -1 to 1 scale for consistency
+                                sentiment_value = (sentiment_value * 2) - 1
+                            
+                            # Store post metadata
+                            post_data = {
+                                'post_id': post.id,
+                                'title': post.title,
+                                'score': post.score,
+                                'upvote_ratio': post.upvote_ratio,
+                                'num_comments': post.num_comments,
+                                'sentiment': sentiment_value,
+                                'created_utc': datetime.fromtimestamp(post.created_utc).isoformat(),
+                                'subreddit': subreddit_name
+                            }
+                            
+                            # Add to ticker data
+                            for ticker in tickers:
+                                if ticker not in ticker_data:
+                                    ticker_data[ticker] = {
+                                        'mentions': [],
+                                        'mention_count': 0,
+                                        'total_score': 0,
+                                        'total_sentiment': 0
+                                    }
+                                
+                                ticker_data[ticker]['mentions'].append(post_data)
+                                ticker_data[ticker]['mention_count'] += 1
+                                ticker_data[ticker]['total_score'] += post.score
+                                ticker_data[ticker]['total_sentiment'] += sentiment_value
+                                total_mentions += 1
+                        
+                        posts_processed += 1
+                        
+                    except Exception as e:
+                        logger.warning(f"Error processing post {post.id}: {e}")
+                        continue
+                
+                total_posts += posts_processed
+                logger.info(f"Processed {posts_processed} posts from r/{subreddit_name}")
+                
+            except Exception as e:
+                logger.error(f"Error scraping r/{subreddit_name}: {e}")
+                continue
+        
+        # Calculate aggregated scores for each ticker
+        for ticker, data in ticker_data.items():
+            if data['mention_count'] > 0:
+                data['avg_score'] = data['total_score'] / data['mention_count']
+                data['avg_sentiment'] = data['total_sentiment'] / data['mention_count']
+                
+                # Calculate weighted reddit score
+                data['reddit_score'] = (
+                    data['avg_sentiment'] * 0.4 +
+                    min(data['avg_score'] / 100, 1.0) * 0.3 +
+                    min(data['mention_count'] / 10, 1.0) * 0.3
+                )
+        
+        unique_tickers = len(ticker_data)
+        logger.info(f"Reddit scraping complete: {unique_tickers} unique tickers, {total_mentions} total mentions from {total_posts} posts")
+        
+        return {
+            'ticker_mentions': ticker_data,
+            'metadata': {
+                'unique_tickers': unique_tickers,
+                'total_mentions': total_mentions,
+                'total_posts': total_posts,
+                'subreddits_scraped': subreddits,
+                'timestamp': datetime.now().isoformat()
+            }
+        }
 
 
 # Export main instances
