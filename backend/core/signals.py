@@ -501,9 +501,63 @@ class SignalScorer:
         if risk_score > 80:
             return -0.02  # High risk penalty
         elif risk_score > 60:
-            return -0.01  # Moderate risk penalty  
+            return -0.01  # Moderate risk penalty
         else:
             return 0.0
+    
+    def _calculate_short_interest_score(self, financial_data: Dict[str, Any]) -> float:
+        """
+        Calculate short squeeze potential score - ENHANCED v2.0.
+        Moved from pipeline.py for consolidation (Phase 6b).
+        
+        Analyzes three metrics:
+        1. Short % of float (50% weight) - Primary squeeze indicator
+        2. Short % of outstanding (30% weight) - Additional confirmation  
+        3. Short ratio / days to cover (20% weight) - Squeeze timing
+        
+        Returns:
+            float: Score [0.0-1.0] indicating short squeeze potential
+        """
+        try:
+            short_components = []
+            
+            # Short % of float (primary metric)
+            short_pct_float = financial_data.get('short_pct_float', 0)
+            if short_pct_float and not np.isnan(short_pct_float):
+                if short_pct_float > 20:
+                    short_components.append(1.0 * 0.5)  # High short squeeze potential
+                elif short_pct_float > 10:
+                    short_components.append(0.7 * 0.5)  # Moderate potential
+                elif short_pct_float > 5:
+                    short_components.append(0.5 * 0.5)  # Some potential
+                else:
+                    short_components.append(0.3 * 0.5)  # Low potential
+            
+            # NEW v2.0: Short % of outstanding (additional confirmation)
+            short_pct_outstanding = financial_data.get('short_pct_outstanding', 0)
+            if short_pct_outstanding and not np.isnan(short_pct_outstanding):
+                if short_pct_outstanding > 15:
+                    short_components.append(1.0 * 0.3)
+                elif short_pct_outstanding > 7:
+                    short_components.append(0.7 * 0.3)
+                else:
+                    short_components.append(0.4 * 0.3)
+            
+            # Short ratio (days to cover)
+            short_ratio = financial_data.get('short_ratio', 0)
+            if short_ratio and not np.isnan(short_ratio):
+                if short_ratio > 5:  # More than 5 days to cover = squeeze risk
+                    short_components.append(1.0 * 0.2)
+                elif short_ratio > 3:
+                    short_components.append(0.7 * 0.2)
+                else:
+                    short_components.append(0.4 * 0.2)
+            
+            return sum(short_components) if short_components else 0.3  # Default low potential
+            
+        except Exception as e:
+            # Note: Using generic exception since we don't have logger in SignalScorer
+            return 0.3
     
     def _calculate_risk_score(self, data: Dict) -> float:
         """Calculate risk-adjusted score (negative factors)"""

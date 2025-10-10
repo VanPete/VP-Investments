@@ -1254,8 +1254,8 @@ class UnifiedPipeline:
             options_score = self.signal_scorer._calculate_options_score(financial_data)
             self.logger.debug(f"Options score: {options_score:.3f}")
             
-            # ===== SHORT INTEREST SCORE (15%) =====
-            short_score = self._calculate_short_interest_score(financial_data)
+            # ===== SHORT INTEREST SCORE (15%) ===== - delegated to SignalScorer
+            short_score = self.signal_scorer._calculate_short_interest_score(financial_data)
             self.logger.debug(f"Short interest score: {short_score:.3f}")
             
             # Combine all components
@@ -1879,49 +1879,7 @@ class UnifiedPipeline:
             return 0.0
     
 
-    def _calculate_short_interest_score(self, financial_data: Dict[str, Any]) -> float:
-        """Calculate short squeeze potential score - ENHANCED v2.0"""
-        try:
-            short_components = []
-            
-            # Short % of float (primary metric)
-            short_pct_float = financial_data.get('short_pct_float', 0)
-            if short_pct_float and not np.isnan(short_pct_float):
-                if short_pct_float > 20:
-                    short_components.append(1.0 * 0.5)  # High short squeeze potential
-                elif short_pct_float > 10:
-                    short_components.append(0.7 * 0.5)  # Moderate potential
-                elif short_pct_float > 5:
-                    short_components.append(0.5 * 0.5)  # Some potential
-                else:
-                    short_components.append(0.3 * 0.5)  # Low potential
-            
-            # NEW v2.0: Short % of outstanding (additional confirmation)
-            short_pct_outstanding = financial_data.get('short_pct_outstanding', 0)
-            if short_pct_outstanding and not np.isnan(short_pct_outstanding):
-                if short_pct_outstanding > 15:
-                    short_components.append(1.0 * 0.3)
-                elif short_pct_outstanding > 7:
-                    short_components.append(0.7 * 0.3)
-                else:
-                    short_components.append(0.4 * 0.3)
-            
-            # Short ratio (days to cover)
-            short_ratio = financial_data.get('short_ratio', 0)
-            if short_ratio and not np.isnan(short_ratio):
-                if short_ratio > 5:  # More than 5 days to cover = squeeze risk
-                    short_components.append(1.0 * 0.2)
-                elif short_ratio > 3:
-                    short_components.append(0.7 * 0.2)
-                else:
-                    short_components.append(0.4 * 0.2)
-            
-            return sum(short_components) if short_components else 0.3  # Default low potential
-            
-        except Exception as e:
-            self.logger.debug(f"Error calculating short interest score: {e}")
-            return 0.3
-    
+
     async def generate_news_signals(self, tickers: List[str]) -> List[Dict[str, Any]]:
         """
         Generate news-based signals from sentiment analysis.
