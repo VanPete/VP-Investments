@@ -45,43 +45,7 @@ component_scores = {
 
 **Signal Groups:**
 
-#### Group 1: Social Signals (Reddit) - Weight: 25%
-```python
-social_signals = {
-    'reddit_sentiment': {
-        'weight': 0.40,  # 40% of social score
-        'range': [-1, 1],
-        'normalize': lambda x: (x + 1) / 2,  # Convert to 0-1
-        'importance': 'HIGH'
-    },
-    'mentions': {
-        'weight': 0.25,
-        'range': [0, 20],
-        'normalize': lambda x: min(x / 10, 1.0),  # Cap at 10 mentions
-        'importance': 'HIGH'
-    },
-    'upvotes': {
-        'weight': 0.20,
-        'range': [0, 1000],
-        'normalize': lambda x: min(x / 500, 1.0),  # Cap at 500 upvotes
-        'importance': 'MEDIUM'
-    },
-    'post_recency': {
-        'weight': 0.10,
-        'range': [0, 1],
-        'normalize': lambda x: x,  # Already 0-1
-        'importance': 'LOW'
-    },
-    'engagement_rate': {
-        'weight': 0.05,
-        'range': [0, 1],
-        'normalize': lambda x: x,  # upvote_ratio from Reddit
-        'importance': 'LOW'
-    }
-}
-```
-
-#### Group 2: Technical Signals - Weight: 30%
+#### Group 1: Technical Signals - Weight: 25%
 ```python
 technical_signals = {
     'price_momentum_1d': {
@@ -96,11 +60,23 @@ technical_signals = {
         'normalize': lambda x: (x + 15) / 30,
         'importance': 'HIGH'
     },
-    'volume_spike': {
+    'price_momentum_30d': {
+        'weight': 0.10,
+        'range': [-50, 50],
+        'normalize': lambda x: (x + 25) / 50,
+        'importance': 'MEDIUM'
+    },
+    'volume_spike_ratio': {
         'weight': 0.15,
         'range': [0.5, 5.0],  # Ratio vs avg volume
         'normalize': lambda x: min((x - 0.5) / 2.5, 1.0),
-        'importance': 'MEDIUM'
+        'importance': 'HIGH'
+    },
+    'volume_trend': {
+        'weight': 0.05,
+        'range': [-1, 1],  # Increasing/decreasing
+        'normalize': lambda x: (x + 1) / 2,
+        'importance': 'LOW'
     },
     'rsi': {
         'weight': 0.10,
@@ -109,61 +85,25 @@ technical_signals = {
         'importance': 'MEDIUM'
     },
     'macd_histogram': {
-        'weight': 0.15,
+        'weight': 0.10,
         'range': [-5, 5],
         'normalize': lambda x: (x + 2.5) / 5,
         'importance': 'MEDIUM'
     },
+    'macd_line': {
+        'weight': 0.05,
+        'range': [-10, 10],
+        'normalize': lambda x: (x + 5) / 10,
+        'importance': 'LOW'
+    },
     'bollinger_position': {
-        'weight': 0.10,
+        'weight': 0.05,
         'range': [0, 1],  # Where price is in BB range
         'normalize': lambda x: x,
         'importance': 'LOW'
     },
     'relative_strength': {
-        'weight': 0.15,
-        'range': [0, 100],
-        'normalize': lambda x: x / 100,
-        'importance': 'MEDIUM'
-    }
-}
-```
-
-#### Group 3: Fundamental Signals - Weight: 25%
-```python
-fundamental_signals = {
-    'pe_ratio': {
-        'weight': 0.25,
-        'range': [5, 40],  # Optimal range
-        'normalize': lambda x: 1 - abs(x - 20) / 20,  # Optimal at 20
-        'importance': 'HIGH'
-    },
-    'revenue_growth': {
-        'weight': 0.20,
-        'range': [-20, 50],  # % YoY
-        'normalize': lambda x: (x + 10) / 60,
-        'importance': 'HIGH'
-    },
-    'profit_margin': {
-        'weight': 0.15,
-        'range': [0, 40],
-        'normalize': lambda x: x / 40,
-        'importance': 'MEDIUM'
-    },
-    'earnings_surprise': {
-        'weight': 0.15,
-        'range': [-30, 30],  # % vs estimate
-        'normalize': lambda x: (x + 15) / 45,
-        'importance': 'MEDIUM'
-    },
-    'analyst_rating': {
-        'weight': 0.15,
-        'range': [1, 5],  # 1=Strong Buy, 5=Sell
-        'normalize': lambda x: (6 - x) / 4,  # Invert so 1=best
-        'importance': 'MEDIUM'
-    },
-    'institutional_ownership': {
-        'weight': 0.10,
+        'weight': 0.05,
         'range': [0, 100],
         'normalize': lambda x: x / 100,
         'importance': 'LOW'
@@ -171,11 +111,169 @@ fundamental_signals = {
 }
 ```
 
-#### Group 4: Risk Signals - Weight: 15%
+#### Group 2: Fundamental Signals - Weight: 25%
 ```python
-risk_signals = {
+fundamental_signals = {
+    'pe_ratio': {
+        'weight': 0.20,
+        'range': [5, 40],  # Optimal range
+        'normalize': lambda x: 1 - abs(x - 20) / 20,  # Optimal at 20
+        'importance': 'HIGH'
+    },
+    'forward_pe': {
+        'weight': 0.10,
+        'range': [5, 35],
+        'normalize': lambda x: 1 - abs(x - 18) / 18,
+        'importance': 'MEDIUM'
+    },
+    'peg_ratio': {
+        'weight': 0.10,
+        'range': [0, 3],  # <1 is undervalued
+        'normalize': lambda x: 1 - min(x / 2, 1.0),  # Lower is better
+        'importance': 'MEDIUM'
+    },
+    'revenue_growth_yoy': {
+        'weight': 0.15,
+        'range': [-20, 50],  # % YoY
+        'normalize': lambda x: (x + 10) / 60,
+        'importance': 'HIGH'
+    },
+    'revenue_growth_qoq': {
+        'weight': 0.10,
+        'range': [-10, 30],  # % QoQ
+        'normalize': lambda x: (x + 5) / 35,
+        'importance': 'MEDIUM'
+    },
+    'profit_margin': {
+        'weight': 0.10,
+        'range': [0, 40],
+        'normalize': lambda x: x / 40,
+        'importance': 'MEDIUM'
+    },
+    'earnings_surprise': {
+        'weight': 0.10,
+        'range': [-30, 30],  # % vs estimate
+        'normalize': lambda x: (x + 15) / 45,
+        'importance': 'MEDIUM'
+    },
+    'earnings_growth': {
+        'weight': 0.05,
+        'range': [-20, 50],
+        'normalize': lambda x: (x + 10) / 60,
+        'importance': 'LOW'
+    },
+    'analyst_rating': {
+        'weight': 0.10,
+        'range': [1, 5],  # 1=Strong Buy, 5=Sell
+        'normalize': lambda x: (6 - x) / 4,  # Invert so 1=best
+        'importance': 'MEDIUM'
+    }
+}
+```
+
+#### Group 3: News/Macro Signals - Weight: 20%
+```python
+news_macro_signals = {
+    'news_sentiment': {
+        'weight': 0.30,
+        'range': [-1, 1],
+        'normalize': lambda x: (x + 1) / 2,
+        'importance': 'HIGH'
+    },
+    'news_mentions_24h': {
+        'weight': 0.20,
+        'range': [0, 10],
+        'normalize': lambda x: min(x / 5, 1.0),
+        'importance': 'HIGH'
+    },
+    'news_recency': {
+        'weight': 0.10,
+        'range': [0, 1],
+        'normalize': lambda x: x,
+        'importance': 'MEDIUM'
+    },
+    'earnings_date_proximity': {
+        'weight': 0.15,
+        'range': [0, 30],  # Days until earnings
+        'normalize': lambda x: 1 - min(x / 30, 1.0),  # Closer = higher score
+        'importance': 'HIGH'
+    },
+    'market_regime': {
+        'weight': 0.10,
+        'range': [0, 1],  # Bull=1, Bear=0
+        'normalize': lambda x: x,
+        'importance': 'MEDIUM'
+    },
+    'sector_momentum': {
+        'weight': 0.10,
+        'range': [-30, 30],  # Sector % change 30d
+        'normalize': lambda x: (x + 15) / 30,
+        'importance': 'MEDIUM'
+    },
+    'correlation_to_spy': {
+        'weight': 0.05,
+        'range': [-1, 1],
+        'normalize': lambda x: (x + 1) / 2,  # Higher correlation = more stable
+        'importance': 'LOW'
+    }
+}
+```
+
+#### Group 4: Social/Alternative Signals - Weight: 15%
+```python
+social_alternative_signals = {
+    'reddit_sentiment': {
+        'weight': 0.30,
+        'range': [-1, 1],
+        'normalize': lambda x: (x + 1) / 2,
+        'importance': 'HIGH'
+    },
+    'reddit_mentions': {
+        'weight': 0.30,
+        'range': [0, 20],
+        'normalize': lambda x: min(x / 10, 1.0),
+        'importance': 'HIGH'
+    },
+    'reddit_upvotes': {
+        'weight': 0.20,
+        'range': [0, 1000],
+        'normalize': lambda x: min(x / 500, 1.0),
+        'importance': 'MEDIUM'
+    },
+    'reddit_engagement_rate': {
+        'weight': 0.10,
+        'range': [0, 1],
+        'normalize': lambda x: x,  # upvote_ratio
+        'importance': 'LOW'
+    },
+    'reddit_momentum': {
+        'weight': 0.10,
+        'range': [0, 1],  # Mentions trend
+        'normalize': lambda x: x,
+        'importance': 'LOW'
+    },
+    # Future: Twitter/X
+    'twitter_mentions': {
+        'weight': 0.00,  # Disabled until implemented
+        'range': [0, 100],
+        'normalize': lambda x: min(x / 50, 1.0),
+        'importance': 'FUTURE'
+    },
+    # Future: Google Trends
+    'google_trends_score': {
+        'weight': 0.00,  # Disabled until implemented
+        'range': [0, 100],
+        'normalize': lambda x: x / 100,
+        'importance': 'FUTURE'
+    }
+}
+```
+
+#### Group 5: Risk/Stability Signals - Weight: 15%
+```python
+risk_stability_signals = {
     'beta': {
-        'weight': 0.25,
+        'weight': 0.20,
         'range': [0.5, 3.0],
         'normalize': lambda x: 1 - abs(x - 1) / 2,  # Optimal at 1.0
         'importance': 'HIGH'
@@ -186,47 +284,90 @@ risk_signals = {
         'normalize': lambda x: 1 - min(x / 100, 1.0),  # Lower is better
         'importance': 'HIGH'
     },
-    'liquidity_score': {
-        'weight': 0.20,
-        'range': [0, 1],
-        'normalize': lambda x: x,  # Already 0-1
+    'volatility_90d': {
+        'weight': 0.10,
+        'range': [0, 100],
+        'normalize': lambda x: 1 - min(x / 100, 1.0),
         'importance': 'MEDIUM'
     },
-    'short_interest': {
+    'sharpe_ratio': {
+        'weight': 0.10,
+        'range': [-2, 3],  # Risk-adjusted return
+        'normalize': lambda x: (x + 2) / 5,
+        'importance': 'MEDIUM'
+    },
+    'max_drawdown': {
+        'weight': 0.10,
+        'range': [0, 50],  # % drawdown
+        'normalize': lambda x: 1 - min(x / 50, 1.0),  # Lower is better
+        'importance': 'MEDIUM'
+    },
+    'liquidity_score': {
         'weight': 0.15,
+        'range': [0, 1],
+        'normalize': lambda x: x,  # Already 0-1
+        'importance': 'HIGH'
+    },
+    'short_interest_pct': {
+        'weight': 0.10,
         'range': [0, 40],  # % of float
         'normalize': lambda x: min(x / 20, 1.0),  # High SI can be good/bad
         'importance': 'MEDIUM'
     },
     'market_cap_score': {
-        'weight': 0.20,
+        'weight': 0.05,
         'range': [0, 1],
         'normalize': lambda x: x,  # Based on market cap category
-        'importance': 'MEDIUM'
+        'importance': 'LOW'
     }
 }
 ```
 
-#### Group 5: News Signals (Future) - Weight: 5%
+#### Group 6: Institutional/Smart Money Signals - Weight: 5%
 ```python
-news_signals = {
-    'news_sentiment': {
-        'weight': 0.50,
-        'range': [-1, 1],
-        'normalize': lambda x: (x + 1) / 2,
+institutional_smart_money_signals = {
+    'institutional_ownership_pct': {
+        'weight': 0.30,
+        'range': [0, 100],
+        'normalize': lambda x: x / 100,
         'importance': 'HIGH'
     },
-    'news_mentions_24h': {
+    'institutional_change_qoq': {
         'weight': 0.30,
+        'range': [-20, 20],  # % change in holdings
+        'normalize': lambda x: (x + 10) / 30,
+        'importance': 'HIGH'
+    },
+    'insider_buy_count': {
+        'weight': 0.15,
         'range': [0, 10],
         'normalize': lambda x: min(x / 5, 1.0),
         'importance': 'MEDIUM'
     },
-    'news_recency': {
-        'weight': 0.20,
+    'insider_sell_count': {
+        'weight': 0.10,
+        'range': [0, 10],
+        'normalize': lambda x: 1 - min(x / 5, 1.0),  # Invert: fewer sells = better
+        'importance': 'MEDIUM'
+    },
+    'insider_net_shares': {
+        'weight': 0.15,
+        'range': [-1000000, 1000000],
+        'normalize': lambda x: (x + 500000) / 1000000,
+        'importance': 'MEDIUM'
+    },
+    # Future: ETF/Hedge Fund flows
+    'etf_net_flows': {
+        'weight': 0.00,  # Disabled until implemented
+        'range': [-1e9, 1e9],
+        'normalize': lambda x: (x + 5e8) / 1e9,
+        'importance': 'FUTURE'
+    },
+    'options_flow_unusual': {
+        'weight': 0.00,  # Disabled until implemented
         'range': [0, 1],
         'normalize': lambda x: x,
-        'importance': 'LOW'
+        'importance': 'FUTURE'
     }
 }
 ```
@@ -253,32 +394,52 @@ class ComprehensiveScorer:
         """Load group-level weights based on profile"""
         profiles = {
             "ml_optimized": {
-                'social': 0.25,      # Reddit/social media
-                'technical': 0.30,   # Price/volume indicators
-                'fundamental': 0.25, # Financial health
-                'risk': 0.15,        # Risk metrics
-                'news': 0.05         # News sentiment (future)
+                'technical': 0.25,
+                'fundamental': 0.25,
+                'news_macro': 0.20,
+                'social_alternative': 0.15,
+                'risk_stability': 0.15,
+                'institutional_smart_money': 0.05
             },
             "conservative": {
-                'social': 0.10,
-                'technical': 0.20,
-                'fundamental': 0.50,
-                'risk': 0.15,
-                'news': 0.05
+                'technical': 0.15,
+                'fundamental': 0.35,
+                'news_macro': 0.20,
+                'social_alternative': 0.05,
+                'risk_stability': 0.20,
+                'institutional_smart_money': 0.05
             },
             "aggressive": {
-                'social': 0.35,
-                'technical': 0.40,
-                'fundamental': 0.10,
-                'risk': 0.10,
-                'news': 0.05
+                'technical': 0.35,
+                'fundamental': 0.15,
+                'news_macro': 0.15,
+                'social_alternative': 0.25,
+                'risk_stability': 0.05,
+                'institutional_smart_money': 0.05
             },
             "value": {
-                'social': 0.05,
                 'technical': 0.15,
-                'fundamental': 0.60,
-                'risk': 0.15,
-                'news': 0.05
+                'fundamental': 0.40,
+                'news_macro': 0.15,
+                'social_alternative': 0.05,
+                'risk_stability': 0.15,
+                'institutional_smart_money': 0.10
+            },
+            "news_driven": {
+                'technical': 0.20,
+                'fundamental': 0.20,
+                'news_macro': 0.35,
+                'social_alternative': 0.10,
+                'risk_stability': 0.10,
+                'institutional_smart_money': 0.05
+            },
+            "smart_money": {
+                'technical': 0.20,
+                'fundamental': 0.25,
+                'news_macro': 0.15,
+                'social_alternative': 0.05,
+                'risk_stability': 0.15,
+                'institutional_smart_money': 0.20
             }
         }
         return profiles.get(profile, profiles["ml_optimized"])
@@ -291,15 +452,17 @@ class ComprehensiveScorer:
             {
                 'weighted_score': 0.0-1.0,
                 'component_scores': {
-                    'social': 0.0-1.0,
                     'technical': 0.0-1.0,
                     'fundamental': 0.0-1.0,
-                    'risk': 0.0-1.0,
-                    'news': 0.0-1.0
+                    'news_macro': 0.0-1.0,
+                    'social_alternative': 0.0-1.0,
+                    'risk_stability': 0.0-1.0,
+                    'institutional_smart_money': 0.0-1.0
                 },
                 'signal_breakdown': {
-                    'social': { 'reddit_sentiment': 0.75, 'mentions': 0.60, ... },
-                    'technical': { 'price_momentum_1d': 0.80, ... },
+                    'technical': { 'price_momentum_1d': 0.80, 'volume_spike_ratio': 0.65, ... },
+                    'fundamental': { 'pe_ratio': 0.75, 'revenue_growth_yoy': 0.60, ... },
+                    'news_macro': { 'news_sentiment': 0.70, 'earnings_date_proximity': 0.85, ... },
                     ...
                 },
                 'top_signals': [('price_momentum_7d', 0.90), ...],
@@ -310,20 +473,22 @@ class ComprehensiveScorer:
         
         # Calculate component scores for each group
         component_scores = {
-            'social': self._calculate_social_score(signal_data),
             'technical': self._calculate_technical_score(signal_data),
             'fundamental': self._calculate_fundamental_score(signal_data),
-            'risk': self._calculate_risk_score(signal_data),
-            'news': self._calculate_news_score(signal_data)
+            'news_macro': self._calculate_news_macro_score(signal_data),
+            'social_alternative': self._calculate_social_alternative_score(signal_data),
+            'risk_stability': self._calculate_risk_stability_score(signal_data),
+            'institutional_smart_money': self._calculate_institutional_smart_money_score(signal_data)
         }
         
         # Calculate signal breakdown (individual signal contributions)
         signal_breakdown = {
-            'social': self._breakdown_social(signal_data),
             'technical': self._breakdown_technical(signal_data),
             'fundamental': self._breakdown_fundamental(signal_data),
-            'risk': self._breakdown_risk(signal_data),
-            'news': self._breakdown_news(signal_data)
+            'news_macro': self._breakdown_news_macro(signal_data),
+            'social_alternative': self._breakdown_social_alternative(signal_data),
+            'risk_stability': self._breakdown_risk_stability(signal_data),
+            'institutional_smart_money': self._breakdown_institutional_smart_money(signal_data)
         }
         
         # Calculate final weighted score
@@ -351,27 +516,27 @@ class ComprehensiveScorer:
             'profile': self.profile
         }
     
-    def _calculate_social_score(self, data: Dict) -> float:
-        """Calculate social/Reddit component score"""
+    def _calculate_social_alternative_score(self, data: Dict) -> float:
+        """Calculate social/alternative data component score"""
         signals = {
             'reddit_sentiment': self._normalize_signal(
                 data.get('reddit_sentiment', 0),
                 signal_type='reddit_sentiment'
             ),
-            'mentions': self._normalize_signal(
+            'reddit_mentions': self._normalize_signal(
                 data.get('mentions', 0),
-                signal_type='mentions'
+                signal_type='reddit_mentions'
             ),
-            'upvotes': self._normalize_signal(
+            'reddit_upvotes': self._normalize_signal(
                 data.get('upvotes', 0),
-                signal_type='upvotes'
+                signal_type='reddit_upvotes'
             ),
-            'post_recency': data.get('post_recency', 0.5),
-            'engagement_rate': data.get('upvote_ratio', 0.5)
+            'reddit_engagement_rate': data.get('upvote_ratio', 0.5),
+            'reddit_momentum': data.get('reddit_momentum', 0.5)
         }
         
         # Weighted average of social signals
-        weights = self.signal_definitions['social']
+        weights = self.signal_definitions['social_alternative']
         weighted_sum = sum(
             signals[key] * weights[key]['weight']
             for key in signals.keys() if key in weights
@@ -445,12 +610,13 @@ class ComprehensiveScorer:
 
 **Implementation Steps:**
 1. [ ] Create `ComprehensiveScorer` class
-2. [ ] Define all signal groups with weights
-3. [ ] Implement normalization functions
-4. [ ] Add breakdown calculation methods
+2. [ ] Define all 6 signal groups with weights and normalization functions
+3. [ ] Implement component score calculators (technical, fundamental, news_macro, social_alternative, risk_stability, institutional_smart_money)
+4. [ ] Add breakdown calculation methods for each group
 5. [ ] Add confidence/quality metrics
 6. [ ] Test with real signals (AAPL, TSLA, GME)
 7. [ ] Validate score distribution (0.2-0.8 range expected)
+8. [ ] Verify group weight distribution (no group >60% contribution)
 
 ---
 
@@ -679,22 +845,26 @@ class ScoringValidator:
 - signal_type: Always "Multi-Factor"
 - No score breakdown or explanation
 - Confidence not data-driven
+- 5 groups (social mixed with news)
 
 ### After Phase 7
-- Weighted score: Comprehensive calculation with 40+ signals
+- Weighted score: Comprehensive calculation with 50+ signals across 6 groups
 - Component breakdown: Clear contribution from each group
-- Top signals: Specific drivers ("price_momentum_7d: 0.90")
+  - Technical (25%), Fundamental (25%), News/Macro (20%)
+  - Social/Alternative (15%), Risk/Stability (15%), Institutional (5%)
+- Top signals: Specific drivers ("price_momentum_7d: 0.90", "earnings_date_proximity: 0.85")
 - Signal explanations: Human-readable justifications
 - Data quality: Measurable metric (% of signals with data)
 - Confidence: Based on data availability and consistency
-- Multiple profiles: ml_optimized, conservative, aggressive, value
+- Multiple profiles: ml_optimized, conservative, aggressive, value, news_driven, smart_money
 
 ### Performance Metrics
 - **Score variance:** > 0.15 (vs current ~0.05)
 - **Prediction accuracy:** Target 65%+ (vs current unknown)
 - **Data quality:** Target 80%+ signals with data
-- **Component balance:** No component >60% of total score
+- **Component balance:** No component >60% of total score (target 20-25% each)
 - **Explainability:** 100% of signals have explanations
+- **Profile diversity:** 6 different scoring profiles for different strategies
 
 ---
 
@@ -721,14 +891,15 @@ class ScoringValidator:
 
 ## 🎯 Success Criteria
 
-- [ ] All 40+ signals organized into 5 groups
+- [ ] All 50+ signals organized into 6 groups (Technical, Fundamental, News/Macro, Social/Alternative, Risk/Stability, Institutional/Smart Money)
 - [ ] ComprehensiveScorer calculates weighted score correctly
 - [ ] Component breakdown shows contribution from each group
-- [ ] Top signals identified automatically
+- [ ] Top signals identified automatically (top 5-10 contributors)
 - [ ] Score explanations generated for all signals
 - [ ] Confidence and data quality metrics calculated
-- [ ] Multiple scoring profiles available
+- [ ] 6 scoring profiles available (ml_optimized, conservative, aggressive, value, news_driven, smart_money)
 - [ ] Score variance improved (>0.15)
+- [ ] Component balance: no single group >60% of score
 - [ ] All tests passing
 - [ ] Documentation complete
 - [ ] Ready for Phase 8 (Frontend Integration)
@@ -780,11 +951,11 @@ class ScoringValidator:
 
 **Database Changes:**
 - Keep existing `weighted_score` column (single number)
-- Add `component_scores` JSONB column (breakdown by group)
-- Add `signal_breakdown` JSONB column (all 40+ signals)
+- Add `component_scores` JSONB column (breakdown by 6 groups)
+- Add `signal_breakdown` JSONB column (all 50+ individual signals)
 - Add `score_explanation` TEXT column (human-readable)
 - Add `data_quality` FLOAT column (0-1)
-- Add `scoring_profile` VARCHAR column
+- Add `scoring_profile` VARCHAR column (default: 'ml_optimized')
 
 **Code Changes:**
 - Create new `ComprehensiveScorer` class (doesn't break existing)

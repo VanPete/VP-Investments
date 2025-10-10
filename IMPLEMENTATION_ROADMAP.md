@@ -30,20 +30,21 @@
 
 ### What We're Building
 
-**Comprehensive Scorer** with 5 signal groups:
-1. **Social Signals (25%)** - Reddit sentiment, mentions, upvotes, recency, engagement
-2. **Technical Signals (30%)** - Price momentum, volume, RSI, MACD, Bollinger, relative strength
-3. **Fundamental Signals (25%)** - P/E ratio, revenue growth, margins, earnings, analyst ratings
-4. **Risk Signals (15%)** - Beta, volatility, liquidity, short interest, market cap
-5. **News Signals (5%)** - Sentiment, mentions, recency (future)
+**Comprehensive Scorer** with 6 signal groups:
+1. **Technical (25%)** - Price momentum, volume, RSI, MACD, Bollinger, relative strength
+2. **Fundamental (25%)** - P/E ratio, revenue growth, margins, earnings, analyst ratings
+3. **News/Macro (20%)** - News sentiment, earnings events, market regime, correlations
+4. **Social/Alternative (15%)** - Reddit, Twitter/X (future), Google Trends (future)
+5. **Risk/Stability (15%)** - Beta, volatility, liquidity, drawdown, short interest
+6. **Institutional/Smart Money (5%)** - Institutional flows, insider activity, 13F filings (scale to 10%)
 
 ### Key Features
-- **40+ individual signals** normalized to 0-1 scale
-- **Component breakdown** showing each group's contribution
-- **Score explanations** - "Strong buy driven by momentum..."
-- **Multiple profiles** - ml_optimized, conservative, aggressive, value
+- **50+ individual signals** normalized to 0-1 scale across 6 groups
+- **Component breakdown** showing each group's contribution (Technical, Fundamental, News/Macro, Social, Risk, Institutional)
+- **Score explanations** - "Strong buy driven by momentum and earnings catalyst..."
+- **Multiple profiles** - ml_optimized, conservative, aggressive, value, news_driven, smart_money
 - **Data quality metrics** - % of signals with real data
-- **Confidence scores** - Based on data availability
+- **Confidence scores** - Based on data availability and consistency
 
 ### Timeline
 - **Week 1:** Define signal groups + implement ComprehensiveScorer (20-25 hrs)
