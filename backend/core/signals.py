@@ -438,6 +438,326 @@ class SignalScorer:
         
         return max(0.0, score)
     
+    def _calculate_fundamentals_score(self, financial_data: Dict[str, Any]) -> float:
+        """
+        Calculate fundamentals score from financial metrics.
+        Moved from pipeline.py for consolidation (Phase 6c).
+        
+        ENHANCED Phase 2: Now uses ALL 16+ fundamental metrics with optimized weights.
+        ENHANCED Phase 3: Added analyst data, earnings momentum, institutional activity, insider sentiment (20 metrics total).
+        
+        Scoring Components:
+        1. Market cap (11%) - Company size category
+        2. Valuation (16%) - P/E, PEG, P/S ratios  
+        3. Profitability (18%) - Margins and ROE
+        4. Growth (13%) - Revenue and earnings growth
+        5. Financial health (14%) - Debt ratios and liquidity
+        6. Cash flow (10%) - FCF yield
+        7. Ownership (8%) - Institutional and retail holdings
+        8. Analyst consensus (5%) - Target upside and recommendations
+        9. Earnings momentum (4%) - Surprise trends
+        10. Institutional activity (3%) - QoQ changes
+        11. Insider sentiment (3%) - Insider transactions
+        
+        Returns:
+            float: Normalized score [0.0-1.0] with dynamic weight adjustment
+        """
+        try:
+            fundamental_components = []
+            weights_used = []
+            
+            # 1. MARKET CAP (11%)
+            market_cap = financial_data.get('market_cap_numeric', 0)
+            if market_cap and market_cap > 0:
+                if market_cap > 50_000_000_000:
+                    cap_score = 0.7
+                elif market_cap > 10_000_000_000:
+                    cap_score = 0.9
+                elif market_cap > 2_000_000_000:
+                    cap_score = 1.0
+                elif market_cap > 500_000_000:
+                    cap_score = 0.8
+                else:
+                    cap_score = 0.5
+                fundamental_components.append(cap_score * 0.11)
+                weights_used.append(0.11)
+            
+            # 2. VALUATION METRICS (16%)
+            pe_ratio = financial_data.get('pe_ratio')
+            if pe_ratio and not np.isnan(pe_ratio) and pe_ratio > 0:
+                if 10 < pe_ratio < 25:
+                    pe_score = 1.0
+                elif 5 < pe_ratio <= 10:
+                    pe_score = 0.8
+                elif 25 <= pe_ratio < 40:
+                    pe_score = 0.7
+                else:
+                    pe_score = 0.5
+                fundamental_components.append(pe_score * 0.07)
+                weights_used.append(0.07)
+            
+            peg_ratio = financial_data.get('peg_ratio')
+            if peg_ratio and not np.isnan(peg_ratio) and peg_ratio > 0:
+                if peg_ratio < 1.0:
+                    peg_score = 1.0
+                elif peg_ratio < 1.5:
+                    peg_score = 0.8
+                elif peg_ratio < 2.0:
+                    peg_score = 0.6
+                else:
+                    peg_score = 0.4
+                fundamental_components.append(peg_score * 0.05)
+                weights_used.append(0.05)
+            
+            price_to_sales = financial_data.get('price_to_sales')
+            if price_to_sales and not np.isnan(price_to_sales) and price_to_sales > 0:
+                if price_to_sales < 2:
+                    ps_score = 1.0
+                elif price_to_sales < 4:
+                    ps_score = 0.7
+                else:
+                    ps_score = 0.5
+                fundamental_components.append(ps_score * 0.04)
+                weights_used.append(0.04)
+            
+            # 3. PROFITABILITY METRICS (18%)
+            profit_margin = financial_data.get('profit_margin')
+            if profit_margin and not np.isnan(profit_margin):
+                if profit_margin > 0.20:
+                    profit_score = 1.0
+                elif profit_margin > 0.10:
+                    profit_score = 0.8
+                elif profit_margin > 0.05:
+                    profit_score = 0.6
+                elif profit_margin > 0:
+                    profit_score = 0.4
+                else:
+                    profit_score = 0.2
+                fundamental_components.append(profit_score * 0.07)
+                weights_used.append(0.07)
+            
+            operating_margin = financial_data.get('operating_margin')
+            if operating_margin and not np.isnan(operating_margin):
+                if operating_margin > 0.20:
+                    op_score = 1.0
+                elif operating_margin > 0.10:
+                    op_score = 0.7
+                elif operating_margin > 0:
+                    op_score = 0.5
+                else:
+                    op_score = 0.2
+                fundamental_components.append(op_score * 0.05)
+                weights_used.append(0.05)
+            
+            roe = financial_data.get('roe')
+            if roe and not np.isnan(roe):
+                if roe > 0.15:
+                    roe_score = 1.0
+                elif roe > 0.10:
+                    roe_score = 0.7
+                elif roe > 0:
+                    roe_score = 0.5
+                else:
+                    roe_score = 0.2
+                fundamental_components.append(roe_score * 0.05)
+                weights_used.append(0.05)
+            
+            # 4. GROWTH METRICS (13%)
+            revenue_growth = financial_data.get('revenue_growth')
+            if revenue_growth and not np.isnan(revenue_growth):
+                if revenue_growth > 0.20:
+                    rev_score = 1.0
+                elif revenue_growth > 0.10:
+                    rev_score = 0.8
+                elif revenue_growth > 0:
+                    rev_score = 0.6
+                else:
+                    rev_score = 0.3
+                fundamental_components.append(rev_score * 0.07)
+                weights_used.append(0.07)
+            
+            earnings_growth = financial_data.get('earnings_growth')
+            if earnings_growth and not np.isnan(earnings_growth):
+                if earnings_growth > 0.20:
+                    earn_score = 1.0
+                elif earnings_growth > 0.10:
+                    earn_score = 0.8
+                elif earnings_growth > 0:
+                    earn_score = 0.6
+                else:
+                    earn_score = 0.3
+                fundamental_components.append(earn_score * 0.06)
+                weights_used.append(0.06)
+            
+            # 5. FINANCIAL HEALTH (14%)
+            debt_to_equity = financial_data.get('debt_to_equity')
+            if debt_to_equity and not np.isnan(debt_to_equity):
+                if debt_to_equity < 0.3:
+                    debt_score = 1.0
+                elif debt_to_equity < 0.6:
+                    debt_score = 0.8
+                elif debt_to_equity < 1.0:
+                    debt_score = 0.6
+                else:
+                    debt_score = 0.3
+                fundamental_components.append(debt_score * 0.07)
+                weights_used.append(0.07)
+            
+            current_ratio = financial_data.get('current_ratio')
+            if current_ratio and not np.isnan(current_ratio):
+                if current_ratio >= 2.0:
+                    curr_score = 1.0
+                elif current_ratio >= 1.5:
+                    curr_score = 0.8
+                elif current_ratio >= 1.0:
+                    curr_score = 0.6
+                else:
+                    curr_score = 0.3
+                fundamental_components.append(curr_score * 0.03)
+                weights_used.append(0.03)
+            
+            quick_ratio = financial_data.get('quick_ratio')
+            if quick_ratio and not np.isnan(quick_ratio):
+                if quick_ratio >= 1.5:
+                    quick_score = 1.0
+                elif quick_ratio >= 1.0:
+                    quick_score = 0.7
+                elif quick_ratio >= 0.5:
+                    quick_score = 0.5
+                else:
+                    quick_score = 0.3
+                fundamental_components.append(quick_score * 0.03)
+                weights_used.append(0.03)
+            
+            # 6. CASH FLOW (10%)
+            free_cash_flow = financial_data.get('free_cash_flow')
+            if free_cash_flow and market_cap and not np.isnan(free_cash_flow) and market_cap > 0:
+                fcf_yield = free_cash_flow / market_cap
+                if fcf_yield > 0.08:
+                    fcf_score = 1.0
+                elif fcf_yield > 0.04:
+                    fcf_score = 0.8
+                elif fcf_yield > 0:
+                    fcf_score = 0.6
+                else:
+                    fcf_score = 0.3
+                fundamental_components.append(fcf_score * 0.10)
+                weights_used.append(0.10)
+            
+            # 7. OWNERSHIP METRICS (8%)
+            institutional_pct = financial_data.get('institutional_ownership_pct')
+            if institutional_pct and not np.isnan(institutional_pct):
+                if 40 <= institutional_pct <= 70:
+                    inst_score = 1.0
+                elif 30 <= institutional_pct < 40 or 70 < institutional_pct <= 85:
+                    inst_score = 0.7
+                else:
+                    inst_score = 0.5
+                fundamental_components.append(inst_score * 0.04)
+                weights_used.append(0.04)
+            
+            retail_pct = financial_data.get('retail_holding_pct')
+            if retail_pct and not np.isnan(retail_pct):
+                if retail_pct > 20:
+                    retail_score = 1.0
+                elif retail_pct > 10:
+                    retail_score = 0.7
+                else:
+                    retail_score = 0.5
+                fundamental_components.append(retail_score * 0.04)
+                weights_used.append(0.04)
+            
+            # 8. ANALYST CONSENSUS (5%)
+            target_upside_pct = financial_data.get('target_upside_pct')
+            recommendation_mean = financial_data.get('recommendation_mean')
+            if target_upside_pct is not None and not np.isnan(target_upside_pct):
+                if target_upside_pct > 20:
+                    analyst_score = 1.0
+                elif target_upside_pct > 10:
+                    analyst_score = 0.7
+                elif target_upside_pct > 5:
+                    analyst_score = 0.5
+                elif target_upside_pct > 0:
+                    analyst_score = 0.3
+                else:
+                    analyst_score = 0.0
+                if recommendation_mean is not None and not np.isnan(recommendation_mean):
+                    if recommendation_mean <= 2.0:
+                        analyst_score = min(analyst_score + 0.2, 1.0)
+                    elif recommendation_mean >= 3.5:
+                        analyst_score = max(analyst_score - 0.2, 0.0)
+                fundamental_components.append(analyst_score * 0.05)
+                weights_used.append(0.05)
+            
+            # 9. EARNINGS MOMENTUM (4%)
+            avg_surprise = financial_data.get('avg_earnings_surprise_pct')
+            surprise_trend = financial_data.get('earnings_surprise_trend')
+            if avg_surprise is not None and not np.isnan(avg_surprise):
+                if avg_surprise > 10:
+                    earnings_score = 1.0
+                elif avg_surprise > 5:
+                    earnings_score = 0.7
+                elif avg_surprise > 0:
+                    earnings_score = 0.5
+                elif avg_surprise > -5:
+                    earnings_score = 0.3
+                else:
+                    earnings_score = 0.0
+                if surprise_trend == 'Improving':
+                    earnings_score = min(earnings_score + 0.2, 1.0)
+                elif surprise_trend == 'Declining':
+                    earnings_score = max(earnings_score - 0.2, 0.0)
+                fundamental_components.append(earnings_score * 0.04)
+                weights_used.append(0.04)
+            
+            # 10. INSTITUTIONAL ACTIVITY (3%)
+            inst_change_qoq = financial_data.get('institutional_change_qoq')
+            top_10_holders_pct = financial_data.get('top_10_holders_pct')
+            if inst_change_qoq is not None and not np.isnan(inst_change_qoq):
+                if inst_change_qoq > 5:
+                    inst_activity_score = 1.0
+                elif inst_change_qoq > 2:
+                    inst_activity_score = 0.7
+                elif inst_change_qoq > 0:
+                    inst_activity_score = 0.5
+                elif inst_change_qoq > -2:
+                    inst_activity_score = 0.3
+                else:
+                    inst_activity_score = 0.0
+                if top_10_holders_pct is not None and not np.isnan(top_10_holders_pct):
+                    if top_10_holders_pct > 40:
+                        inst_activity_score = min(inst_activity_score + 0.1, 1.0)
+                fundamental_components.append(inst_activity_score * 0.03)
+                weights_used.append(0.03)
+            
+            # 11. INSIDER SENTIMENT (3%)
+            insider_score_value = financial_data.get('insider_activity_score', 50.0)
+            if insider_score_value is not None and not np.isnan(insider_score_value):
+                if insider_score_value >= 80:
+                    insider_sentiment = 1.0
+                elif insider_score_value >= 60:
+                    insider_sentiment = 0.7
+                elif insider_score_value >= 40:
+                    insider_sentiment = 0.5
+                elif insider_score_value >= 20:
+                    insider_sentiment = 0.3
+                else:
+                    insider_sentiment = 0.0
+                fundamental_components.append(insider_sentiment * 0.03)
+                weights_used.append(0.03)
+            
+            # Normalize by actual weights used
+            if fundamental_components and weights_used:
+                total_weight = sum(weights_used)
+                if total_weight > 0:
+                    normalization_factor = 1.0 / total_weight
+                    total_score = sum(fundamental_components) * normalization_factor
+                    return min(total_score, 1.0)
+            return 0.0
+            
+        except Exception:
+            return 0.0
+    
     def _calculate_technical_score(self, data: Dict) -> float:
         """Calculate technical analysis score"""
         score = 0.0
