@@ -758,39 +758,222 @@ class SignalScorer:
         except Exception:
             return 0.0
     
-    def _calculate_technical_score(self, data: Dict) -> float:
-        """Calculate technical analysis score"""
-        score = 0.0
+    def _calculate_technical_score(self, financial_data: Dict[str, Any]) -> float:
+        """
+        Calculate technical indicators score from all available indicators.
+        Moved from pipeline.py for consolidation (Phase 6c-Part2).
         
-        # Price momentum
-        price_1d = data.get('price_change_1d', data.get('price_1d_pct', 0))
-        price_7d = data.get('price_change_7d', data.get('price_7d_pct', 0))
+        ENHANCED Phase 2: Now uses ALL 15+ technical indicators with optimized weights.
+        Total weight distribution normalized to 100%.
         
-        if price_1d > self.thresholds['Price 1D %']:
-            score += (price_1d / 10) * self.weights.get('Price 1D %', 0.0)  # Scale by 10%
+        Scoring Components:
+        1. Momentum indicators (18%) - 1d, 7d, 30d price changes
+        2. RSI (12%) - Overbought/oversold signals
+        3. Moving averages (12%) - 50d, 200d MA position
+        4. MACD (10%) - Trend direction and strength
+        5. Volume analysis (12%) - Spike ratio, correlation
+        6. Volatility (10%) - Level, rank, Bollinger bands
+        7. Relative strength (10%) - vs SPY and sector
+        8. Beta (8%) - Market correlation
+        9. Momentum consistency (7%) - Phase 1.4 metric
+        10. Liquidity (6%) - Phase 1.4 metric
+        11. Exit signals (5%) - Inverted exit strength
         
-        if price_7d > self.thresholds['Price 7D %']:
-            score += (price_7d / 20) * self.weights.get('Price 7D %', 0.0)  # Scale by 20%
-        
-        # Volume spike
-        volume_spike = data.get('volume_spike_ratio', 1.0)
-        if volume_spike > self.thresholds['Volume Spike Ratio']:
-            spike_score = min((volume_spike - 1.0) / 2.0, 1.0)  # Cap at 3x volume
-            score += spike_score * self.weights.get('Volume Spike Ratio', 0.0)
-        
-        # RSI (prefer 30-70 range)
-        rsi = data.get('rsi')
-        if rsi and self.thresholds['RSI_LOW'] <= rsi <= self.thresholds['RSI_HIGH']:
-            rsi_score = 1.0 - abs(rsi - 50) / 50  # Optimal at 50
-            score += rsi_score * self.weights.get('RSI', 0.0)
-        
-        # MACD
-        macd = data.get('macd', data.get('macd_histogram', 0))
-        if macd > self.thresholds['MACD Histogram']:
-            macd_score = min(macd / 5.0, 1.0)  # Cap at 5
-            score += macd_score * self.weights.get('MACD Histogram', 0.0)
-        
-        return max(0.0, score)
+        Returns:
+            float: Normalized score [0.0-1.0] with dynamic weight adjustment
+        """
+        try:
+            technical_components = []
+            weights_used = []
+            
+            # 1. MOMENTUM INDICATORS (18%)
+            price_1d = financial_data.get('price_1d_pct', 0)
+            price_7d = financial_data.get('price_7d_pct', 0)
+            momentum_30d = financial_data.get('momentum_30d_pct', 0)
+            
+            if not all(np.isnan([price_1d, price_7d, momentum_30d])):
+                momentum_score = min(
+                    (abs(price_1d) / 10 + abs(price_7d) / 20 + abs(momentum_30d) / 30) / 3,
+                    1.0
+                )
+                technical_components.append(momentum_score * 0.18)
+                weights_used.append(0.18)
+            
+            # 2. RSI INDICATOR (12%)
+            rsi = financial_data.get('rsi')
+            if rsi and not np.isnan(rsi):
+                if rsi < 35:
+                    rsi_score = 1.0
+                elif rsi > 65:
+                    rsi_score = 0.8
+                elif 45 < rsi < 55:
+                    rsi_score = 0.5
+                else:
+                    rsi_score = 0.7
+                technical_components.append(rsi_score * 0.12)
+                weights_used.append(0.12)
+            
+            # 3. MOVING AVERAGE POSITION (12%)
+            ma_50_pct = financial_data.get('above_50d_ma_pct')
+            ma_200_pct = financial_data.get('above_200d_ma_pct')
+            
+            ma_score = 0.0
+            ma_factors = 0
+            if ma_50_pct is not None and not np.isnan(ma_50_pct):
+                if ma_50_pct > 5:
+                    ma_score += 1.0
+                elif ma_50_pct > 0:
+                    ma_score += 0.7
+                else:
+                    ma_score += 0.3
+                ma_factors += 1
+                
+            if ma_200_pct is not None and not np.isnan(ma_200_pct):
+                if ma_200_pct > 5:
+                    ma_score += 1.0
+                elif ma_200_pct > 0:
+                    ma_score += 0.7
+                else:
+                    ma_score += 0.3
+                ma_factors += 1
+            
+            if ma_factors > 0:
+                technical_components.append((ma_score / ma_factors) * 0.12)
+                weights_used.append(0.12)
+            
+            # 4. MACD INDICATOR (10%)
+            macd = financial_data.get('macd')
+            if macd and not np.isnan(macd):
+                if macd > 0:
+                    macd_score = min(0.7 + abs(macd) * 0.3, 1.0)
+                else:
+                    macd_score = 0.3
+                technical_components.append(macd_score * 0.10)
+                weights_used.append(0.10)
+            
+            # 5. VOLUME ANALYSIS (12%)
+            volume_spike = financial_data.get('volume_spike_ratio', 1)
+            vol_price_corr = financial_data.get('volume_price_correlation', 0)
+            
+            if not np.isnan(volume_spike):
+                volume_score = min(max(volume_spike - 1, 0) / 2, 1.0)
+                
+                if not np.isnan(vol_price_corr):
+                    if vol_price_corr > 0.5:
+                        volume_score = min(volume_score * 1.3, 1.0)
+                    elif vol_price_corr > 0.3:
+                        volume_score = min(volume_score * 1.15, 1.0)
+                
+                technical_components.append(volume_score * 0.12)
+                weights_used.append(0.12)
+            
+            # 6. VOLATILITY ANALYSIS (10%)
+            volatility = financial_data.get('volatility', 0)
+            volatility_rank = financial_data.get('volatility_rank', 0)
+            
+            vol_score = 0.0
+            vol_factors = 0
+            
+            if not np.isnan(volatility) and volatility > 0:
+                if 15 < volatility < 35:
+                    vol_score += 1.0
+                elif 10 < volatility <= 15 or 35 <= volatility < 50:
+                    vol_score += 0.7
+                elif volatility < 10:
+                    vol_score += 0.5
+                else:
+                    vol_score += 0.3
+                vol_factors += 1
+            
+            if not np.isnan(volatility_rank):
+                if 0.4 < volatility_rank < 0.8:
+                    vol_score += 1.0
+                elif volatility_rank <= 0.4:
+                    vol_score += 0.6
+                else:
+                    vol_score += 0.7
+                vol_factors += 1
+            
+            if vol_factors > 0:
+                technical_components.append((vol_score / vol_factors) * 0.10)
+                weights_used.append(0.10)
+            
+            # 7. RELATIVE STRENGTH (10%)
+            relative_strength = financial_data.get('relative_strength', 0)
+            sector_rs = financial_data.get('sector_relative_strength', 0)
+            
+            rs_score = 0.0
+            rs_factors = 0
+            
+            if not np.isnan(relative_strength):
+                if relative_strength > 5:
+                    rs_score += 1.0
+                elif relative_strength > 0:
+                    rs_score += 0.7
+                else:
+                    rs_score += 0.3
+                rs_factors += 1
+                
+            if not np.isnan(sector_rs):
+                if sector_rs > 5:
+                    rs_score += 1.0
+                elif sector_rs > 0:
+                    rs_score += 0.7
+                else:
+                    rs_score += 0.3
+                rs_factors += 1
+            
+            if rs_factors > 0:
+                technical_components.append((rs_score / rs_factors) * 0.10)
+                weights_used.append(0.10)
+            
+            # 8. BETA / RISK METRICS (8%)
+            beta = financial_data.get('beta')
+            if beta and not np.isnan(beta):
+                if 0.8 <= beta <= 1.2:
+                    beta_score = 1.0
+                elif 0.5 <= beta < 0.8 or 1.2 < beta <= 1.5:
+                    beta_score = 0.7
+                elif beta < 0.5:
+                    beta_score = 0.5
+                else:
+                    beta_score = 0.4
+                
+                technical_components.append(beta_score * 0.08)
+                weights_used.append(0.08)
+            
+            # 9. MOMENTUM CONSISTENCY (7%)
+            momentum_consistency = financial_data.get('momentum_consistency_score')
+            if momentum_consistency and not np.isnan(momentum_consistency):
+                consistency_score = min(max(momentum_consistency / 100, 0), 1.0)
+                technical_components.append(consistency_score * 0.07)
+                weights_used.append(0.07)
+            
+            # 10. LIQUIDITY SCORE (6%)
+            liquidity = financial_data.get('liquidity_score')
+            if liquidity and not np.isnan(liquidity):
+                liquidity_score = min(max(liquidity, 0), 1.0)
+                technical_components.append(liquidity_score * 0.06)
+                weights_used.append(0.06)
+            
+            # 11. EXIT SIGNAL STRENGTH (5%) - INVERTED
+            exit_signal = financial_data.get('exit_signal_strength', 0)
+            if not np.isnan(exit_signal):
+                exit_score = 1.0 - min(exit_signal / 100, 1.0)
+                technical_components.append(exit_score * 0.05)
+                weights_used.append(0.05)
+            
+            # Normalize by actual weights used
+            if technical_components and weights_used:
+                total_weight = sum(weights_used)
+                if total_weight > 0:
+                    normalization_factor = 1.0 / total_weight
+                    total_score = sum(technical_components) * normalization_factor
+                    return min(total_score, 1.0)
+            return 0.0
+            
+        except Exception:
+            return 0.0
     
     def _calculate_options_score(self, financial_data: Dict[str, Any]) -> float:
         """
