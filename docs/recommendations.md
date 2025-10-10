@@ -24,7 +24,163 @@
 
 - **Performance:** ⚡ 50% faster execution, 50% fewer API calls- **Performance:** ⚡ 50% faster execution, 50% fewer API calls
 
-- **Code Quality:** 📦 841 lines consolidated into SignalScorer- **Pipeline:** Fully optimized with Phase 3 fundamentals integrated
+- **Code Quality:** 📦 841 lines consolidated into SignalScorer- **Pipeline:** Fully optimiz---
+
+## ⭐ Phase 7: Missing Signals for Future Implementation
+
+**Context:** Phase 7 comprehensive 6-group scoring system implemented. Missing signals currently return 0.5 (neutral score). This section documents what needs to be implemented for full signal coverage.
+
+### News/Macro Group (4 missing signals)
+
+**1. earnings_date_proximity**
+- **Description:** Days until next earnings announcement
+- **Data Source:** yfinance earnings calendar
+- **Implementation:** Extract `ticker.calendar`, calculate days difference
+- **Normalization:** 0-7 days = 0.8, 8-30 days = 0.5, 30+ days = 0.2
+- **Effort:** 1-2 hours
+- **Priority:** HIGH (earnings events = price catalysts)
+
+**2. market_regime**
+- **Description:** Bull/bear/neutral market indicator
+- **Data Source:** VIX index from yfinance
+- **Implementation:** `yf.Ticker('^VIX').history(period='1d')['Close'][-1]`
+- **Normalization:** VIX <15 = bull (0.7), 15-20 = neutral (0.5), >20 = bear (0.3)
+- **Effort:** 1-2 hours
+- **Priority:** MEDIUM (macro context useful)
+
+**3. sector_momentum**
+- **Description:** Sector ETF 30-day performance vs SPY
+- **Data Source:** Sector ETF mapping (XLK, XLF, XLE, etc.)
+- **Implementation:** Map ticker → sector → ETF, calculate 30d return
+- **Normalization:** Outperforming sector = 0.7, in-line = 0.5, underperforming = 0.3
+- **Effort:** 2-3 hours
+- **Priority:** MEDIUM (sector rotation indicator)
+
+**4. correlation_to_spy**
+- **Description:** Rolling 30-day price correlation to S&P 500
+- **Data Source:** yfinance historical prices
+- **Implementation:** `ticker_prices.tail(30).corr(spy_prices.tail(30))`
+- **Normalization:** High correlation (0.7-1.0) = 0.5, low correlation (<0.3) = 0.7
+- **Effort:** 1-2 hours
+- **Priority:** MEDIUM (diversification indicator)
+
+### Social/Alternative Group (2 missing signals)
+
+**5. twitter_mentions**
+- **Description:** Twitter/X mention count and sentiment
+- **Data Source:** Twitter API v2
+- **Implementation:** Requires API credentials, rate-limited
+- **Normalization:** Similar to Reddit (mentions/5, sentiment factor)
+- **Effort:** 4-8 hours (API setup + integration)
+- **Priority:** LOW (Reddit already provides social sentiment)
+
+**6. google_trends_score**
+- **Description:** Google search interest score
+- **Data Source:** pytrends library
+- **Implementation:** `pytrends.interest_over_time()`, 15-minute rate limit
+- **Normalization:** 0-100 range from Google → 0-1
+- **Effort:** 4-8 hours (caching strategy needed)
+- **Priority:** LOW (correlation with Reddit sentiment likely high)
+
+### Risk/Stability Group (2 missing signals)
+
+**7. sharpe_ratio**
+- **Description:** Risk-adjusted return metric
+- **Data Source:** Historical prices from yfinance
+- **Implementation:**
+  ```python
+  returns = ticker.history(period='1y')['Close'].pct_change()
+  mean_return = returns.mean() * 252  # Annualized
+  std_dev = returns.std() * np.sqrt(252)
+  risk_free_rate = 0.04  # 4% assumption
+  sharpe = (mean_return - risk_free_rate) / std_dev
+  ```
+- **Normalization:** >1.5 = 0.8, 0.5-1.5 = 0.5, <0.5 = 0.2
+- **Effort:** 2-3 hours
+- **Priority:** HIGH (important risk metric)
+
+**8. max_drawdown**
+- **Description:** Maximum peak-to-trough decline
+- **Data Source:** Historical prices from yfinance
+- **Implementation:**
+  ```python
+  prices = ticker.history(period='1y')['Close']
+  cummax = prices.cummax()
+  drawdown = (prices - cummax) / cummax
+  max_dd = abs(drawdown.min())
+  ```
+- **Normalization:** <10% = 0.8, 10-25% = 0.5, >25% = 0.2 (inverted - lower is better)
+- **Effort:** 2-3 hours
+- **Priority:** HIGH (downside risk indicator)
+
+### Institutional/Smart Money Group (3 missing signals)
+
+**9. etf_net_flows**
+- **Description:** ETF buying/selling pressure
+- **Data Source:** SEC holdings files or paid data providers
+- **Implementation:** Parse 13F-HR filings, calculate net changes
+- **Normalization:** Positive net flows = 0.7+, negative = 0.3-
+- **Effort:** 8-16 hours (complex data parsing)
+- **Priority:** LOW (institutional_change_qoq already provides similar signal)
+
+**10. unusual_options_activity**
+- **Description:** Abnormal options volume/OI ratio
+- **Data Source:** Options chain data from yfinance or broker API
+- **Implementation:** Compare current volume to historical average, detect outliers
+- **Normalization:** 2x+ normal volume = 0.8, 1.5-2x = 0.6, normal = 0.5
+- **Effort:** 8-16 hours (options data + analysis logic)
+- **Priority:** LOW (complex, expensive data)
+
+**11. 13f_filing_changes**
+- **Description:** Quarterly institutional holdings changes
+- **Data Source:** SEC EDGAR filings
+- **Implementation:** Parse 13F filings, compare quarter-over-quarter
+- **Normalization:** Net buying = 0.7+, net selling = 0.3-
+- **Effort:** 8-16 hours (SEC filing parsing)
+- **Priority:** LOW (institutional_change_qoq already provides this)
+
+### Implementation Summary
+
+**Total Estimated Effort:** 40-60 hours for all 11 missing signals
+
+**Priority Tiers:**
+1. **Tier 1 (HIGH)** - 6-9 hours total
+   - earnings_date_proximity (1-2h)
+   - sharpe_ratio (2-3h)
+   - max_drawdown (2-3h)
+   
+2. **Tier 2 (MEDIUM)** - 6-9 hours total
+   - market_regime (1-2h)
+   - sector_momentum (2-3h)
+   - correlation_to_spy (1-2h)
+   
+3. **Tier 3 (LOW)** - 24-42 hours total
+   - twitter_mentions (4-8h)
+   - google_trends_score (4-8h)
+   - etf_net_flows (8-16h)
+   - unusual_options_activity (8-16h)
+   - 13f_filing_changes (8-16h)
+
+**Recommended Approach:**
+1. Implement Tier 1 signals first (high value, low effort)
+2. Backtest to measure score improvement
+3. Implement Tier 2 if backtests show significant gains
+4. Defer Tier 3 unless specific strategy requires them
+
+---
+
+## 📚 Reference Documents
+
+- **[IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)** - Detailed phase-by-phase implementation guide
+- **[SCHEMA_IMPROVEMENTS.md](../SCHEMA_IMPROVEMENTS.md)** - Complete tables.py analysis and cleanup plan
+- **[PHASE4_COMPLETE_SUMMARY.md](../PHASE4_COMPLETE_SUMMARY.md)** - Phase 4 backtest results
+- **[IMPLEMENTATION_QUESTIONS.md](../IMPLEMENTATION_QUESTIONS.md)** - User decisions and rationale
+- **[OPERATIONAL_GUIDELINES.md](../OPERATIONAL_GUIDELINES.md)** - Coding standards and best practices
+- **[PHASE_7_SCORING_FINALIZATION.md](../PHASE_7_SCORING_FINALIZATION.md)** - Phase 7 implementation details
+
+---
+
+**End of Recommendations** • Updated: 2025-01-XX (Phase 7) 3 fundamentals integrated
 
 - **Features:** 🎯 On-demand signal generation + Full pipeline mode- **Current Focus:** Phase 4 - Signal Score Validation & Backtesting
 

@@ -141,8 +141,8 @@ class AIStrategyGenerator:
         try:
             await self._ensure_db_connection()
             
-            # Get top signals from database
-            result = self.db.supabase.table('signals').select('*').order('weighted_score', desc=True).limit(self.top_signals_limit).execute()
+            # Get top signals from database (Phase 7)
+            result = self.db.supabase.table('signals').select('*').order('signal_score', desc=True).limit(self.top_signals_limit).execute()
             
             if not result.data:
                 logger.warning("No signals found in database")
@@ -257,8 +257,8 @@ class AIStrategyGenerator:
         try:
             analysis = {}
             
-            # Basic signal metrics
-            analysis['weighted_score'] = signal.get('weighted_score', 0)
+            # Basic signal metrics (Phase 7)
+            analysis['signal_score'] = signal.get('signal_score', 0)
             analysis['confidence_level'] = signal.get('signal_confidence', 0)
             analysis['volatility'] = signal.get('volatility', 0)
             analysis['liquidity_score'] = signal.get('liquidity_score', 0.5)
@@ -497,10 +497,10 @@ class AIStrategyGenerator:
             return "Long-Term Growth"
     
     def _generate_entry_conditions(self, signal: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate entry conditions for the strategy"""
+        """Generate entry conditions for the strategy (Phase 7)"""
         return {
             "entry_price": analysis.get('current_price', 0),
-            "signal_strength": analysis.get('weighted_score', 0),
+            "signal_strength": analysis.get('signal_score', 0),
             "momentum_score": analysis.get('momentum_30d', 0),
             "rsi_level": analysis.get('rsi', 50)
         }
@@ -744,7 +744,7 @@ class AIIntegrator:
             commentary_tasks = [
                 self._generate_commentary(context),
                 self._generate_trends_commentary(context),
-                self._generate_score_explanation(context, signal_data.get('weighted_score', 0))
+                self._generate_score_explanation(context, signal_data.get('signal_score', 0))
             ]
             
             results = await asyncio.gather(*commentary_tasks, return_exceptions=True)
@@ -767,9 +767,9 @@ class AIIntegrator:
         """Prepare context string for AI analysis"""
         context_parts = [f"Stock: {ticker}"]
         
-        # Add available data points
-        if 'weighted_score' in signal_data:
-            context_parts.append(f"Signal Score: {signal_data['weighted_score']:.3f}")
+        # Add available data points (Phase 7)
+        if 'signal_score' in signal_data:
+            context_parts.append(f"Signal Score: {signal_data['signal_score']:.3f}")
         
         if 'reddit_score' in signal_data:
             context_parts.append(f"Reddit Score: {signal_data['reddit_score']:.3f}")
@@ -945,7 +945,7 @@ class ComprehensiveCommentaryGenerator:
             "ticker": s.get("ticker", "N/A"),
             "company": s.get("company", s.get("ticker", "N/A")),
             "sector": s.get("sector", "N/A"),
-            "weighted_score": float(s.get("weighted_score", 0) or 0),
+            "signal_score": float(s.get("signal_score", 0) or 0),  # Phase 7
             "trade_type": s.get("trade_type", "Signal"),
             "risk_level": s.get("risk_level", "Unknown"),
             # consolidated commentary
@@ -1040,7 +1040,7 @@ class ComprehensiveCommentaryGenerator:
 
         header = (
             f"Analyze {d['ticker']} ({d['company']}) in {d['sector']} sector.\n"
-            f"Signal {d['weighted_score']:.3f} - {d['trade_type']} ({d['risk_level']} risk)."
+            f"Signal {d['signal_score']:.3f} - {d['trade_type']} ({d['risk_level']} risk)."
         )
 
         return (
@@ -1054,12 +1054,12 @@ class ComprehensiveCommentaryGenerator:
     def _fallback_commentary(self, s: Dict[str, Any]) -> str:
         ticker = s.get("ticker", "UNKNOWN")
         company = s.get("company", ticker)
-        score = float(s.get("weighted_score", 0) or 0)
+        score = float(s.get("signal_score", 0) or 0)  # Phase 7
         trade = s.get("trade_type", "Signal").lower()
         risk = str(s.get("risk_level", "Unknown")).lower()
 
         parts: List[str] = [
-            f"{company} ({ticker}) shows a {trade} setup with a weighted score of {score:.3f} and {risk} risk.",
+            f"{company} ({ticker}) shows a {trade} setup with a signal score of {score:.3f} and {risk} risk.",
         ]
 
         bullets: List[str] = []
@@ -1123,7 +1123,7 @@ async def test_ai_integration():
         
         test_signal = {
             'ticker': 'AAPL',
-            'weighted_score': 0.85,
+            'signal_score': 0.85,  # Phase 7
             'reddit_score': 0.7,
             'financial_score': 0.9,
             'mention_count': 15,
@@ -1153,7 +1153,7 @@ async def test_ai_integration():
         test_signals = [{
             'id': str(uuid.uuid4()),
             'ticker': 'AAPL',
-            'weighted_score': 0.85,
+            'signal_score': 0.85,  # Phase 7
             'signal_confidence': 0.8,
             'current_price': 175.50,
             'market_cap': 2800000000000,

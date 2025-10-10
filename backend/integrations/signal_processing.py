@@ -1272,7 +1272,12 @@ class SignalEnhancer:
         Calculate liquidity score (0.0 to 1.0, higher = more liquid).
         Based on average daily trading volume relative to market cap.
         """
+        # Try to get from signal, fallback to financial_data
         avg_daily_value = signal.get('avg_daily_value_traded')
+        if avg_daily_value is None:
+            financial_data = signal.get('financial_data', {})
+            avg_daily_value = financial_data.get('avg_daily_value_traded')
+        
         market_cap = signal.get('market_cap')
         
         if (avg_daily_value is None or market_cap is None or 

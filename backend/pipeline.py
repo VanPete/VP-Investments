@@ -198,9 +198,9 @@ class UnifiedPipeline:
         return self.reddit.extract_tickers_pipeline(text)
     
     def scrape_reddit_data(self, subreddits: List[str] = None, post_limit: int = 100) -> Dict[str, Any]:
-        """Delegate to RedditDataIntegrator for Reddit scraping"""
-        from backend.integrations.reddit import RedditDataIntegrator
-        reddit_integrator = RedditDataIntegrator()
+        """Delegate to RedditAnalytics for Reddit scraping"""
+        from backend.integrations.reddit import RedditAnalytics
+        reddit_integrator = RedditAnalytics()
         return reddit_integrator.scrape_subreddits_pipeline(subreddits, post_limit, self.sentiment_analyzer)
     
     def get_financial_data(self, ticker: str, use_cache: bool = True) -> Optional[Dict[str, Any]]:
@@ -364,7 +364,15 @@ class UnifiedPipeline:
                     'signal': signal
                 })
                 
-                # Calculate comprehensive risk assessment and signal classification
+                # Use enhanced signal's improved risk and classification metrics
+                # Enhanced signal now has: risk_score, risk_category, market_cap_category from _enhance_single_signal
+                risk_category = signal.get('risk_category', 'Moderate')  # NEW: Low/Moderate/High/Very High
+                risk_score = signal.get('risk_score', 0.5)  # NEW: 0-1 numerical score
+                
+                # Generate risk description based on enhanced metrics
+                risk_desc = self._generate_risk_description(signal, risk_category, risk_score)
+                
+                # Get signal type classification (keep existing classifier for now)
                 if INTEGRATORS_AVAILABLE:
                     signal_classifier = get_signal_classifier()
                     
@@ -372,16 +380,12 @@ class UnifiedPipeline:
                     technical_data = {k: v for k, v in financial_data.items() 
                                     if k in ['rsi', 'macd', 'bollinger', 'volatility', 'momentum_30d_pct', 'relative_strength']}
                     
-                    # Assess risk with comprehensive factors
-                    risk_level, risk_desc = signal_classifier.assess_risk(financial_data, technical_data, reddit_data)
-                    
                     # Classify signal type
                     signal_type = signal_classifier.classify_signal_type(financial_data, technical_data, reddit_data)
                     
                     # Calculate post recency
                     post_recency = signal_classifier.calculate_post_recency_score(reddit_data)
                 else:
-                    risk_level, risk_desc = self._calculate_risk_metrics(signal, financial_data)
                     signal_type = "Multi-Factor"
                     post_recency = 0.5
                 
@@ -393,26 +397,27 @@ class UnifiedPipeline:
                     'company': financial_data.get('company', financial_data.get('company_name', ticker)),
                     'sector': financial_data.get('sector'),
                     
-                    # Scores (0-1 range as per schema)
-                    'weighted_score': self._safe_round(signal['weighted_score'], 4),
-                    'reddit_score': self._safe_round(signal.get('reddit_score', 0), 4),
-                    'news_score': self._safe_round(signal.get('news_score', 0), 4),
-                    'financial_score': self._safe_round(signal.get('financial_score', 0), 4),
+                    # Phase 7: 6-group scoring system (0-1 range as per schema)
+                    'signal_score': self._safe_round(signal.get('signal_score', 0), 4),
+                    'technical_score': self._safe_round(signal.get('technical_score', 0), 4),
+                    'fundamental_score': self._safe_round(signal.get('fundamental_score', 0), 4),
+                    'news_macro_score': self._safe_round(signal.get('news_macro_score', 0), 4),
+                    'social_alternative_score': self._safe_round(signal.get('social_alternative_score', 0), 4),
+                    'risk_stability_score': self._safe_round(signal.get('risk_stability_score', 0), 4),
+                    'institutional_smart_money_score': self._safe_round(signal.get('institutional_smart_money_score', 0), 4),
                     
-                    # Signal classification
+                    # Signal classification (using enhanced risk metrics)
                     'trade_type': signal_type,
-                    'risk_level': risk_level,
-                    'risk_tags': risk_desc if 'High' in risk_level else '',
-                    'risk_assessment': risk_desc,
+                    'risk_level': risk_category,  # NEW: From enhanced signal (Low/Moderate/High/Very High)
+                    'risk_assessment': risk_desc,  # NEW: Generated from risk_score and risk_category
                     'rank': rank,
-                    'signal_confidence': self._safe_round(signal['weighted_score'], 4),
+                    'signal_confidence': self._safe_round(signal.get('confidence', signal.get('phase7_confidence', 0.5)), 4),
                     'top_factors': 'Reddit mentions, price momentum',
                     'signal_type': 'Multi-Factor',
                     
                     # Price and market data
                     'current_price': self._safe_round(financial_data.get('current_price'), 2),
                     'market_cap': financial_data.get('market_cap'),
-                    'avg_daily_value_traded': self._safe_round(financial_data.get('avg_daily_value_traded'), 0),
                     
                     # Reddit metrics
                     'reddit_sentiment': self._safe_round(signal.get('reddit_data', {}).get('avg_sentiment'), 4),
@@ -430,25 +435,37 @@ class UnifiedPipeline:
                     'volume': financial_data.get('volume'),
                     'volume_spike_ratio': self._safe_round(financial_data.get('volume_spike_ratio'), 2),
                     
-                    # Technical indicators
-                    'relative_strength': self._safe_round(financial_data.get('relative_strength'), 2),
-                    'momentum_30d_pct': self._safe_round(financial_data.get('momentum_30d_pct'), 2),
+                    # Technical indicators (get from enhanced signal, fallback to financial_data)
+                    'relative_strength': self._safe_round(signal.get('relative_strength') or financial_data.get('relative_strength'), 2),
+                    'momentum_30d_pct': self._safe_round(signal.get('momentum_30d_pct') or financial_data.get('momentum_30d_pct'), 2),
                     'momentum_consistency_score': self._safe_round(signal.get('momentum_consistency_score'), 2),  # Phase 1 ML metric
-                    'rsi': self._safe_round(financial_data.get('rsi'), 2),
-                    'macd_histogram': self._safe_round(financial_data.get('macd_histogram'), 4),
-                    'bollinger_width': self._safe_round(financial_data.get('bollinger_width'), 4),
-                    'volatility': self._safe_round(financial_data.get('volatility'), 4),
-                    'volatility_rank': self._safe_round(financial_data.get('volatility_rank'), 2),
-                    'above_50d_ma_pct': self._safe_round(financial_data.get('above_50d_ma_pct'), 2),
-                    'above_200d_ma_pct': self._safe_round(financial_data.get('above_200d_ma_pct'), 2),
+                    'liquidity_score': self._safe_round(signal.get('liquidity_score'), 2),  # Phase 1 ML metric
+                    'rsi': self._safe_round(signal.get('rsi') or financial_data.get('rsi'), 2),
+                    'macd': self._safe_round(signal.get('macd') or signal.get('macd_line') or financial_data.get('macd'), 4),  # FIX: Get from enhanced signal
+                    'macd_line': self._safe_round(signal.get('macd_line') or financial_data.get('macd_line'), 4),
+                    'macd_signal': self._safe_round(signal.get('macd_signal') or financial_data.get('macd_signal'), 4),
+                    'macd_histogram': self._safe_round(signal.get('macd_histogram') or financial_data.get('macd_histogram'), 4),
+                    'bollinger_upper': self._safe_round(signal.get('bollinger_upper') or signal.get('bb_upper') or financial_data.get('bollinger_upper'), 4),
+                    'bollinger_lower': self._safe_round(signal.get('bollinger_lower') or signal.get('bb_lower') or financial_data.get('bollinger_lower'), 4),
+                    'bollinger_position': self._safe_round(signal.get('bollinger_position') or financial_data.get('bollinger_position'), 4),
+                    'bollinger_width': self._safe_round(signal.get('bollinger_width') or financial_data.get('bollinger_width'), 4),
+                    'volatility': self._safe_round(signal.get('volatility') or financial_data.get('volatility'), 4),
+                    'volatility_rank': self._safe_round(signal.get('volatility_rank') or financial_data.get('volatility_rank'), 2),
+                    'historical_volatility': self._safe_round(signal.get('historical_volatility') or financial_data.get('historical_volatility'), 4),
+                    'atr': self._safe_round(signal.get('atr') or financial_data.get('atr'), 4),
+                    'atr_percent': self._safe_round(signal.get('atr_percent') or financial_data.get('atr_percent'), 4),
+                    'above_50d_ma_pct': self._safe_round(signal.get('above_50d_ma_pct') or financial_data.get('above_50d_ma_pct'), 2),
+                    'above_200d_ma_pct': self._safe_round(signal.get('above_200d_ma_pct') or financial_data.get('above_200d_ma_pct'), 2),
+                    'beta': self._safe_round(signal.get('beta') or financial_data.get('beta'), 4),
                     
                     # Phase B: Enhanced Technical Indicators (9 new fields)
                     'avg_daily_volume': financial_data.get('avg_daily_volume'),
+                    'avg_daily_value_traded': financial_data.get('avg_daily_value_traded'),
                     'avg_volume_30d': financial_data.get('avg_volume_30d'),
-                    'volume_price_correlation': self._safe_round(financial_data.get('volume_price_correlation'), 4),
-                    'sector_relative_strength': self._safe_round(financial_data.get('sector_relative_strength'), 2),
-                    'exit_signal_strength': self._safe_round(financial_data.get('exit_signal_strength'), 2),
-                    'signal_strength_percentile': self._safe_round(financial_data.get('signal_strength_percentile'), 2),
+                    'volume_price_correlation': self._safe_round(signal.get('volume_price_correlation') or financial_data.get('volume_price_correlation'), 4),
+                    'sector_relative_strength': self._safe_round(signal.get('sector_relative_strength') or financial_data.get('sector_relative_strength'), 2),
+                    'exit_signal_strength': self._safe_round(signal.get('exit_signal_strength') or financial_data.get('exit_signal_strength'), 2),
+                    'signal_strength_percentile': self._safe_round(signal.get('signal_strength_percentile') or financial_data.get('signal_strength_percentile'), 2),
                     
                     # Fundamental metrics
                     'pe_ratio': self._safe_round(financial_data.get('pe_ratio'), 2),
@@ -511,8 +528,9 @@ class UnifiedPipeline:
                 
                 enhanced_signals.append(basic_record)
             
-            # ENHANCEMENT: Apply signal enhancement calculations
-            enhanced_signals = self._apply_signal_enhancements(enhanced_signals)
+            # ENHANCEMENT: Signals are already enhanced by _comprehensive_signal_enhancement before save
+            # DO NOT re-enhance here or we'll lose technical indicators like 'macd'
+            # enhanced_signals = self._apply_signal_enhancements(enhanced_signals)  # DISABLED - causes double enhancement
             
             # Debug: Check for potential overflow values
             for i, record in enumerate(enhanced_signals[:3]):  # Check first 3 records
@@ -549,23 +567,24 @@ class UnifiedPipeline:
                     'ticker': record['ticker'],
                     'company': record['company'],
                     'sector': record['sector'],
-                    # Scoring
-                    'weighted_score': record['weighted_score'],
-                    'reddit_score': record['reddit_score'],
-                    'news_score': record['news_score'],
-                    'financial_score': record['financial_score'],
+                    # Phase 7: 6-group scoring system
+                    'rank': record['rank'],
+                    'signal_score': record.get('signal_score', 0),
+                    'technical_score': record.get('technical_score', 0),
+                    'fundamental_score': record.get('fundamental_score', 0),
+                    'news_macro_score': record.get('news_macro_score', 0),
+                    'social_alternative_score': record.get('social_alternative_score', 0),
+                    'risk_stability_score': record.get('risk_stability_score', 0),
+                    'institutional_smart_money_score': record.get('institutional_smart_money_score', 0),
+                    'signal_confidence': record['signal_confidence'],
                     'trade_type': record['trade_type'],
                     'risk_level': record['risk_level'],
-                    'risk_tags': record['risk_tags'],
                     'risk_assessment': record['risk_assessment'],
-                    'rank': record['rank'],
-                    'signal_confidence': record['signal_confidence'],
                     'top_factors': record['top_factors'],
                     'signal_type': record['signal_type'],
                     # Price & market cap
                     'current_price': record['current_price'],
                     'market_cap': record['market_cap'],
-                    'avg_daily_value_traded': record['avg_daily_value_traded'],
                     # Social metrics
                     'reddit_sentiment': record['reddit_sentiment'],
                     'news_sentiment_score': record.get('news_sentiment_score', record.get('news_sentiment', 0)),
@@ -591,19 +610,24 @@ class UnifiedPipeline:
                     'relative_strength': record.get('relative_strength'),
                     'momentum_30d_pct': record.get('momentum_30d_pct'),
                     'rsi': record.get('rsi'),
+                    'macd': record.get('macd'),  # FIX: Add macd field for scoring (same as macd_line)
                     'macd_histogram': record.get('macd_histogram'),
                     'macd_line': record.get('macd_line'),
                     'macd_signal': record.get('macd_signal'),
                     'signal_strength_percentile': record.get('signal_strength_percentile'),
                     'sector_relative_strength': record.get('sector_relative_strength'),
                     'momentum_consistency_score': record.get('momentum_consistency_score'),
+                    'liquidity_score': record.get('liquidity_score'),
                     # Volatility
                     'volatility': record.get('volatility'),
                     'volatility_rank': record.get('volatility_rank'),
+                    'historical_volatility': record.get('historical_volatility'),
                     'bollinger_width': record.get('bollinger_width'),
                     'bollinger_upper': record.get('bollinger_upper'),
                     'bollinger_lower': record.get('bollinger_lower'),
                     'bollinger_position': record.get('bollinger_position'),
+                    'atr': record.get('atr'),
+                    'atr_percent': record.get('atr_percent'),
                     'beta': record.get('beta'),
                     # Moving averages
                     'above_50d_ma_pct': record.get('above_50d_ma_pct'),
@@ -665,7 +689,57 @@ class UnifiedPipeline:
                     # Phase 1.3 calendar events
                     'earnings_date': record.get('earnings_date'),
                     'dividend_ex_date': record.get('dividend_ex_date'),
-                    'analyst_targets': record.get('analyst_targets'),
+                    
+                    # ==================================================================
+                    # PHASE 2-8 ENHANCEMENTS (33 columns)
+                    # ==================================================================
+                    
+                    # Phase 2: Z-Score Normalization (4 columns)
+                    'z_score_momentum': record.get('z_score_momentum'),
+                    'z_score_volume': record.get('z_score_volume'),
+                    'z_score_volatility': record.get('z_score_volatility'),
+                    'z_score_valuation': record.get('z_score_valuation'),
+                    
+                    # Phase 3: Trade Type Confidence (1 column)
+                    'trade_type_confidence': record.get('trade_type_confidence'),
+                    
+                    # Phase 4: Individual Risk Factors (7 columns)
+                    'volatility_risk': record.get('volatility_risk'),
+                    'liquidity_risk': record.get('liquidity_risk'),
+                    'leverage_risk': record.get('leverage_risk'),
+                    'concentration_risk': record.get('concentration_risk'),
+                    'technical_risk': record.get('technical_risk'),
+                    'fundamental_risk': record.get('fundamental_risk'),
+                    'sentiment_risk': record.get('sentiment_risk'),
+                    
+                    # Phase 5: Enhanced Data Collection (11 columns)
+                    'atr': record.get('atr'),
+                    'atr_percent': record.get('atr_percent'),
+                    'historical_volatility': record.get('historical_volatility'),
+                    'put_call_ratio': record.get('put_call_ratio'),
+                    'open_interest': record.get('open_interest'),
+                    'operating_margin': record.get('operating_margin'),
+                    'debt_to_equity': record.get('debt_to_equity'),
+                    'current_ratio': record.get('current_ratio'),
+                    'institutional_ownership': record.get('institutional_ownership'),
+                    'insider_ownership': record.get('insider_ownership'),
+                    'short_interest': record.get('short_interest'),
+                    
+                    # Phase 6: Score Adjustments (3 columns)
+                    'adjusted_signal_score': record.get('adjusted_signal_score'),
+                    'position_size_recommendation': record.get('position_size_recommendation'),
+                    'entry_threshold': record.get('entry_threshold'),
+                    
+                    # Phase 7: AI-Enhanced Narratives (1 column)
+                    'risk_narrative': record.get('risk_narrative'),
+                    
+                    # Phase 8: Backtesting Integration (6 columns)
+                    'backtest_entry_threshold': record.get('backtest_entry_threshold'),
+                    'backtest_hold_period_days': record.get('backtest_hold_period_days'),
+                    'backtest_position_size_pct': record.get('backtest_position_size_pct'),
+                    'backtest_stop_loss_price': record.get('backtest_stop_loss_price'),
+                    'backtest_take_profit_price': record.get('backtest_take_profit_price'),
+                    'backtest_risk_reward_ratio': record.get('backtest_risk_reward_ratio'),
                 }
                 core_signals.append(core_signal)
             
@@ -801,7 +875,7 @@ class UnifiedPipeline:
     def _calculate_risk_metrics(self, signal: Dict, financial_data: Dict) -> tuple:
         """Calculate risk level and risk tags (fallback method)."""
         risk_factors = []
-        score = signal.get('weighted_score', 0)
+        score = signal.get('signal_score', 0)  # Phase 7
         
         # Risk based on score - use database schema values
         if score >= 0.8:
@@ -833,9 +907,77 @@ class UnifiedPipeline:
         
         return risk_level, risk_desc
     
+    def _generate_risk_description(self, signal: Dict[str, Any], risk_category: str, risk_score: float) -> str:
+        """
+        Generate comprehensive risk assessment description using enhanced risk metrics.
+        
+        Args:
+            signal: Enhanced signal with all metrics
+            risk_category: Risk category from enhanced signal (Low/Moderate/High/Very High)
+            risk_score: Numerical risk score 0-1 from enhanced signal
+            
+        Returns:
+            Detailed risk description string
+        """
+        risk_factors = []
+        
+        # Start with category and score
+        risk_factors.append(f"{risk_category} risk (score: {risk_score:.2f})")
+        
+        # Volatility assessment
+        volatility = signal.get('volatility') or signal.get('historical_volatility', 0)
+        if volatility:
+            if volatility > 80:
+                risk_factors.append("Very high volatility")
+            elif volatility > 50:
+                risk_factors.append("High volatility")
+            elif volatility < 20:
+                risk_factors.append("Low volatility")
+        
+        # Liquidity assessment
+        liquidity_score = signal.get('liquidity_score', 0.5)
+        if liquidity_score < 0.3:
+            risk_factors.append("Low liquidity")
+        elif liquidity_score > 0.8:
+            risk_factors.append("High liquidity")
+        
+        # Beta assessment
+        beta = signal.get('beta')
+        if beta:
+            if beta > 1.5:
+                risk_factors.append(f"High beta ({beta:.2f})")
+            elif beta < 0.5:
+                risk_factors.append(f"Low beta ({beta:.2f})")
+        
+        # Market cap risk
+        market_cap_category = signal.get('market_cap_category')
+        if market_cap_category in ['Micro', 'Small']:
+            risk_factors.append(f"{market_cap_category} cap stock")
+        
+        # Momentum risk
+        momentum = signal.get('momentum_30d_pct', 0)
+        if abs(momentum) > 50:
+            risk_factors.append("Extreme momentum")
+        elif abs(momentum) > 30:
+            risk_factors.append("High momentum")
+        
+        # Technical risk
+        rsi = signal.get('rsi')
+        if rsi:
+            if rsi > 80:
+                risk_factors.append("Overbought (RSI)")
+            elif rsi < 20:
+                risk_factors.append("Oversold (RSI)")
+        
+        # Combine all factors
+        if len(risk_factors) > 1:
+            return " | ".join(risk_factors)
+        else:
+            return f"{risk_category} risk profile"
+    
     def _determine_trade_type(self, signal: Dict) -> str:
         """Determine trade type based on signal characteristics."""
-        score = signal.get('weighted_score', 0)
+        score = signal.get('signal_score', 0)  # Phase 7
         reddit_data = signal.get('reddit_data', {})
         sentiment = reddit_data.get('avg_sentiment', 0)
         
@@ -1086,6 +1228,11 @@ class UnifiedPipeline:
             
             # Basic info
             financial_data['ticker'] = ticker_data.get('ticker')
+            financial_data['company'] = info.get('longName') or info.get('shortName') or ticker_data.get('ticker')
+            financial_data['company_name'] = financial_data['company']  # Alias for consistency
+            financial_data['sector'] = info.get('sector')
+            financial_data['industry'] = info.get('industry')
+            financial_data['market_cap'] = info.get('marketCap')  # Add this for consistency
             financial_data['market_cap_numeric'] = info.get('marketCap')
             financial_data['pe_ratio'] = info.get('trailingPE')
             financial_data['forward_pe'] = info.get('forwardPE')
@@ -1093,6 +1240,7 @@ class UnifiedPipeline:
             financial_data['roe'] = info.get('returnOnEquity')
             financial_data['revenue_growth'] = info.get('revenueGrowth')
             financial_data['earnings_growth'] = info.get('earningsGrowth')
+            financial_data['eps_growth'] = info.get('earningsGrowth')  # Alias for consistency
             financial_data['debt_equity'] = info.get('debtToEquity')
             
             # Price and volume data
@@ -1161,13 +1309,30 @@ class UnifiedPipeline:
                     if bb_range > 0:
                         financial_data['bollinger'] = float((current_price - bb_lower) / bb_range)
             
+            # Additional fundamental metrics from info
+            financial_data['price_to_book'] = info.get('priceToBook')
+            financial_data['book_value'] = info.get('bookValue')
+            financial_data['fcf_margin'] = info.get('freeCashflow') / info.get('totalRevenue') if info.get('freeCashflow') and info.get('totalRevenue') else None
+            financial_data['free_cash_flow'] = info.get('freeCashflow')
+            financial_data['dividend_yield'] = info.get('dividendYield')
+            financial_data['beta'] = info.get('beta')
+            
+            # Ownership metrics
+            financial_data['institutional_ownership_pct'] = info.get('heldPercentInstitutions')
+            financial_data['retail_holding_pct'] = info.get('heldPercentInsiders')
+            
             # Options data
             financial_data['put_call_ratio'] = info.get('putCallRatio')
             financial_data['put_call_vol_ratio'] = info.get('putCallVolumeRatio')
+            financial_data['put_call_oi_ratio'] = info.get('putCallOIRatio')
+            financial_data['implied_volatility'] = info.get('impliedVolatility')
             
             # Short interest
             financial_data['short_interest'] = info.get('shortPercentOfFloat')
+            financial_data['short_pct_float'] = info.get('shortPercentOfFloat')
+            financial_data['short_pct_outstanding'] = info.get('shortPercentOfSharesOutstanding')
             financial_data['short_ratio'] = info.get('shortRatio')
+            financial_data['shares_short'] = info.get('sharesShort')
             
             # Sector/relative strength (placeholder - would need market data)
             financial_data['sector_relative_strength'] = 0.0
@@ -1333,8 +1498,8 @@ class UnifiedPipeline:
                 financial_score = signals['financial']['score'] if signals['financial'] else 0.0
                 news_score = signals['news']['score'] if signals['news'] else 0.0
                 
-                # Calculate weighted combined score using configurable weights
-                weighted_score = (
+                # Calculate signal score using configurable weights (Phase 7)
+                signal_score = (
                     reddit_score * scoring_weights['reddit'] + 
                     financial_score * scoring_weights['financial'] + 
                     news_score * scoring_weights['news']
@@ -1350,10 +1515,10 @@ class UnifiedPipeline:
                 expected_signal_count = sum(1 for w in scoring_weights.values() if w > 0)
                 confidence = active_signal_count / expected_signal_count if expected_signal_count > 0 else 0.0
                 
-                # Create combined signal
+                # Create combined signal (Phase 7)
                 combined_signal = {
                     'ticker': ticker,
-                    'weighted_score': weighted_score,
+                    'signal_score': signal_score,  # Phase 7
                     'reddit_score': reddit_score,
                     'financial_score': financial_score,
                     'news_score': news_score,
@@ -1371,8 +1536,8 @@ class UnifiedPipeline:
                 self.logger.warning(f"Error combining signals for {ticker}: {e}")
                 continue
         
-        # Sort by weighted score descending
-        combined_signals.sort(key=lambda x: x['weighted_score'], reverse=True)
+        # Sort by signal score descending (Phase 7)
+        combined_signals.sort(key=lambda x: x.get('signal_score', 0), reverse=True)
         
         return combined_signals
     
@@ -1403,13 +1568,18 @@ class UnifiedPipeline:
             return None
             
     def _apply_signal_enhancements(self, signals: list) -> list:
-        """Apply signal enhancements including calculated fields."""
+        """Apply signal enhancements including calculated fields AND Phase 2-8 enhancements."""
         try:
             # Import the consolidated enhancer
             from backend.integrations.signal_processing import enhance_signals_batch
             self.logger.info(f"Applying signal enhancements to {len(signals)} records...")
             enhanced = enhance_signals_batch(signals)
-            self.logger.info("Signal enhancement complete")
+            
+            # Apply Phase 2-8 enhancements
+            self.logger.info(f"Applying Phase 2-8 enhancements to {len(enhanced)} signals...")
+            enhanced = self._apply_phase2_8_enhancements(enhanced)
+            
+            self.logger.info("Signal enhancement complete (including Phase 2-8)")
             return enhanced
         except ImportError:
             self.logger.warning("Signal enhancer module not available, applying basic enhancements...")
@@ -1475,16 +1645,385 @@ class UnifiedPipeline:
             else:
                 enhanced['liquidity_score'] = 0.5
             
-            # Risk-adjusted score
-            weighted_score = signal.get('weighted_score', 0)
+            # Risk-adjusted score (Phase 7)
+            signal_score = signal.get('signal_score', 0)
             enhanced['risk_adjusted_score'] = self._safe_round(
-                weighted_score * (100 - risk_score) / 100, 4
+                signal_score * (100 - risk_score) / 100, 4
             )
             
             enhanced_signals.append(enhanced)
         
         self.logger.info(f"Applied basic enhancements to {len(enhanced_signals)} signals")
         return enhanced_signals
+    
+    def _apply_phase2_8_enhancements(self, signals: list) -> list:
+        """
+        Apply Phase 2-8 enhancements to signals.
+        
+        Phases:
+        - Phase 2: Z-Score normalization (4 columns)
+        - Phase 3: Trade type confidence (1 column)
+        - Phase 4: Detailed risk scoring (7 individual risk factors)
+        - Phase 5: Enhanced data collection (11 columns - ATR, options, institutional)
+        - Phase 6: Score adjustments (3 columns)
+        - Phase 7: AI risk narratives (1 column)
+        - Phase 8: Backtest parameters (6 columns)
+        
+        Total: 33 new columns populated
+        """
+        try:
+            from backend.core.signals import ZScoreCalculator, TradeTypeClassifier, RiskScoreCalculator
+            from backend.core.signals import TrendStrengthCalculator, ValuationCalculator
+            import yfinance as yf
+            import numpy as np
+            
+            # Initialize calculators (if not already initialized)
+            if not hasattr(self, 'z_calc'):
+                self.z_calc = ZScoreCalculator(lookback_days=60, min_samples=30)
+            if not hasattr(self, 'trend_calc'):
+                self.trend_calc = TrendStrengthCalculator(self.z_calc)  # Requires z_calc
+            if not hasattr(self, 'val_calc'):
+                self.val_calc = ValuationCalculator(self.z_calc)  # Requires z_calc
+            if not hasattr(self, 'trade_classifier'):
+                self.trade_classifier = TradeTypeClassifier(self.z_calc, self.trend_calc, self.val_calc)
+            if not hasattr(self, 'risk_calculator'):
+                self.risk_calculator = RiskScoreCalculator()
+            
+            enhanced_signals = []
+            phase_stats = {2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0}
+            
+            for signal in signals:
+                enhanced = signal.copy()
+                ticker = signal.get('ticker', '')
+                
+                try:
+                    # PHASE 2: Z-Score Normalization
+                    # Calculate z-scores for momentum, volume, volatility, valuation
+                    momentum_30d = signal.get('momentum_30d_pct', 0.0)
+                    volume = signal.get('volume', 0.0)
+                    volatility = signal.get('volatility', 0.0)
+                    pe_ratio = signal.get('pe_ratio', 0.0)
+                    
+                    enhanced['z_score_momentum'] = self._safe_round(
+                        self.z_calc.calculate_z_score(momentum_30d, ticker, 'momentum_30d_pct'), 4
+                    ) if momentum_30d else None
+                    
+                    enhanced['z_score_volume'] = self._safe_round(
+                        self.z_calc.calculate_z_score(volume, ticker, 'volume'), 4
+                    ) if volume else None
+                    
+                    enhanced['z_score_volatility'] = self._safe_round(
+                        self.z_calc.calculate_z_score(volatility, ticker, 'volatility'), 4
+                    ) if volatility else None
+                    
+                    enhanced['z_score_valuation'] = self._safe_round(
+                        self.z_calc.calculate_z_score(pe_ratio, ticker, 'pe_ratio'), 4
+                    ) if pe_ratio else None
+                    
+                    if any([enhanced.get('z_score_momentum'), enhanced.get('z_score_volume'), 
+                            enhanced.get('z_score_volatility'), enhanced.get('z_score_valuation')]):
+                        phase_stats[2] += 1
+                    
+                    # PHASE 3: Trade Type Confidence
+                    # Extract confidence from trade type classification
+                    component_scores = {
+                        'technical_score': signal.get('technical_score', 0.0),
+                        'fundamental_score': signal.get('fundamental_score', 0.0),
+                        'news_score': signal.get('news_score', 0.0),
+                        'social_score': signal.get('social_score', 0.0)
+                    }
+                    
+                    # Calculate trade type confidence based on component score strengths
+                    scores = [v for v in component_scores.values() if v > 0]
+                    if scores:
+                        # Confidence is based on how many strong signals we have
+                        strong_signals = sum(1 for s in scores if s > 0.6)
+                        confidence = min(1.0, (len(scores) / 4.0) * 0.5 + (strong_signals / 4.0) * 0.5)
+                        enhanced['trade_type_confidence'] = self._safe_round(confidence, 4)
+                        phase_stats[3] += 1
+                    else:
+                        enhanced['trade_type_confidence'] = None
+                    
+                    # PHASE 4: Detailed Risk Scoring
+                    # Calculate individual risk factors using RiskScoreCalculator
+                    risk_data = {
+                        'atr_pct': signal.get('atr_percent', signal.get('volatility')),
+                        'beta': signal.get('beta', 1.0),
+                        'avg_volume': signal.get('avg_volume_30d', signal.get('volume')),
+                        'float_pct': signal.get('float_turnover_ratio', 50.0),
+                        'debt_to_equity': signal.get('debt_equity', signal.get('debt_to_equity')),
+                        'interest_coverage': signal.get('interest_coverage', 5.0),
+                        'short_interest': signal.get('short_pct_float', signal.get('short_interest')),
+                        'market_cap': signal.get('market_cap'),
+                        'price': signal.get('current_price')
+                    }
+                    
+                    try:
+                        _, _, risk_factors = self.risk_calculator.calculate_risk_score(
+                            ticker, risk_data, theme=signal.get('theme')
+                        )
+                        
+                        # Extract individual risk factors
+                        enhanced['volatility_risk'] = self._safe_round(
+                            risk_factors.get('volatility', {}).get('score', 0.0), 2
+                        )
+                        enhanced['liquidity_risk'] = self._safe_round(
+                            risk_factors.get('liquidity', {}).get('score', 0.0), 2
+                        )
+                        enhanced['leverage_risk'] = self._safe_round(
+                            risk_factors.get('leverage', {}).get('score', 0.0), 2
+                        )
+                        enhanced['concentration_risk'] = self._safe_round(
+                            risk_factors.get('concentration', {}).get('score', 0.0), 2
+                        )
+                        enhanced['technical_risk'] = self._safe_round(
+                            enhanced.get('volatility_risk', 0.0), 2
+                        )  # Technical risk same as volatility risk
+                        enhanced['fundamental_risk'] = self._safe_round(
+                            enhanced.get('leverage_risk', 0.0), 2
+                        )  # Fundamental risk same as leverage risk
+                        enhanced['sentiment_risk'] = self._safe_round(
+                            risk_factors.get('short_interest', {}).get('score', 0.0), 2
+                        )
+                        
+                        if any([enhanced.get('volatility_risk'), enhanced.get('liquidity_risk')]):
+                            phase_stats[4] += 1
+                            
+                    except Exception as e:
+                        self.logger.debug(f"Phase 4 risk factors failed for {ticker}: {e}")
+                        # Set all to None if calculation fails
+                        for risk_col in ['volatility_risk', 'liquidity_risk', 'leverage_risk', 
+                                        'concentration_risk', 'technical_risk', 'fundamental_risk', 'sentiment_risk']:
+                            enhanced[risk_col] = None
+                    
+                    # PHASE 5: Enhanced Data Collection (ATR, Options, Institutional)
+                    # Try to fetch enhanced data from yfinance
+                    try:
+                        stock = yf.Ticker(ticker)
+                        info = stock.info if hasattr(stock, 'info') else {}
+                        hist = stock.history(period='1mo') if hasattr(stock, 'history') else None
+                        
+                        # ATR calculations
+                        if hist is not None and not hist.empty and len(hist) >= 14:
+                            high = hist['High']
+                            low = hist['Low']
+                            close = hist['Close']
+                            
+                            # True Range
+                            tr1 = high - low
+                            tr2 = abs(high - close.shift())
+                            tr3 = abs(low - close.shift())
+                            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                            atr = tr.rolling(window=14).mean().iloc[-1]
+                            
+                            enhanced['atr'] = self._safe_round(atr, 4)
+                            enhanced['atr_percent'] = self._safe_round(
+                                (atr / close.iloc[-1]) * 100, 4
+                            ) if close.iloc[-1] > 0 else None
+                            
+                            # Historical Volatility (20-day)
+                            returns = close.pct_change().dropna()
+                            if len(returns) >= 20:
+                                hist_vol = returns.rolling(window=20).std().iloc[-1] * np.sqrt(252)
+                                enhanced['historical_volatility'] = self._safe_round(hist_vol * 100, 4)
+                        
+                        # Options data
+                        if info:
+                            enhanced['put_call_ratio'] = self._safe_round(
+                                info.get('putCallRatio'), 4
+                            ) if info.get('putCallRatio') else None
+                            
+                            enhanced['open_interest'] = info.get('openInterest')
+                            
+                            # Fundamental metrics
+                            enhanced['operating_margin'] = self._safe_round(
+                                info.get('operatingMargins', 0) * 100, 4
+                            ) if info.get('operatingMargins') else None
+                            
+                            enhanced['debt_to_equity'] = self._safe_round(
+                                info.get('debtToEquity'), 4
+                            ) if info.get('debtToEquity') else signal.get('debt_equity')
+                            
+                            enhanced['current_ratio'] = self._safe_round(
+                                info.get('currentRatio'), 4
+                            ) if info.get('currentRatio') else None
+                            
+                            # Ownership metrics (FIXED: correct field names)
+                            enhanced['institutional_ownership'] = self._safe_round(
+                                info.get('heldPercentInstitutions', 0) * 100, 4
+                            ) if info.get('heldPercentInstitutions') else None
+                            
+                            enhanced['insider_ownership'] = self._safe_round(
+                                info.get('heldPercentInsiders', 0) * 100, 4
+                            ) if info.get('heldPercentInsiders') else None
+                            
+                            enhanced['short_interest'] = self._safe_round(
+                                info.get('shortPercentOfFloat', 0) * 100, 4
+                            ) if info.get('shortPercentOfFloat') else None
+                            
+                        if any([enhanced.get('atr'), enhanced.get('put_call_ratio'), 
+                                enhanced.get('institutional_ownership')]):
+                            phase_stats[5] += 1
+                            
+                    except Exception as e:
+                        self.logger.debug(f"Phase 5 enhanced data failed for {ticker}: {e}")
+                        # Set Phase 5 columns to None if fetch fails
+                        for col in ['atr', 'atr_percent', 'historical_volatility', 'put_call_ratio', 
+                                   'open_interest', 'operating_margin', 'debt_to_equity', 'current_ratio',
+                                   'institutional_ownership', 'insider_ownership', 'short_interest']:
+                            if col not in enhanced or enhanced.get(col) is None:
+                                enhanced[col] = signal.get(col)  # Use existing value if available
+                    
+                    # PHASE 5.5: Column Consolidation (use existing data if Phase 5 failed)
+                    # This improves Phase 5 population rate by leveraging existing signal data
+                    if enhanced.get('debt_to_equity') is None:
+                        enhanced['debt_to_equity'] = signal.get('debt_equity')
+                    
+                    if enhanced.get('short_interest') is None:
+                        enhanced['short_interest'] = signal.get('short_pct_float')
+                    
+                    if enhanced.get('institutional_ownership') is None:
+                        enhanced['institutional_ownership'] = signal.get('institutional_ownership_pct')
+                    
+                    # PHASE 6: Score Adjustments
+                    # Calculate adjusted signal score based on risk and trade type
+                    signal_score = signal.get('signal_score', 0.0)
+                    risk_score = signal.get('risk_score', 50.0)
+                    trade_type = signal.get('trade_type', 'Multi-Factor')
+                    
+                    # Trade type multipliers
+                    trade_multipliers = {
+                        'Momentum': 1.1,
+                        'Value': 1.05,
+                        'Event-Driven': 1.15,
+                        'Contrarian': 1.0,
+                        'Speculative Growth': 0.9,
+                        'Multi-Factor': 1.0
+                    }
+                    multiplier = trade_multipliers.get(trade_type, 1.0)
+                    
+                    # Risk adjustment (lower risk = higher adjustment)
+                    risk_adjustment = 1.0 - (risk_score / 200.0)  # Range: 0.5 to 1.0
+                    
+                    adjusted_score = signal_score * multiplier * risk_adjustment
+                    enhanced['adjusted_signal_score'] = self._safe_round(
+                        min(1.0, max(0.0, adjusted_score)), 4
+                    )
+                    
+                    # Position size recommendation (inverse of risk, trade type adjusted)
+                    base_position = 0.10  # 10% base
+                    risk_factor = (100 - risk_score) / 100.0  # Higher for lower risk
+                    position_size = base_position * risk_factor * multiplier
+                    enhanced['position_size_recommendation'] = self._safe_round(
+                        min(0.25, max(0.01, position_size)), 4
+                    )
+                    
+                    # Entry threshold (higher for riskier signals)
+                    base_threshold = 0.60
+                    risk_premium = (risk_score / 100.0) * 0.20  # 0-20% premium
+                    enhanced['entry_threshold'] = self._safe_round(
+                        min(0.90, base_threshold + risk_premium), 4
+                    )
+                    
+                    if enhanced.get('adjusted_signal_score'):
+                        phase_stats[6] += 1
+                    
+                    # PHASE 7: AI Risk Narrative
+                    # Map ai_commentary to risk_narrative (if available)
+                    ai_commentary = signal.get('ai_commentary', '')
+                    if ai_commentary and len(ai_commentary) > 50:
+                        # Extract risk-related content from AI commentary
+                        enhanced['risk_narrative'] = ai_commentary[:1000]  # Cap at 1000 chars
+                        phase_stats[7] += 1
+                    else:
+                        # Generate basic risk narrative
+                        risk_level = signal.get('risk_level', 'Moderate')
+                        narrative_parts = [
+                            f"{ticker} is classified as {risk_level} risk",
+                            f"with a {trade_type} trade setup."
+                        ]
+                        
+                        if risk_score > 65:
+                            narrative_parts.append("High volatility and concentration risk suggest smaller position sizing.")
+                        elif risk_score < 35:
+                            narrative_parts.append("Low risk profile supports larger position allocation.")
+                        
+                        if enhanced.get('volatility_risk', 0) > 60:
+                            narrative_parts.append("Elevated price volatility warrants wider stops.")
+                        
+                        enhanced['risk_narrative'] = " ".join(narrative_parts)
+                        phase_stats[7] += 1
+                    
+                    # PHASE 8: Backtest Parameters
+                    # Calculate dynamic backtest parameters based on ATR and risk
+                    current_price = signal.get('current_price', 0.0)
+                    atr_value = enhanced.get('atr', current_price * 0.02)  # Default 2% if no ATR
+                    
+                    if current_price > 0 and atr_value:
+                        # Entry threshold (lower for lower risk)
+                        enhanced['backtest_entry_threshold'] = self._safe_round(
+                            enhanced.get('entry_threshold', 0.65), 4
+                        )
+                        
+                        # Hold period (shorter for momentum, longer for value)
+                        if 'Momentum' in trade_type:
+                            hold_period = 3
+                        elif 'Value' in trade_type:
+                            hold_period = 14
+                        elif 'Event-Driven' in trade_type:
+                            hold_period = 5
+                        else:
+                            hold_period = 7
+                        enhanced['backtest_hold_period_days'] = hold_period
+                        
+                        # Position size (same as Phase 6 recommendation)
+                        enhanced['backtest_position_size_pct'] = enhanced.get('position_size_recommendation', 0.05)
+                        
+                        # Stop loss (2x ATR below entry)
+                        stop_loss = current_price - (2.0 * atr_value)
+                        enhanced['backtest_stop_loss_price'] = self._safe_round(
+                            max(0.0, stop_loss), 4
+                        )
+                        
+                        # Take profit (3x ATR above entry for 1.5:1 risk/reward)
+                        take_profit = current_price + (3.0 * atr_value)
+                        enhanced['backtest_take_profit_price'] = self._safe_round(take_profit, 4)
+                        
+                        # Risk/reward ratio
+                        risk_amount = 2.0 * atr_value
+                        reward_amount = 3.0 * atr_value
+                        enhanced['backtest_risk_reward_ratio'] = self._safe_round(
+                            reward_amount / risk_amount if risk_amount > 0 else 1.5, 2
+                        )
+                        
+                        if enhanced.get('backtest_entry_threshold'):
+                            phase_stats[8] += 1
+                    else:
+                        # Set all backtest params to None if we can't calculate
+                        for col in ['backtest_entry_threshold', 'backtest_hold_period_days', 
+                                   'backtest_position_size_pct', 'backtest_stop_loss_price',
+                                   'backtest_take_profit_price', 'backtest_risk_reward_ratio']:
+                            enhanced[col] = None
+                    
+                except Exception as e:
+                    self.logger.warning(f"Phase 2-8 enhancement failed for {ticker}: {e}")
+                    # Continue with next signal even if one fails
+                
+                enhanced_signals.append(enhanced)
+            
+            # Log phase statistics
+            total_signals = len(signals)
+            self.logger.info(f"[Phase 2-8] Applied enhancements:")
+            for phase, count in sorted(phase_stats.items()):
+                pct = (count / total_signals * 100) if total_signals > 0 else 0
+                self.logger.info(f"  Phase {phase}: {count}/{total_signals} signals ({pct:.1f}%)")
+            
+            return enhanced_signals
+            
+        except Exception as e:
+            self.logger.error(f"Phase 2-8 enhancement failed: {e}")
+            self.logger.exception(e)
+            return signals  # Return original signals if Phase 2-8 fails
     
     async def _fetch_all_ticker_data_once(self, tickers: List[str]) -> Dict[str, Dict]:
         """
@@ -1681,9 +2220,15 @@ class UnifiedPipeline:
         # AI commentary data preparation (replaces Step 4.7 prep)
         enhanced_signal = self._prepare_ai_commentary_data_cached(enhanced_signal, ticker_data)
         
-        # ML Analytics - Phase 1 metrics (momentum_consistency_score, pattern_match_score, etc.)
+        # ML Analytics - Phase 1 metrics (liquidity_score, risk_score, plus momentum_consistency_score, pattern_match_score, etc.)
         try:
-            from backend.integrations.signal_processing import SignalMLAnalyzer
+            from backend.integrations.signal_processing import SignalMLAnalyzer, SignalEnhancer
+            
+            # FIX Round 3: Add liquidity_score, risk_score via _enhance_single_signal
+            enhancer = SignalEnhancer()
+            enhanced_signal = enhancer._enhance_single_signal(enhanced_signal)
+            
+            # Then add ML analytics
             analyzer = SignalMLAnalyzer()
             before_keys = set(enhanced_signal.keys())
             enhanced_signal = analyzer.enhance_signal_with_ml_analytics(enhanced_signal)
@@ -1697,6 +2242,60 @@ class UnifiedPipeline:
             import traceback
             self.logger.error(f"ML analytics enhancement failed for {enhanced_signal.get('ticker')}: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Calculate Phase 7: 6-group component scores using actual methods
+        try:
+            # Calculate each component score using Phase 7 methods in SignalScorer
+            component_scores = {
+                'technical': self.signal_scorer._calculate_technical_score(enhanced_signal),
+                'fundamental': self.signal_scorer._calculate_fundamental_score(enhanced_signal),
+                'news_macro': self.signal_scorer._calculate_news_macro_score(enhanced_signal),
+                'social_alternative': self.signal_scorer._calculate_social_alternative_score(enhanced_signal),
+                'risk_stability': self.signal_scorer._calculate_risk_stability_score(enhanced_signal),
+                'institutional_smart_money': self.signal_scorer._calculate_institutional_smart_money_score(enhanced_signal)
+            }
+            
+            # Save component scores to signal
+            enhanced_signal['technical_score'] = component_scores['technical']
+            enhanced_signal['fundamental_score'] = component_scores['fundamental']
+            enhanced_signal['news_macro_score'] = component_scores['news_macro']
+            enhanced_signal['social_alternative_score'] = component_scores['social_alternative']
+            enhanced_signal['risk_stability_score'] = component_scores['risk_stability']
+            enhanced_signal['institutional_smart_money_score'] = component_scores['institutional_smart_money']
+            
+            # Calculate final signal_score as weighted combination (Phase 7)
+            enhanced_signal['signal_score'] = self.signal_scorer._calculate_signal_score_v2(
+                enhanced_signal, component_scores
+            )
+            
+            # Calculate Phase 7 confidence
+            phase7_confidence = self.signal_scorer._calculate_confidence_v2(enhanced_signal, component_scores)
+            enhanced_signal['phase7_confidence'] = phase7_confidence
+            
+            self.logger.info(
+                f"[Phase 7] {enhanced_signal.get('ticker')}: "
+                f"signal_score={enhanced_signal['signal_score']:.3f}, "
+                f"confidence={phase7_confidence:.3f}, "
+                f"components=(tech={component_scores['technical']:.2f}, "
+                f"fund={component_scores['fundamental']:.2f}, "
+                f"news={component_scores['news_macro']:.2f}, "
+                f"social={component_scores['social_alternative']:.2f}, "
+                f"risk={component_scores['risk_stability']:.2f}, "
+                f"inst={component_scores['institutional_smart_money']:.2f})"
+            )
+        except Exception as e:
+            import traceback
+            self.logger.error(f"Phase 7 scoring failed for {enhanced_signal.get('ticker')}: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # Set default values to prevent pipeline failure
+            enhanced_signal['signal_score'] = 0.5
+            enhanced_signal['technical_score'] = 0.5
+            enhanced_signal['fundamental_score'] = 0.5
+            enhanced_signal['news_macro_score'] = 0.5
+            enhanced_signal['social_alternative_score'] = 0.5
+            enhanced_signal['risk_stability_score'] = 0.5
+            enhanced_signal['institutional_smart_money_score'] = 0.5
+            enhanced_signal['phase7_confidence'] = 0.5
         
         # Score components and explanation (NEW) - delegated to SignalScorer (Phase 6c)
         enhanced_signal = self.signal_scorer._calculate_score_components(enhanced_signal)
@@ -1786,6 +2385,10 @@ class UnifiedPipeline:
             signal['macd_signal'] = float(macd_signal_line.iloc[-1]) if not macd_signal_line.empty and not pd.isna(macd_signal_line.iloc[-1]) else None
             signal['macd_histogram'] = float(macd_histogram.iloc[-1]) if not macd_histogram.empty and not pd.isna(macd_histogram.iloc[-1]) else None
             
+            # FIX: Calculate proper MACD indicator for scoring (macd_line is used, but set macd for consistency)
+            # The scoring function looks for 'macd' which should be the MACD line value
+            signal['macd'] = signal['macd_line']
+            
             # Bollinger Bands
             bb_upper = ta.volatility.BollingerBands(df['Close']).bollinger_hband()
             bb_middle = ta.volatility.BollingerBands(df['Close']).bollinger_mavg()  
@@ -1799,10 +2402,59 @@ class UnifiedPipeline:
             rsi = ta.momentum.RSIIndicator(df['Close']).rsi()
             signal['rsi'] = float(rsi.iloc[-1]) if not rsi.empty and not pd.isna(rsi.iloc[-1]) else None
             
+            # FIX Round 2: Calculate 50-day MA percentage (requires 3-month history)
+            if not df.empty and len(df) >= 50:
+                ma_50 = df['Close'].rolling(50).mean().iloc[-1]
+                current_price = df['Close'].iloc[-1]
+                signal['above_50d_ma_pct'] = float((current_price / ma_50 - 1) * 100) if not pd.isna(ma_50) else None
+            
+            # FIX: Calculate 200-day MA percentage (requires 1-year history)
+            history_1y = ticker_data.get('history_1y', pd.DataFrame())
+            if not history_1y.empty and len(history_1y) >= 200:
+                ma_200 = history_1y['Close'].rolling(200).mean().iloc[-1]
+                current_price = history_1y['Close'].iloc[-1]
+                signal['above_200d_ma_pct'] = float((current_price / ma_200 - 1) * 100) if not pd.isna(ma_200) else None
+            
             # Beta calculation - delegate to YahooFinanceIntegrator
             from backend.integrations.yfinance import YahooFinanceIntegrator
             yf_integrator = YahooFinanceIntegrator()
             signal['beta'] = yf_integrator.calculate_beta(ticker_data)
+            
+            # FIX Round 2: Add momentum_30d_pct from history
+            if not df.empty and len(df) >= 30:
+                signal['momentum_30d_pct'] = float((df['Close'].iloc[-1] / df['Close'].iloc[-30] - 1) * 100)
+            
+            # FIX Round 2: Add volume_price_correlation
+            if not df.empty and len(df) >= 20:
+                signal['volume_price_correlation'] = float(df['Close'].corr(df['Volume'])) if 'Volume' in df.columns else None
+            
+            # FIX Round 2: Add historical_volatility (annualized)
+            if not df.empty and len(df) >= 20:
+                returns = df['Close'].pct_change().dropna()
+                signal['historical_volatility'] = float(returns.std() * (252 ** 0.5) * 100) if len(returns) > 0 else None
+            
+            # FIX Round 2: Add bollinger band fields (using ta library results)
+            if signal.get('bb_upper') and signal.get('bb_lower'):
+                current_price = float(df['Close'].iloc[-1])
+                signal['bollinger_upper'] = signal['bb_upper']
+                signal['bollinger_lower'] = signal['bb_lower']
+                signal['bollinger_width'] = float((signal['bb_upper'] - signal['bb_lower']) / signal['bb_upper'] * 100)
+                # Calculate position: 0 = at lower band, 0.5 = at middle, 1 = at upper band
+                signal['bollinger_position'] = float((current_price - signal['bb_lower']) / (signal['bb_upper'] - signal['bb_lower'])) if (signal['bb_upper'] - signal['bb_lower']) > 0 else 0.5
+            
+            # FIX Round 2: Add ATR (Average True Range) 
+            if not df.empty and len(df) >= 14 and 'High' in df.columns and 'Low' in df.columns:
+                atr_indicator = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'])
+                atr_value = atr_indicator.average_true_range()
+                if not atr_value.empty and not pd.isna(atr_value.iloc[-1]):
+                    signal['atr'] = float(atr_value.iloc[-1])
+                    current_price = float(df['Close'].iloc[-1])
+                    signal['atr_percent'] = float((signal['atr'] / current_price) * 100) if current_price > 0 else None
+            
+            # FIX Round 3: Add avg_daily_value_traded for liquidity_score calculation
+            financial_data = ticker_data.get('financial_data', {})
+            if financial_data.get('avg_daily_value_traded'):
+                signal['avg_daily_value_traded'] = financial_data.get('avg_daily_value_traded')
             
         except Exception as e:
             self.logger.debug(f"Technical indicators failed for {signal.get('ticker')}: {e}")
@@ -1904,13 +2556,13 @@ class UnifiedPipeline:
         """Generate human-readable score explanation"""
         
         ticker = signal.get('ticker', 'N/A')
-        score = signal.get('weighted_score', 0)
+        score = signal.get('signal_score', 0)  # Phase 7
         reddit_score = signal.get('reddit_score', 0)
         financial_score = signal.get('financial_score', 0)
         
         # Primary components
         explanation_parts = [
-            f"{ticker} weighted score of {score:.3f} combines:",
+            f"{ticker} signal score of {score:.3f} combines:",  # Phase 7
             f"Reddit sentiment ({reddit_score:.2f} from {signal.get('mention_count', 0)} mentions)",
             f"Financial metrics ({financial_score:.2f} from market data)"
         ]
@@ -1943,7 +2595,7 @@ class UnifiedPipeline:
         Priority #3: Commentary Consolidation
         """
         ticker = signal.get('ticker', 'N/A')
-        score = signal.get('weighted_score', 0)
+        score = signal.get('signal_score', 0)  # Phase 7
         trade_type = signal.get('trade_type', 'Signal')
         risk_level = signal.get('risk_level', 'Medium')
         
@@ -2104,7 +2756,7 @@ class UnifiedPipeline:
         Example:
             >>> pipeline = UnifiedPipeline()
             >>> signal = await pipeline.generate_single_signal('AAPL')
-            >>> print(f"Score: {signal['weighted_score']}, Beta: {signal['beta']}")
+            >>> print(f"Score: {signal['signal_score']}, Beta: {signal['beta']}")
         """
         try:
             self.logger.info(f"🎯 Generating signal for {ticker}...")
@@ -2125,11 +2777,11 @@ class UnifiedPipeline:
             
             financial_signal = financial_signals[0]
             
-            # Transform to combined signal format with proper score keys
+            # Transform to combined signal format with proper score keys (Phase 7)
             signal = {
                 'ticker': ticker,
                 'financial_score': financial_signal['score'],
-                'weighted_score': financial_signal['score'],  # No reddit data, so financial_score = weighted_score
+                'signal_score': financial_signal['score'],  # Phase 7
                 'reddit_score': 0,
                 'news_score': 0,
                 'confidence': financial_signal['confidence'],
@@ -2166,7 +2818,7 @@ class UnifiedPipeline:
             if save_success:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 self.logger.info(f"✅ SUCCESS: Signal for {ticker} generated and saved in {elapsed:.2f}s")
-                self.logger.info(f"   Weighted Score: {enhanced_signal.get('weighted_score', 'N/A')}")
+                self.logger.info(f"   Signal Score: {enhanced_signal.get('signal_score', 'N/A')}")  # Phase 7
                 self.logger.info(f"   Financial Score: {enhanced_signal.get('financial_score', 'N/A')}")
                 self.logger.info(f"   Beta: {enhanced_signal.get('beta', 'N/A')}")
                 self.logger.info(f"   MACD: {enhanced_signal.get('macd_line', 'N/A')}")
@@ -2186,7 +2838,8 @@ class UnifiedPipeline:
                     subreddits: List[str] = None,
                     post_limit: int = 100,
                     min_mentions: int = 1,
-                    max_signals: int = 50) -> Dict[str, Any]:
+                    max_signals: int = 50,
+                    test_mode: bool = False) -> Dict[str, Any]:
         """
         Run the complete unified pipeline.
         
@@ -2195,10 +2848,27 @@ class UnifiedPipeline:
             post_limit (int): Posts per subreddit
             min_mentions (int): Minimum mentions required
             max_signals (int): Maximum signals to process
+            test_mode (bool): If True, use minimal settings for quick testing
             
         Returns:
             Dict[str, Any]: Pipeline execution results
+            
+        Test Mode Settings:
+            - subreddits: ['wallstreetbets']
+            - post_limit: 10
+            - min_mentions: 1
+            - max_signals: 5
         """
+        # Override with test settings if test_mode enabled
+        if test_mode:
+            subreddits = ['wallstreetbets']
+            post_limit = 10
+            min_mentions = 1
+            max_signals = 5
+            self.logger.info("🧪 TEST MODE ENABLED - Using minimal settings")
+            self.logger.info(f"   Subreddits: {subreddits}")
+            self.logger.info(f"   Post limit: {post_limit}")
+            self.logger.info(f"   Max signals: {max_signals}")
         pipeline_start = datetime.now()
         self.logger.info("=" * 60)
         self.logger.info("STARTING VP INVESTMENTS UNIFIED PIPELINE")
@@ -2271,8 +2941,8 @@ class UnifiedPipeline:
             try:
                 self.logger.info("Step 4.6: Generating unified commentary for signals...")
                 
-                # Sort signals by weighted_score and separate top 10
-                sorted_signals = sorted(signals, key=lambda x: x.get('weighted_score', 0), reverse=True)
+                # Sort signals by signal_score (Phase 7) and separate top 10
+                sorted_signals = sorted(signals, key=lambda x: x.get('signal_score', 0), reverse=True)
                 top_signals = sorted_signals[:10]
                 other_signals = sorted_signals[10:]
                 
@@ -2283,7 +2953,7 @@ class UnifiedPipeline:
                 
                 # Add basic commentary for remaining signals (no AI call)
                 for signal in other_signals:
-                    score = signal.get('weighted_score', 0)
+                    score = signal.get('signal_score', 0)  # Phase 7
                     trade_type = signal.get('trade_type', 'Signal')
                     risk = signal.get('risk_level', 'Medium')
                     ticker = signal.get('ticker', 'N/A')
@@ -2311,7 +2981,7 @@ class UnifiedPipeline:
                 self.logger.warning(f"Comprehensive AI commentary failed: {e}")
                 # Try fallback AI commentary for top 10
                 try:
-                    sorted_signals = sorted(signals, key=lambda x: x.get('weighted_score', 0), reverse=True)
+                    sorted_signals = sorted(signals, key=lambda x: x.get('signal_score', 0), reverse=True)  # Phase 7
                     top_10 = sorted_signals[:10]
                     others = sorted_signals[10:]
                     
@@ -2319,7 +2989,7 @@ class UnifiedPipeline:
                     
                     # Basic commentary for others
                     for sig in others:
-                        sig['ai_commentary'] = f"Signal {sig.get('weighted_score', 0):.3f} - {sig.get('trade_type', 'N/A')}"
+                        sig['ai_commentary'] = f"Signal {sig.get('signal_score', 0):.3f} - {sig.get('trade_type', 'N/A')}"  # Phase 7
                     
                     signals = enhanced + others
                     
@@ -2405,8 +3075,8 @@ class UnifiedPipeline:
             self.logger.info("Step 5: Saving signals to database...")
             
             if signals:
-                # Sort signals by weighted score
-                signals.sort(key=lambda x: x['weighted_score'], reverse=True)
+                # Sort signals by signal_score (Phase 7 scoring system)
+                signals.sort(key=lambda x: x.get('signal_score', 0), reverse=True)
                 
                 # Save to database
                 save_result = await self.save_signals_to_database(signals)
@@ -2502,7 +3172,7 @@ async def main():
                 print(f"\nTop 5 signals:")
                 for i, signal in enumerate(results['top_signals'][:5], 1):
                     ticker = signal['ticker']
-                    score = signal['weighted_score']
+                    score = signal['signal_score']  # Phase 7
                     mentions = signal.get('mentions', signal.get('reddit_data', {}).get('mention_count', 0))
                     trade_type = signal.get('trade_type', 'Speculative')
                     risk_level = signal.get('risk_level', 'Medium')

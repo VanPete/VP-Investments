@@ -84,10 +84,10 @@ class ScheduledPipelineRunner:
         """Store discovered signals in the database"""
         signals_data = []
         
-        # Sort tickers by combined score
+        # Sort tickers by signal_score (Phase 7)
         sorted_tickers = sorted(
             ticker_scores.items(), 
-            key=lambda x: x[1].get('combined_score', 0), 
+            key=lambda x: x[1].get('signal_score', x[1].get('combined_score', 0)), 
             reverse=True
         )
         
@@ -96,7 +96,7 @@ class ScheduledPipelineRunner:
                 'run_id': run_id,
                 'ticker': ticker,
                 'rank': rank,
-                'weighted_score': round(scores.get('combined_score', 0), 3),
+                'signal_score': round(scores.get('signal_score', scores.get('combined_score', 0)), 3),  # Phase 7
                 'reddit_score': round(scores.get('reddit_score', 0), 3),
                 'news_score': round(scores.get('news_score', 0.5), 3),  # Default neutral
                 'financial_score': round(scores.get('financial_score', 0.5), 3),
@@ -141,13 +141,13 @@ class ScheduledPipelineRunner:
             return 'Speculative'
     
     def _determine_risk_level(self, scores: Dict) -> str:
-        """Determine risk level based on score characteristics"""
-        combined_score = scores.get('combined_score', 0.5)
+        """Determine risk level based on score characteristics (Phase 7)"""
+        signal_score = scores.get('signal_score', scores.get('combined_score', 0.5))  # Phase 7
         financial_score = scores.get('financial_score', 0.5)
         
-        if combined_score > 0.7 and financial_score > 0.7:
+        if signal_score > 0.7 and financial_score > 0.7:
             return 'Low'
-        elif combined_score > 0.5 and financial_score > 0.5:
+        elif signal_score > 0.5 and financial_score > 0.5:
             return 'Medium'
         else:
             return 'High'
@@ -187,22 +187,23 @@ class ScheduledPipelineRunner:
                 ticker_scores[ticker]['financial_score'] = financial_score
             
             # Step 3: Combined Scoring
-            logger.info("🎯 Step 3: Combined scoring...")
+            logger.info("🎯 Step 3: Combined scoring (Phase 7)...")
             for ticker, scores in ticker_scores.items():
-                # Weighted combination of scores
+                # Weighted combination of scores (Phase 7 - simplified for scheduler)
                 reddit_weight = 0.4
                 financial_weight = 0.3
                 sentiment_weight = 0.2
                 volume_weight = 0.1  # Placeholder for future volume analysis
                 
-                combined_score = (
+                signal_score = (
                     scores.get('reddit_score', 0) * reddit_weight +
                     scores.get('financial_score', 0.5) * financial_weight +
                     scores.get('sentiment_score', 0.5) * sentiment_weight +
                     0.5 * volume_weight  # Default volume score
                 )
                 
-                ticker_scores[ticker]['combined_score'] = combined_score
+                ticker_scores[ticker]['signal_score'] = signal_score  # Phase 7
+                ticker_scores[ticker]['combined_score'] = signal_score  # Backward compatibility
                 ticker_scores[ticker]['volume_score'] = 0.5  # Placeholder
                 ticker_scores[ticker]['news_score'] = 0.5  # Placeholder
             
@@ -218,7 +219,7 @@ class ScheduledPipelineRunner:
                 'reddit_available': self.reddit_available,
                 'subreddits_scraped': reddit_results['scrape_results']['subreddits_scraped'] if self.reddit_available else [],
                 'total_mentions': reddit_results['scrape_results']['total_mentions'] if self.reddit_available else 0,
-                'top_ticker': max(ticker_scores.keys(), key=lambda t: ticker_scores[t]['combined_score']) if ticker_scores else None
+                'top_ticker': max(ticker_scores.keys(), key=lambda t: ticker_scores[t].get('signal_score', ticker_scores[t].get('combined_score', 0))) if ticker_scores else None  # Phase 7
             })
             
             logger.info(f"🎉 Discovery pipeline completed successfully!")
@@ -257,7 +258,7 @@ class ScheduledPipelineRunner:
         return sum(sentiments) / len(sentiments)
     
     def _record_metrics(self, run_id: str, ticker_scores: Dict, reddit_results: Dict = None):
-        """Record pipeline performance metrics"""
+        """Record pipeline performance metrics (Phase 7)"""
         metrics_data = [
             {
                 'run_id': run_id,
@@ -267,14 +268,14 @@ class ScheduledPipelineRunner:
             },
             {
                 'run_id': run_id,
-                'metric_name': 'avg_combined_score',
-                'value': sum(s['combined_score'] for s in ticker_scores.values()) / len(ticker_scores) if ticker_scores else 0,
+                'metric_name': 'avg_signal_score',  # Phase 7
+                'value': sum(s.get('signal_score', s.get('combined_score', 0)) for s in ticker_scores.values()) / len(ticker_scores) if ticker_scores else 0,
                 'units': 'score'
             },
             {
                 'run_id': run_id,
                 'metric_name': 'high_confidence_signals',
-                'value': len([s for s in ticker_scores.values() if s['combined_score'] > 0.7]),
+                'value': len([s for s in ticker_scores.values() if s.get('signal_score', s.get('combined_score', 0)) > 0.7]),  # Phase 7
                 'units': 'count'
             }
         ]

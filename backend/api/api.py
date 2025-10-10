@@ -314,13 +314,14 @@ def get_client_pool() -> APIClientPool:
 
 # Pydantic models for API
 class SignalResponse(BaseModel):
-    """API response model for signals"""
+    """API response model for signals (Phase 7)"""
     ticker: str
     signal_type: str
     confidence: float
     technical_score: float
     sentiment_score: float
-    combined_score: float
+    signal_score: float  # Phase 7: primary score field
+    combined_score: float  # Backward compatibility (deprecated)
     created_at: datetime
 
 
@@ -555,13 +556,15 @@ async def get_signals_for_ticker(
         
         signals = []
         for result in results:
+            signal_score_val = result.get('signal_score', result.get('combined_score', 0.0))  # Phase 7
             signals.append(SignalResponse(
                 ticker=result['ticker'],
                 signal_type=result['signal_type'],
                 confidence=result['confidence'],
                 technical_score=result.get('technical_score', 0.0),
                 sentiment_score=result.get('sentiment_score', 0.0),
-                combined_score=result.get('combined_score', 0.0),
+                signal_score=signal_score_val,  # Phase 7
+                combined_score=signal_score_val,  # Backward compatibility
                 created_at=result['created_at']
             ))
         

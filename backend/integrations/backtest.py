@@ -651,33 +651,34 @@ class BacktestEngine:
             logger.error(f"Error in batch performance tracking: {e}")
             return {'processed': 0, 'successful': 0, 'failed': 0}
     
-    async def calculate_historical_success_rate(self, weighted_score: float, score_range: float = 10.0) -> Optional[float]:
+    async def calculate_historical_success_rate(self, signal_score: float, score_range: float = 0.1) -> Optional[float]:
         """
         Calculate historical success rate for signals with similar scores.
         
         Success = positive return AND beat SPY (7d return used as primary metric)
         
         Args:
-            weighted_score: The weighted score of the current signal
-            score_range: Range around score to consider (default ±10)
+            signal_score: The signal score of the current signal (0-1 scale)
+            score_range: Range around score to consider (default ±0.1 for 0-1 scale)
             
         Returns:
             Success rate as percentage (0-100), or None if insufficient data
         """
         try:
             # Query past signals with similar scores that have performance data
-            min_score = weighted_score - score_range
-            max_score = weighted_score + score_range
+            min_score = signal_score - score_range
+            max_score = signal_score + score_range
             
-            response = self.db.client.table('signals').select(
-                'id, weighted_score, 7d_return, beat_spy_7d'
-            ).gte('weighted_score', min_score).lte('weighted_score', max_score).not_.is_(
-                '7d_return', 'null'
+            # Query signal_performance table directly for historical data
+            response = self.db.client.table('signal_performance').select(
+                'signal_id, return_7d, beat_spy_7d, signals!inner(signal_score)'
+            ).gte('signals.signal_score', min_score).lte('signals.signal_score', max_score).not_.is_(
+                'return_7d', 'null'
             ).not_.is_('beat_spy_7d', 'null').execute()
             
             if not response.data or len(response.data) < 5:
                 # Need at least 5 data points for meaningful stat
-                logger.debug(f"Insufficient historical data for score {weighted_score:.1f} (found {len(response.data) if response.data else 0} signals)")
+                logger.debug(f"Insufficient historical data for score {signal_score:.3f} (found {len(response.data) if response.data else 0} signals)")
                 return None
             
             signals = response.data
@@ -686,9 +687,9 @@ class BacktestEngine:
             successful_signals = 0
             total_signals = len(signals)
             
-            for signal in signals:
-                return_7d = signal.get('7d_return', 0)
-                beat_spy_7d = signal.get('beat_spy_7d', False)
+            for perf_record in signals:
+                return_7d = perf_record.get('return_7d', 0)
+                beat_spy_7d = perf_record.get('beat_spy_7d', False)
                 
                 # Success criteria: positive return AND beat SPY
                 if return_7d and return_7d > 0 and beat_spy_7d:
@@ -697,7 +698,7 @@ class BacktestEngine:
             success_rate = (successful_signals / total_signals) * 100
             
             logger.debug(
-                f"Historical success rate for score {weighted_score:.1f}: "
+                f"Historical success rate for score {signal_score:.3f}: "
                 f"{success_rate:.1f}% ({successful_signals}/{total_signals} signals)"
             )
             
@@ -756,13 +757,21 @@ class BacktestScheduler:
         """
         Determine which backtest intervals are missing for a signal
         based on its age and existing backtest data.
+        
+        Note: backtest_intervals is now stored in signal_performance table
         """
         signal_age = self.calculate_signal_age(signal.get('created_at'))
         eligible_intervals = self.get_eligible_intervals(signal_age)
         
-        # Get existing backtest intervals from signal
+        # Get existing backtest intervals from signal_performance data
         existing_intervals = set()
-        backtest_data = signal.get('backtest_intervals', [])
+        
+        # Check if signal has performance data embedded (from JOIN query)
+        perf_data = signal.get('signal_performance', {})
+        if isinstance(perf_data, list) and perf_data:
+            perf_data = perf_data[0]
+        
+        backtest_data = perf_data.get('backtest_intervals', []) if perf_data else []
         
         if isinstance(backtest_data, str):
             # Parse comma-separated string
@@ -781,17 +790,19 @@ class BacktestScheduler:
     async def get_signals_requiring_backtest(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get signals that require backtesting based on their age and missing intervals.
+        
+        Note: Performance data (backtest_intervals, returns) now in signal_performance table
         """
         try:
             db = await get_supabase_database()
             
-            # Get signals that are at least 1 day old
+            # Get signals that are at least 1 day old, JOIN with signal_performance
             cutoff_date = datetime.now() - timedelta(days=1)
             
-            # Use basic select query instead of SQL RPC
+            # Query signals and join with signal_performance for return data
             response = db.supabase.table('signals').select(
-                'id, ticker, created_at, backtest_intervals, '
-                '"1d_return", "3d_return", "7d_return", "10d_return", "30d_return"'
+                'id, ticker, created_at, '
+                'signal_performance(backtest_intervals, return_1d, return_3d, return_7d, return_10d, return_30d)'
             ).lte('created_at', cutoff_date.isoformat()).order('created_at', desc=True)
             
             if limit:
@@ -875,18 +886,21 @@ async def run_historical_backtest(days_back: int = 30) -> Dict[str, Any]:
             SELECT s.*, ai.id as strategy_id, ai.strategy_type, ai.entry_conditions
             FROM signals s
             LEFT JOIN ai_strategies ai ON s.id = ai.signal_id
+            LEFT JOIN signal_performance sp ON s.id = sp.signal_id
             WHERE s.created_at >= '{cutoff_date.isoformat()}'
             AND s.created_at <= '{min_age_date.isoformat()}'
-            AND (s.1d_return IS NULL OR s.backtest_phase IS NULL)
+            AND (sp.return_1d IS NULL OR sp.backtest_phase IS NULL)
             ORDER BY s.created_at DESC
             LIMIT 100
         """
         
+        # Query signals, join with signal_performance to check for missing return data
         result = db.supabase.table('signals').select(
-            '*, ai_strategies!inner(id, strategy_type, entry_conditions)'
+            '*, ai_strategies!inner(id, strategy_type, entry_conditions), '
+            'signal_performance(return_1d, backtest_phase)'
         ).gte('created_at', cutoff_date.isoformat()).lte(
             'created_at', min_age_date.isoformat()
-        ).is_('1d_return', 'null').limit(100).execute()
+        ).limit(100).execute()
         
         signals = result.data if result.data else []
         
@@ -1308,11 +1322,11 @@ async def calculate_historical_success_rates_for_signals(signals: List[Dict[str,
         enhanced_count = 0
         
         for signal in signals:
-            weighted_score = signal.get('weighted_score', 0)
+            signal_score = signal.get('signal_score', 0)
             
-            if weighted_score > 0:
+            if signal_score > 0:
                 # Calculate success rate based on past signals with similar scores
-                success_rate = await engine.calculate_historical_success_rate(weighted_score)
+                success_rate = await engine.calculate_historical_success_rate(signal_score)
                 
                 if success_rate is not None:
                     signal['historical_success_rate'] = success_rate
@@ -1360,11 +1374,11 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
         now = datetime.now(timezone.utc)
         
         # CRITICAL FIX: Filter for signals that haven't been backtested yet
-        # Look for signals where 1d_return is NULL (indicates no backtest data)
+        # Look for signals that don't have signal_performance records
         # Order by created_at ASC (oldest first - systematic approach)
         response = db.client.table('signals').select(
             'id, ticker, current_price, created_at, run_id'
-        ).is_('1d_return', 'null').order('created_at', desc=False).limit(limit).execute()
+        ).is_('signal_performance.signal_id', 'null').order('created_at', desc=False).limit(limit).execute()
         
         if not response.data:
             logger.info("No eligible signals found for backtesting")

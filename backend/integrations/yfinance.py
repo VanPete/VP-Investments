@@ -2754,5 +2754,446 @@ async def _calculate_institutional_flow_direction(ticker: str, current_instituti
         return None
 
 
+# ============================================================================
+# PHASE 4: ENHANCED DATA COLLECTION FOR RISK SCORING
+# ============================================================================
+
+
+def fetch_enhanced_risk_data(ticker: str) -> Dict[str, Any]:
+    """
+    Fetch comprehensive data required for risk scoring and trade classification.
+    
+    **SINGLE FETCH STRATEGY:** Fetches all yfinance data once, then passes to helpers.
+    
+    This function consolidates all data collection needed for:
+    - Risk score calculation (5 subscores)
+    - Trade type classification
+    - Trend strength analysis
+    - Signal scoring
+    
+    Args:
+        ticker: Stock ticker symbol
+    
+    Returns:
+        Dict with enhanced data including:
+        - atr_pct: Average True Range as % (20-day)
+        - float_pct: Float as % of shares outstanding
+        - interest_coverage: EBIT / Interest Expense
+        - price_history: List of last 250 closing prices
+        - volume_history: List of last 60 volumes
+        - All standard financial metrics
+        
+    Note:
+        Returns partial data if some fetches fail (graceful degradation).
+        Missing values are set to None rather than causing complete failure.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        
+        # ============================================================
+        # SINGLE FETCH BLOCK - Get all yfinance data once
+        # ============================================================
+        
+        # Fetch 1: Basic info
+        try:
+            info = stock.info
+        except Exception as e:
+            logger.warning(f"Failed to fetch info for {ticker}: {e}")
+            info = {}
+        
+        # Fetch 2: Historical data (2 years to ensure 250+ trading days)
+        try:
+            hist = stock.history(period='2y')
+        except Exception as e:
+            logger.warning(f"Failed to fetch history for {ticker}: {e}")
+            hist = pd.DataFrame()
+        
+        # Fetch 3: Quarterly financials (with annual fallback)
+        try:
+            financials = stock.quarterly_financials
+            if financials is None or financials.empty:
+                logger.debug(f"No quarterly financials for {ticker}, trying annual")
+                financials = stock.financials
+        except Exception as e:
+            logger.warning(f"Failed to fetch financials for {ticker}: {e}")
+            financials = None
+        
+        # ============================================================
+        # END SINGLE FETCH BLOCK - Now use pre-fetched data
+        # ============================================================
+        
+        # Early exit if no historical data at all
+        if hist.empty:
+            logger.warning(f"No historical data for {ticker}")
+            return {
+                'ticker': ticker,
+                'error': 'No historical data',
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        
+        # Extract histories from pre-fetched data
+        price_history = hist['Close'].tolist()
+        volume_history = hist['Volume'].tolist()
+        high_history = hist['High'].tolist()
+        low_history = hist['Low'].tolist()
+        
+        # Get current price
+        current_price = hist['Close'].iloc[-1] if not hist.empty else None
+        
+        # Calculate all metrics using pre-fetched data (no more API calls)
+        atr_pct = _calculate_atr_percentage(hist)
+        float_pct = _calculate_float_percentage(info)
+        interest_coverage = _calculate_interest_coverage_from_data(financials)
+        price_z_20day = _calculate_price_z_score(hist['Close'], window=20)
+        fcf_yield = _calculate_fcf_yield(info)
+        rsi = _calculate_rsi_simple(hist['Close'])
+        
+        # Calculate earnings days away (if available)
+        earnings_date = info.get('earningsDate')
+        earnings_days_away = None
+        if earnings_date:
+            try:
+                # earnings_date can be a list, take first element
+                if isinstance(earnings_date, list) and earnings_date:
+                    earnings_dt = pd.to_datetime(earnings_date[0])
+                else:
+                    earnings_dt = pd.to_datetime(earnings_date)
+                
+                earnings_days_away = (earnings_dt - pd.Timestamp.now()).days
+            except Exception as e:
+                logger.debug(f"Failed to parse earnings date for {ticker}: {e}")
+        
+        # Build enhanced data dict
+        enhanced_data = {
+            # Ticker info
+            'ticker': ticker,
+            'current_price': float(current_price) if current_price else None,
+            
+            # Risk scoring inputs
+            'atr_pct': atr_pct,
+            'beta': info.get('beta'),
+            'avg_volume': info.get('averageVolume'),
+            'float_pct': float_pct,
+            'debt_to_equity': info.get('debtToEquity'),
+            'interest_coverage': interest_coverage,
+            'short_interest': info.get('shortPercentOfFloat'),
+            'market_cap': info.get('marketCap'),
+            
+            # Historical data for calculators
+            'price_history': price_history,
+            'volume_history': volume_history,
+            'high_history': high_history,
+            'low_history': low_history,
+            
+            # Additional metrics for classification
+            'pe_ratio': info.get('trailingPE') or info.get('forwardPE'),
+            'price_to_book': info.get('priceToBook'),
+            'fcf_yield': fcf_yield,
+            'roe': info.get('returnOnEquity'),
+            'profit_margins': info.get('profitMargins'),
+            'revenue_growth': info.get('revenueGrowth'),
+            'earnings_growth': info.get('earningsGrowth'),
+            'free_cash_flow': info.get('freeCashflow'),
+            
+            # Technical indicators
+            'rsi': rsi,
+            'price_z_20day': price_z_20day,
+            
+            # Event data
+            'earnings_date': earnings_days_away,
+            
+            # Metadata
+            'sector': info.get('sector'),
+            'industry': info.get('industry'),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        logger.debug(f"Fetched enhanced risk data for {ticker} (single fetch)")
+        return enhanced_data
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch enhanced risk data for {ticker}: {e}")
+        return {
+            'ticker': ticker,
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+
+def _calculate_atr_percentage(hist: pd.DataFrame, period: int = 20) -> Optional[float]:
+    """
+    Calculate Average True Range as percentage of price.
+    
+    ATR = Average of True Range over period
+    True Range = max(H-L, |H-C_prev|, |L-C_prev|)
+    ATR% = (ATR / price) * 100
+    
+    Args:
+        hist: DataFrame with High, Low, Close columns
+        period: Lookback period (default 20 days)
+    
+    Returns:
+        ATR as percentage of current price
+    """
+    try:
+        if len(hist) < period + 1:
+            return None
+        
+        high = hist['High']
+        low = hist['Low']
+        close = hist['Close']
+        
+        # Calculate True Range components
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        
+        # True Range is the maximum of the three
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Average True Range
+        atr = tr.rolling(window=period).mean().iloc[-1]
+        
+        # Current price
+        current_price = close.iloc[-1]
+        
+        if current_price and not np.isnan(atr):
+            atr_pct = (atr / current_price) * 100
+            return round(float(atr_pct), 2)
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"ATR% calculation failed: {e}")
+        return None
+
+
+def _calculate_float_percentage(info: Dict) -> Optional[float]:
+    """
+    Calculate float as percentage of shares outstanding.
+    
+    Float% = (floatShares / sharesOutstanding) * 100
+    
+    Args:
+        info: yfinance info dict
+    
+    Returns:
+        Float percentage (0-100)
+    """
+    try:
+        float_shares = info.get('floatShares')
+        shares_outstanding = info.get('sharesOutstanding')
+        
+        if float_shares and shares_outstanding and shares_outstanding > 0:
+            float_pct = (float_shares / shares_outstanding) * 100
+            return round(float(float_pct), 1)
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Float% calculation failed: {e}")
+        return None
+
+
+def _calculate_interest_coverage_from_data(financials) -> Optional[float]:
+    """
+    Calculate Interest Coverage Ratio from pre-fetched financials.
+    
+    Interest Coverage = EBIT / Interest Expense
+    
+    Uses most recent data from financials DataFrame.
+    
+    Args:
+        financials: Pre-fetched quarterly or annual financials DataFrame
+    
+    Returns:
+        Interest coverage ratio or None if unavailable
+    """
+    try:
+        if financials is None or financials.empty:
+            return None
+        
+        # Try to get EBIT (Operating Income)
+        ebit = None
+        if 'EBIT' in financials.index:
+            ebit = financials.loc['EBIT'].iloc[0]
+        elif 'Operating Income' in financials.index:
+            ebit = financials.loc['Operating Income'].iloc[0]
+        
+        # Try to get Interest Expense
+        interest_expense = None
+        if 'Interest Expense' in financials.index:
+            interest_expense = financials.loc['Interest Expense'].iloc[0]
+        
+        # Calculate ratio
+        if ebit is not None and interest_expense is not None:
+            # Interest expense is typically negative, so take absolute value
+            interest_expense = abs(interest_expense)
+            
+            if interest_expense > 0:
+                coverage = ebit / interest_expense
+                return round(float(coverage), 2)
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Interest coverage calculation failed: {e}")
+        return None
+
+
+def _calculate_interest_coverage(stock: yf.Ticker) -> Optional[float]:
+    """
+    Calculate Interest Coverage Ratio (legacy function).
+    
+    **DEPRECATED:** Use _calculate_interest_coverage_from_data() with pre-fetched financials.
+    This function makes additional API calls.
+    
+    Args:
+        stock: yfinance Ticker object
+    
+    Returns:
+        Interest coverage ratio
+    """
+    try:
+        # Get quarterly financials
+        financials = stock.quarterly_financials
+        return _calculate_interest_coverage_from_data(financials)
+        
+    except Exception as e:
+        logger.warning(f"Interest coverage calculation failed: {e}")
+        return None
+
+
+def _calculate_fcf_yield(info: Dict) -> Optional[float]:
+    """
+    Calculate Free Cash Flow yield.
+    
+    FCF Yield = Free Cash Flow / Market Cap
+    
+    Args:
+        info: yfinance info dict
+    
+    Returns:
+        FCF yield as decimal (e.g., 0.035 for 3.5%)
+    """
+    try:
+        fcf = info.get('freeCashflow')
+        market_cap = info.get('marketCap')
+        
+        if fcf and market_cap and market_cap > 0:
+            fcf_yield = fcf / market_cap
+            return round(float(fcf_yield), 4)
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"FCF yield calculation failed: {e}")
+        return None
+
+
+def _calculate_rsi_simple(closes: pd.Series, period: int = 14) -> Optional[float]:
+    """
+    Calculate RSI (Relative Strength Index).
+    
+    Args:
+        closes: Series of closing prices
+        period: RSI period (default 14)
+    
+    Returns:
+        RSI value (0-100)
+    """
+    try:
+        if len(closes) < period + 1:
+            return None
+        
+        delta = closes.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        rsi_value = rsi.iloc[-1]
+        if not np.isnan(rsi_value):
+            return round(float(rsi_value), 2)
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"RSI calculation failed: {e}")
+        return None
+
+
+def _calculate_price_z_score(closes: pd.Series, window: int = 20) -> Optional[float]:
+    """
+    Calculate price z-score vs rolling mean.
+    
+    Z-score = (current_price - rolling_mean) / rolling_std
+    
+    Args:
+        closes: Series of closing prices
+        window: Rolling window (default 20 days)
+    
+    Returns:
+        Z-score value
+    """
+    try:
+        if len(closes) < window:
+            return None
+        
+        rolling_mean = closes.rolling(window=window).mean().iloc[-1]
+        rolling_std = closes.rolling(window=window).std().iloc[-1]
+        current_price = closes.iloc[-1]
+        
+        if rolling_std and rolling_std > 0 and not np.isnan(rolling_mean):
+            z_score = (current_price - rolling_mean) / rolling_std
+            return round(float(z_score), 2)
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Price z-score calculation failed: {e}")
+        return None
+
+
+def fetch_batch_enhanced_risk_data(tickers: List[str], max_workers: int = 5) -> Dict[str, Dict[str, Any]]:
+    """
+    Fetch enhanced risk data for multiple tickers in parallel.
+    
+    Args:
+        tickers: List of ticker symbols
+        max_workers: Maximum concurrent requests
+    
+    Returns:
+        Dict mapping ticker to enhanced data
+    """
+    results = {}
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ticker = {
+            executor.submit(fetch_enhanced_risk_data, ticker): ticker
+            for ticker in tickers
+        }
+        
+        for future in as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                result = future.result(timeout=30)
+                results[ticker] = result
+            except Exception as e:
+                logger.error(f"Failed to fetch enhanced data for {ticker}: {e}")
+                results[ticker] = {
+                    'ticker': ticker,
+                    'error': str(e)
+                }
+    
+    return results
+
+
+# ============================================================================
+# END PHASE 4 ENHANCEMENTS
+# ============================================================================
+
+
 if __name__ == "__main__":
     main()

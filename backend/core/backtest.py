@@ -56,6 +56,76 @@ class BacktestStatus(str, Enum):
     PARTIAL = "partial"
 
 
+# ============================================================================
+# PHASE 8: ENHANCED BACKTEST CONFIGURATION
+# ============================================================================
+
+@dataclass
+class Phase8BacktestConfig:
+    """
+    Phase 8 Enhanced Backtest Configuration
+    
+    Adds dynamic thresholds based on:
+    - Risk levels (Low/Moderate/Elevated/High/Extreme)
+    - Trade types (Momentum/Value/Event-Driven/etc.)
+    - Position sizing by risk score
+    """
+    
+    # Entry thresholds by risk level (signal_score must exceed these)
+    ENTRY_THRESHOLDS_BY_RISK = {
+        'Low': 0.70,           # Conservative: Higher bar for low-risk stocks
+        'Moderate': 0.65,      # Standard entry threshold
+        'Elevated': 0.60,      # Slightly lower threshold
+        'High': 0.55,          # Lower threshold for high-risk opportunities
+        'Extreme': 0.50        # Very low threshold (or skip entirely)
+    }
+    
+    # Hold periods by trade type (min_days, max_days)
+    HOLD_PERIODS_BY_TRADE_TYPE = {
+        'Momentum': (3, 7),              # Short-term price moves
+        'Value': (30, 90),               # Fundamental realization time
+        'Event-Driven': (1, 10),         # Event catalyst window
+        'Speculative Growth': (14, 30),  # Growth trajectory window
+        'Contrarian': (7, 21),           # Sentiment reversal time
+        'Multi-Factor': (7, 14),         # Balanced approach
+        'Balanced': (7, 14),             # Default
+    }
+    
+    # Position sizing by risk score (% of portfolio)
+    POSITION_SIZE_BY_RISK_SCORE = {
+        (0, 30): (0.05, 0.10),      # Low Risk: 5-10%
+        (30, 50): (0.03, 0.05),     # Moderate Risk: 3-5%
+        (50, 70): (0.02, 0.03),     # Elevated Risk: 2-3%
+        (70, 85): (0.01, 0.02),     # High Risk: 1-2%
+        (85, 100): (0.005, 0.01),   # Extreme Risk: 0.5-1%
+    }
+    
+    # Stop loss multipliers by risk level (ATR multipliers)
+    STOP_LOSS_MULTIPLIERS_BY_RISK = {
+        'Low': 1.5,
+        'Moderate': 1.8,
+        'Elevated': 2.0,
+        'High': 2.5,
+        'Extreme': 3.0
+    }
+    
+    # Take profit multipliers by risk level (ATR multipliers)
+    TAKE_PROFIT_MULTIPLIERS_BY_RISK = {
+        'Low': 2.5,
+        'Moderate': 3.0,
+        'Elevated': 3.0,
+        'High': 3.5,
+        'Extreme': 4.0
+    }
+    
+    # Enable/disable Phase 8 features
+    use_dynamic_entry_thresholds: bool = True
+    use_dynamic_hold_periods: bool = True
+    use_risk_based_position_sizing: bool = True
+    use_atr_based_stops: bool = True
+    skip_extreme_risk: bool = False  # If True, skip Extreme risk signals
+
+
 @dataclass
 class BacktestConfig:
     """Configuration for backtesting parameters"""
@@ -71,10 +141,13 @@ class BacktestConfig:
     risk_free_rate: Decimal = Decimal('4.0')  # annual %
     benchmark_ticker: str = "SPY"
     use_signal_scoring: bool = True
-    signal_threshold: Decimal = Decimal('70.0')  # minimum signal score
+    signal_threshold: Decimal = Decimal('70.0')  # minimum signal score (Phase 7 default)
     max_sector_concentration: Decimal = Decimal('25.0')  # % max per sector
     stop_loss_pct: Optional[Decimal] = None  # % stop loss
     take_profit_pct: Optional[Decimal] = None  # % take profit
+    
+    # Phase 8: Enhanced configuration
+    phase8_config: Optional[Phase8BacktestConfig] = None
 
 
 @dataclass
@@ -378,6 +451,240 @@ class SupabaseBacktestEngine:
         config = result.config
         # Implementation for long-short strategy
         logger.info("[SUCCESS] Long-short backtest completed")
+    
+    # ========================================================================
+    # PHASE 8: DYNAMIC THRESHOLD & SIZING METHODS
+    # ========================================================================
+    
+    def _get_entry_threshold_for_signal(
+        self, 
+        signal: Any,  # ComprehensiveSignal or dict with risk_level
+        config: BacktestConfig
+    ) -> float:
+        """
+        Phase 8: Get dynamic entry threshold based on risk level.
+        
+        Args:
+            signal: Signal object with risk_level attribute
+            config: Backtest configuration
+        
+        Returns:
+            Entry threshold (signal_score must exceed this)
+        """
+        # Use Phase 8 config if available
+        if config.phase8_config and config.phase8_config.use_dynamic_entry_thresholds:
+            risk_level = getattr(signal, 'risk_level', 'Moderate')
+            if isinstance(signal, dict):
+                risk_level = signal.get('risk_level', 'Moderate')
+            
+            threshold = config.phase8_config.ENTRY_THRESHOLDS_BY_RISK.get(
+                risk_level, 0.65
+            )
+            
+            logger.debug(f"Dynamic entry threshold for {risk_level}: {threshold}")
+            return threshold
+        
+        # Fall back to fixed threshold
+        return float(config.signal_threshold) / 100.0
+    
+    def _get_hold_period_for_signal(
+        self,
+        signal: Any,  # ComprehensiveSignal or dict with trade_type
+        config: BacktestConfig
+    ) -> Tuple[int, int]:
+        """
+        Phase 8: Get dynamic hold period based on trade type.
+        
+        Args:
+            signal: Signal object with trade_type attribute
+            config: Backtest configuration
+        
+        Returns:
+            Tuple of (min_days, max_days) to hold position
+        """
+        # Use Phase 8 config if available
+        if config.phase8_config and config.phase8_config.use_dynamic_hold_periods:
+            trade_type = getattr(signal, 'trade_type', 'Balanced')
+            if isinstance(signal, dict):
+                trade_type = signal.get('trade_type', 'Balanced')
+            
+            # Handle comma-separated trade tags (take first one)
+            if isinstance(trade_type, str) and ',' in trade_type:
+                trade_type = trade_type.split(',')[0].strip()
+            
+            hold_period = config.phase8_config.HOLD_PERIODS_BY_TRADE_TYPE.get(
+                trade_type, (7, 14)  # Default
+            )
+            
+            logger.debug(f"Dynamic hold period for {trade_type}: {hold_period} days")
+            return hold_period
+        
+        # Fall back to default
+        return (7, 14)
+    
+    def _get_position_size_for_signal(
+        self,
+        signal: Any,  # ComprehensiveSignal or dict with risk_score
+        config: BacktestConfig,
+        portfolio_value: Decimal
+    ) -> Decimal:
+        """
+        Phase 8: Get dynamic position size based on risk score.
+        
+        Args:
+            signal: Signal object with risk_score attribute
+            config: Backtest configuration
+            portfolio_value: Current portfolio value
+        
+        Returns:
+            Dollar amount to allocate to this position
+        """
+        # Use Phase 8 config if available
+        if config.phase8_config and config.phase8_config.use_risk_based_position_sizing:
+            risk_score = getattr(signal, 'risk_score', 50.0)
+            if isinstance(signal, dict):
+                risk_score = signal.get('risk_score', 50.0)
+            
+            # Find matching risk bucket
+            for (min_risk, max_risk), (min_pct, max_pct) in config.phase8_config.POSITION_SIZE_BY_RISK_SCORE.items():
+                if min_risk <= risk_score < max_risk:
+                    # Use mid-point of range
+                    position_pct = (min_pct + max_pct) / 2.0
+                    position_size = portfolio_value * Decimal(str(position_pct))
+                    
+                    logger.debug(f"Risk-based position size for risk_score {risk_score}: "
+                               f"{position_pct*100:.2f}% = ${position_size:,.2f}")
+                    return position_size
+            
+            # Default to smallest size if not found
+            position_pct = 0.01
+            return portfolio_value * Decimal(str(position_pct))
+        
+        # Fall back to fixed percentage
+        position_pct = float(config.position_size_pct) / 100.0
+        return portfolio_value * Decimal(str(position_pct))
+    
+    def _get_stop_loss_for_signal(
+        self,
+        signal: Any,  # ComprehensiveSignal or dict with risk_level and ATR
+        config: BacktestConfig,
+        entry_price: Decimal
+    ) -> Optional[Decimal]:
+        """
+        Phase 8: Get dynamic stop loss based on risk level and ATR.
+        
+        Args:
+            signal: Signal object with risk_level and ATR data
+            config: Backtest configuration
+            entry_price: Entry price for position
+        
+        Returns:
+            Stop loss price or None
+        """
+        # Use Phase 8 config if available
+        if config.phase8_config and config.phase8_config.use_atr_based_stops:
+            risk_level = getattr(signal, 'risk_level', 'Moderate')
+            if isinstance(signal, dict):
+                risk_level = signal.get('risk_level', 'Moderate')
+            
+            # Get ATR (Average True Range)
+            atr = getattr(signal, 'atr', None)
+            if isinstance(signal, dict):
+                atr = signal.get('atr')
+            
+            if atr:
+                multiplier = config.phase8_config.STOP_LOSS_MULTIPLIERS_BY_RISK.get(
+                    risk_level, 2.0
+                )
+                stop_distance = Decimal(str(atr)) * Decimal(str(multiplier))
+                stop_loss = entry_price - stop_distance
+                
+                logger.debug(f"ATR-based stop loss for {risk_level}: "
+                           f"{entry_price} - {stop_distance} = {stop_loss}")
+                return stop_loss
+        
+        # Fall back to percentage-based stop
+        if config.stop_loss_pct:
+            stop_distance = entry_price * (config.stop_loss_pct / Decimal('100'))
+            return entry_price - stop_distance
+        
+        return None
+    
+    def _get_take_profit_for_signal(
+        self,
+        signal: Any,  # ComprehensiveSignal or dict with risk_level and ATR
+        config: BacktestConfig,
+        entry_price: Decimal
+    ) -> Optional[Decimal]:
+        """
+        Phase 8: Get dynamic take profit based on risk level and ATR.
+        
+        Args:
+            signal: Signal object with risk_level and ATR data
+            config: Backtest configuration
+            entry_price: Entry price for position
+        
+        Returns:
+            Take profit price or None
+        """
+        # Use Phase 8 config if available
+        if config.phase8_config and config.phase8_config.use_atr_based_stops:
+            risk_level = getattr(signal, 'risk_level', 'Moderate')
+            if isinstance(signal, dict):
+                risk_level = signal.get('risk_level', 'Moderate')
+            
+            # Get ATR (Average True Range)
+            atr = getattr(signal, 'atr', None)
+            if isinstance(signal, dict):
+                atr = signal.get('atr')
+            
+            if atr:
+                multiplier = config.phase8_config.TAKE_PROFIT_MULTIPLIERS_BY_RISK.get(
+                    risk_level, 3.0
+                )
+                profit_distance = Decimal(str(atr)) * Decimal(str(multiplier))
+                take_profit = entry_price + profit_distance
+                
+                logger.debug(f"ATR-based take profit for {risk_level}: "
+                           f"{entry_price} + {profit_distance} = {take_profit}")
+                return take_profit
+        
+        # Fall back to percentage-based take profit
+        if config.take_profit_pct:
+            profit_distance = entry_price * (config.take_profit_pct / Decimal('100'))
+            return entry_price + profit_distance
+        
+        return None
+    
+    def _should_skip_extreme_risk(
+        self,
+        signal: Any,
+        config: BacktestConfig
+    ) -> bool:
+        """
+        Phase 8: Check if signal should be skipped due to extreme risk.
+        
+        Args:
+            signal: Signal object with risk_level
+            config: Backtest configuration
+        
+        Returns:
+            True if signal should be skipped
+        """
+        if config.phase8_config and config.phase8_config.skip_extreme_risk:
+            risk_level = getattr(signal, 'risk_level', 'Moderate')
+            if isinstance(signal, dict):
+                risk_level = signal.get('risk_level', 'Moderate')
+            
+            if risk_level == 'Extreme':
+                logger.info(f"Skipping Extreme risk signal: {getattr(signal, 'ticker', 'Unknown')}")
+                return True
+        
+        return False
+    
+    # ========================================================================
+    # END PHASE 8 METHODS
+    # ========================================================================
     
     async def _generate_signals_for_date(self, target_date: date) -> List[ComprehensiveSignal]:
         """Generate investment signals for a specific date"""

@@ -777,7 +777,7 @@ class SupabaseInterface(DatabaseInterface):
             SELECT s.*, r.started_at as run_started_at
             FROM latest_signals s
             JOIN runs r ON s.run_id = r.run_id
-            ORDER BY s.weighted_score DESC NULLS LAST
+            ORDER BY s.signal_score DESC NULLS LAST
             LIMIT $1
             """
             return await self.execute_query(query, [limit])
@@ -806,7 +806,7 @@ class SupabaseInterface(DatabaseInterface):
             SELECT 
                 COUNT(DISTINCT run_id) as total_runs,
                 COUNT(DISTINCT ticker) as total_tickers,
-                AVG(weighted_score) as avg_score,
+                AVG(signal_score) as avg_score,
                 MAX(run_datetime) as latest_run
             FROM signals
             WHERE run_datetime >= NOW() - INTERVAL '30 days'
@@ -832,12 +832,12 @@ class SupabaseInterface(DatabaseInterface):
             query = f"""
             SELECT 
                 COUNT(*) as total_signals,
-                AVG(s.weighted_score) as avg_weighted_score,
+                AVG(s.signal_score) as avg_signal_score,
                 COUNT(CASE WHEN s."3d_return" > 0 THEN 1 END)::DECIMAL / 
                 COUNT(s."3d_return") as hit_rate_3d,
                 AVG(s."3d_return") as avg_return_3d,
                 STDDEV(s."3d_return") as volatility_3d,
-                CORR(s.weighted_score, s."3d_return") as ic_correlation,
+                CORR(s.signal_score, s."3d_return") as ic_correlation,
                 COUNT(CASE WHEN s.beat_spy_3d = true THEN 1 END)::DECIMAL /
                 COUNT(s.beat_spy_3d) as beat_spy_rate
             FROM signals s
@@ -960,7 +960,7 @@ class SupabaseInterface(DatabaseInterface):
                 where_clause = "WHERE (backtest_phase IS NULL OR backtest_phase != 'Complete') AND run_datetime >= NOW() - INTERVAL '30 days'"
             
             query = f"""
-            SELECT id, ticker, run_id, run_datetime, weighted_score, 
+            SELECT id, ticker, run_id, run_datetime, signal_score, 
                    backtest_phase, "1d_return", "3d_return", "7d_return", "10d_return"
             FROM signals 
             {where_clause}

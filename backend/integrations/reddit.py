@@ -341,6 +341,9 @@ class RedditAnalytics:
     
     def __init__(self):
         self.reddit_integrator = RedditDataIntegrator()
+        # Expose reddit client for scraping methods
+        self.reddit = self.reddit_integrator.reddit
+        self.ticker_cache = self.reddit_integrator.ticker_cache
         
     def calculate_reddit_momentum_score(self, ticker: str, timeframes: List[str] = ['1h', '4h', '24h']) -> Optional[float]:
         """Calculate Reddit momentum score across multiple timeframes"""
