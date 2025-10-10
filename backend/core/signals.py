@@ -413,30 +413,68 @@ class SignalScorer:
         except Exception:
             return 0.0
     
-    def _calculate_financial_score(self, data: Dict) -> float:
-        """Calculate financial fundamentals score"""
-        score = 0.0
+    def _calculate_financial_score(self, financial_data: Dict[str, Any]) -> float:
+        """
+        Calculate comprehensive financial score using ALL available indicators.
+        Moved from pipeline.py for consolidation (Phase 6c-Part3).
         
-        # P/E Ratio (inverted - lower is better, but not too low)
-        pe_ratio = data.get('pe_ratio')
-        if pe_ratio and self.thresholds['PE_LOW'] <= pe_ratio <= self.thresholds['PE_HIGH']:
-            pe_score = 1.0 - min((pe_ratio - 15) / 25, 1.0)  # Optimal around 15
-            score += pe_score * self.weights.get('P/E Ratio', 0.0)
+        **PHASE 2 ENHANCED:** Now uses 30+ indicators with optimized weighting
         
-        # Market Cap (log-scaled)
-        market_cap = data.get('market_cap')
-        if market_cap and market_cap > 0:
-            # Prefer mid to large cap (better liquidity and stability)
-            cap_score = min(np.log10(market_cap / 1e9) / 3, 1.0)  # Scale to billions
-            score += cap_score * self.weights.get('Market Cap', 0.0)
+        Formula: Technical (40%) + Fundamentals (30%) + Options (15%) + Short Interest (15%)
         
-        # Revenue Growth
-        revenue_growth = data.get('revenue_growth', 0)
-        if revenue_growth > 0:
-            growth_score = min(revenue_growth / 0.2, 1.0)  # Cap at 20% growth
-            score += growth_score * self.weights.get('Revenue Growth', 0.0)
+        Technical Score (11 components):
+        - Momentum indicators (18%): 1d, 7d, 30d price changes
+        - RSI (12%): Overbought/oversold signals
+        - Moving averages (12%): 50d, 200d MA position
+        - MACD (10%): Trend direction and strength
+        - Volume analysis (12%): Spike ratio, correlation
+        - Volatility (10%): Level, rank, Bollinger bands
+        - Relative strength (10%): vs SPY and sector
+        - Beta (8%): Market correlation
+        - Momentum consistency (7%): Phase 1.4 metric
+        - Liquidity (6%): Phase 1.4 metric
+        - Exit signals (5%): Inverted exit strength
         
-        return max(0.0, score)
+        Fundamentals Score (10 components):
+        - Market cap (12%): Size category scoring
+        - Valuation (18%): P/E (8%), PEG (5%), P/S (5%)
+        - Profitability (20%): Profit margin (8%), Op margin (6%), ROE (6%)
+        - Growth (15%): Revenue (8%), Earnings (7%)
+        - Financial health (15%): Debt/equity (8%), Current ratio (4%), Quick ratio (3%)
+        - Cash flow (10%): Free cash flow yield
+        - Ownership (10%): Institutional (5%), Retail (5%)
+        
+        Options Score: Put/call ratio sentiment
+        Short Interest Score: Short squeeze potential (3 metrics)
+        
+        Returns:
+            float: Composite score [0.0-1.0] with normalization for missing data
+        """
+        try:
+            # ===== TECHNICAL INDICATORS SCORE (40%) =====
+            technical_score = self._calculate_technical_score(financial_data)
+            
+            # ===== FUNDAMENTALS SCORE (30%) =====
+            fundamentals_score = self._calculate_fundamentals_score(financial_data)
+            
+            # ===== OPTIONS SENTIMENT SCORE (15%) =====
+            options_score = self._calculate_options_score(financial_data)
+            
+            # ===== SHORT INTEREST SCORE (15%) =====
+            short_score = self._calculate_short_interest_score(financial_data)
+            
+            # Combine all components
+            financial_score = (
+                technical_score * 0.40 +
+                fundamentals_score * 0.30 +
+                options_score * 0.15 +
+                short_score * 0.15
+            )
+            
+            return min(max(financial_score, 0), 1.0)
+            
+        except Exception as e:
+            return 0.0
     
     def _calculate_fundamentals_score(self, financial_data: Dict[str, Any]) -> float:
         """
@@ -1061,6 +1099,61 @@ class SignalScorer:
         except Exception as e:
             # Note: Using generic exception since we don't have logger in SignalScorer
             return 0.3
+    
+    def _calculate_score_components(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate and store detailed score components for transparency.
+        Moved from pipeline.py for consolidation (Phase 6c-Part3).
+        
+        This method breaks down the weighted score into its constituent parts
+        for better explainability and debugging.
+        """
+        try:
+            # Extract scoring components
+            reddit_score = signal.get('reddit_score', 0)
+            financial_score = signal.get('financial_score', 0)
+            weighted_score = signal.get('weighted_score', 0)
+            
+            # Calculate component contributions
+            reddit_weight = 0.4  # Default weights from scoring logic
+            financial_weight = 0.6
+            
+            reddit_contribution = reddit_score * reddit_weight
+            financial_contribution = financial_score * financial_weight
+            
+            # Technical factor contributions
+            technical_factors = {
+                'rsi_factor': self._calculate_rsi_factor(signal.get('rsi')),
+                'macd_factor': self._calculate_macd_factor(signal),
+                'volume_factor': self._calculate_volume_factor(signal.get('volume_ratio', 1)),
+                'momentum_factor': self._calculate_momentum_factor(signal),
+                'risk_penalty': self._calculate_risk_penalty(signal.get('risk_score', 50))
+            }
+            
+            # Store detailed score breakdown
+            signal['score_components'] = {
+                'weighted_score': weighted_score,
+                'reddit_contribution': round(reddit_contribution, 4),
+                'financial_contribution': round(financial_contribution, 4),
+                'reddit_weight': reddit_weight,
+                'financial_weight': financial_weight,
+                'technical_factors': technical_factors,
+                'score_calculation_method': 'comprehensive_v1.0'
+            }
+            
+            # Generate score explanation
+            signal['score_explanation'] = self._generate_score_explanation(signal, technical_factors)
+            
+            # Set scoring metadata
+            signal['scoring_version'] = '1.0'
+            signal['prediction_confidence'] = self._calculate_prediction_confidence(signal)
+            
+        except Exception as e:
+            # Fallback minimal components
+            signal['score_components'] = {'weighted_score': signal.get('weighted_score', 0)}
+            signal['score_explanation'] = f"Score {signal.get('weighted_score', 0):.3f} based on combined reddit and financial metrics"
+            
+        return signal
     
     def _calculate_risk_score(self, data: Dict) -> float:
         """Calculate risk-adjusted score (negative factors)"""
