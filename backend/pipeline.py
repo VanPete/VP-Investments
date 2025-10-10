@@ -2104,7 +2104,7 @@ class UnifiedPipeline:
         Example:
             >>> pipeline = UnifiedPipeline()
             >>> signal = await pipeline.generate_single_signal('AAPL')
-            >>> print(f"Score: {signal['signal_score']}, Beta: {signal['beta']}")
+            >>> print(f"Score: {signal['weighted_score']}, Beta: {signal['beta']}")
         """
         try:
             self.logger.info(f"🎯 Generating signal for {ticker}...")
@@ -2123,14 +2123,26 @@ class UnifiedPipeline:
                 self.logger.error(f"Failed to generate financial signal for {ticker}")
                 return None
             
-            signal = financial_signals[0]
+            financial_signal = financial_signals[0]
+            
+            # Transform to combined signal format with proper score keys
+            signal = {
+                'ticker': ticker,
+                'financial_score': financial_signal['score'],
+                'weighted_score': financial_signal['score'],  # No reddit data, so financial_score = weighted_score
+                'reddit_score': 0,
+                'news_score': 0,
+                'confidence': financial_signal['confidence'],
+                'financial_data': financial_signal['metadata'],
+                'reddit_data': {},
+                'news_data': {}
+            }
             
             # Step 2: Add Reddit data if requested
             # Note: For now, Reddit data requires full pipeline run with scraping
             # Individual ticker Reddit lookup can be added in future enhancement
             self.logger.info(f"Step 2/4: Setting default Reddit values (full scraping not in single signal mode)")
             signal['upvotes'] = 0
-            signal['reddit_score'] = 0
             signal['sentiment_score'] = 0
             signal['mention_count'] = 0
             
@@ -2149,17 +2161,13 @@ class UnifiedPipeline:
             
             # Step 4: Save to database
             self.logger.info(f"Step 4/4: Saving signal to database...")
-            
-            # Add weighted_score default if missing (for database compatibility)
-            if 'weighted_score' not in enhanced_signal:
-                enhanced_signal['weighted_score'] = enhanced_signal.get('signal_score', 0)
-            
             save_success = await self.save_signals_to_database([enhanced_signal])
             
             if save_success:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 self.logger.info(f"✅ SUCCESS: Signal for {ticker} generated and saved in {elapsed:.2f}s")
-                self.logger.info(f"   Score: {enhanced_signal.get('signal_score', 'N/A')}")
+                self.logger.info(f"   Weighted Score: {enhanced_signal.get('weighted_score', 'N/A')}")
+                self.logger.info(f"   Financial Score: {enhanced_signal.get('financial_score', 'N/A')}")
                 self.logger.info(f"   Beta: {enhanced_signal.get('beta', 'N/A')}")
                 self.logger.info(f"   MACD: {enhanced_signal.get('macd_line', 'N/A')}")
                 self.logger.info(f"   Upvotes: {enhanced_signal.get('upvotes', 'N/A')}")

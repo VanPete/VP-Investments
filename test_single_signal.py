@@ -22,7 +22,9 @@ async def test_single_signal_generation():
     if signal:
         print(f"\n[SUCCESS] Signal generated successfully!")
         print(f"   Ticker: {signal.get('ticker')}")
-        print(f"   Score: {signal.get('signal_score')}")
+        print(f"   Weighted Score: {signal.get('weighted_score')}")
+        print(f"   Financial Score: {signal.get('financial_score')}")
+        print(f"   Reddit Score: {signal.get('reddit_score')}")
         print(f"   Beta: {signal.get('beta')}")
         print(f"   MACD Line: {signal.get('macd_line')}")
         print(f"   Bollinger Upper: {signal.get('bollinger_upper')}")
@@ -41,7 +43,8 @@ async def test_single_signal_generation():
     if signal2:
         print(f"\n[SUCCESS] Signal generated successfully!")
         print(f"   Ticker: {signal2.get('ticker')}")
-        print(f"   Score: {signal2.get('signal_score')}")
+        print(f"   Weighted Score: {signal2.get('weighted_score')}")
+        print(f"   Financial Score: {signal2.get('financial_score')}")
         print(f"   Beta: {signal2.get('beta')}")
         print(f"   MACD Line: {signal2.get('macd_line')}")
         print(f"   Upvotes: {signal2.get('upvotes')} (should be 0)")
@@ -55,7 +58,7 @@ async def test_single_signal_generation():
     print("  POST /api/signals/generate")
     print("  Body: { ticker: 'AAPL', include_reddit: true }")
     print("\nResponse:")
-    print("  { ticker, signal_score, beta, macd_line, upvotes, ... }")
+    print("  { ticker, weighted_score, financial_score, reddit_score, beta, macd_line, upvotes, ... }")
 
 if __name__ == "__main__":
     asyncio.run(test_single_signal_generation())
