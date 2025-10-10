@@ -51,7 +51,10 @@ try:
     logger.info("Integrators loaded successfully")
 except ImportError as e:
     INTEGRATORS_AVAILABLE = False
-    logger.warning(f"Integrators not available: {e}")# Simple configuration class
+    logger.warning(f"Integrators not available: {e}")
+
+# Import SignalScorer for scoring methods (Phase 6a consolidation)
+from backend.core.signals import SignalScorer# Simple configuration class
 class Config:
     """Simple configuration class for pipeline settings."""
     
@@ -86,6 +89,9 @@ class UnifiedPipeline:
         """Initialize the unified pipeline with configuration."""
         self.config = config or Config()
         self.logger = logger
+        
+        # Initialize SignalScorer for scoring methods (Phase 6a consolidation)
+        self.signal_scorer = SignalScorer()
         
         # Initialize components
         self._init_reddit()
@@ -935,8 +941,8 @@ class UnifiedPipeline:
                 avg_sentiment = data.get('avg_sentiment', 0)
                 avg_score = data.get('avg_score', 0)
                 
-                # Reddit signal score (0-1 scale)
-                reddit_score = self._calculate_reddit_score(mention_count, avg_sentiment, avg_score)
+                # Reddit signal score (0-1 scale) - delegated to SignalScorer
+                reddit_score = self.signal_scorer._calculate_reddit_score(mention_count, avg_sentiment, avg_score)
                 
                 # Create Reddit signal
                 reddit_signal = {
@@ -962,26 +968,7 @@ class UnifiedPipeline:
         reddit_signals.sort(key=lambda x: x['score'], reverse=True)
         return reddit_signals
     
-    def _calculate_reddit_score(self, mention_count: int, avg_sentiment: float, avg_score: float) -> float:
-        """Calculate Reddit-specific signal score."""
-        try:
-            # Normalize mention count (1-5 mentions = 0.2-1.0 score)
-            mention_score = min(mention_count / 5, 1.0)
-            
-            # Sentiment factor (positive sentiment boosts, negative reduces)
-            sentiment_factor = max(0.1, (avg_sentiment + 1) / 2)  # Convert -1,1 to 0.1,1
-            
-            # Average post score factor (normalize by typical Reddit scores)
-            score_factor = min(max(avg_score / 100, 0.1), 2.0)  # 0.1 to 2.0 multiplier
-            
-            # Combine factors
-            reddit_score = mention_score * sentiment_factor * min(score_factor, 1.5)
-            
-            return min(max(reddit_score, 0), 1.0)  # Clamp 0-1
-            
-        except Exception:
-            return 0.0
-    
+
     def generate_financial_signals(self, tickers: List[str]) -> List[Dict[str, Any]]:
         """
         Generate financial-based signals from market data.
@@ -1263,8 +1250,8 @@ class UnifiedPipeline:
             fundamentals_score = self._calculate_fundamentals_score(financial_data)
             self.logger.debug(f"Fundamentals score: {fundamentals_score:.3f}")
             
-            # ===== OPTIONS SENTIMENT SCORE (15%) =====
-            options_score = self._calculate_options_score(financial_data)
+            # ===== OPTIONS SENTIMENT SCORE (15%) ===== - delegated to SignalScorer
+            options_score = self.signal_scorer._calculate_options_score(financial_data)
             self.logger.debug(f"Options score: {options_score:.3f}")
             
             # ===== SHORT INTEREST SCORE (15%) =====
@@ -1891,24 +1878,7 @@ class UnifiedPipeline:
             self.logger.warning(f"Error calculating fundamentals score: {e}")
             return 0.0
     
-    def _calculate_options_score(self, financial_data: Dict[str, Any]) -> float:
-        """Calculate options sentiment score."""
-        try:
-            # Put/call ratio (lower is bullish)
-            put_call_ratio = financial_data.get('put_call_ratio')
-            if put_call_ratio and not np.isnan(put_call_ratio):
-                if put_call_ratio < 0.7:
-                    return 1.0  # Very bullish
-                elif put_call_ratio < 1.0:
-                    return 0.7  # Moderately bullish
-                else:
-                    return 0.4  # Bearish
-            
-            return 0.5  # Neutral if no data
-            
-        except Exception:
-            return 0.5
-    
+
     def _calculate_short_interest_score(self, financial_data: Dict[str, Any]) -> float:
         """Calculate short squeeze potential score - ENHANCED v2.0"""
         try:
@@ -1976,8 +1946,8 @@ class UnifiedPipeline:
                 if not news_data or news_data.get('news_mentions', 0) == 0:
                     continue
                 
-                # Calculate news signal score
-                news_score = self._calculate_news_score(news_data)
+                # Calculate news signal score - delegated to SignalScorer
+                news_score = self.signal_scorer._calculate_news_score(news_data=news_data)
                 
                 # Create news signal
                 news_signal = {
@@ -1998,26 +1968,7 @@ class UnifiedPipeline:
         news_signals.sort(key=lambda x: x['score'], reverse=True)
         return news_signals
     
-    def _calculate_news_score(self, news_data: Dict[str, Any]) -> float:
-        """Calculate news-specific signal score."""
-        try:
-            # Base news sentiment score
-            base_score = news_data.get('news_score', 0)
-            
-            # Normalize from -1,1 to 0,1 scale
-            normalized_score = (base_score + 1) / 2
-            
-            # Boost based on number of mentions
-            mention_count = news_data.get('news_mentions', 0)
-            mention_multiplier = min(1 + (mention_count / 10), 2.0)
-            
-            news_score = normalized_score * mention_multiplier
-            
-            return min(max(news_score, 0), 1.0)
-            
-        except Exception:
-            return 0.0
-    
+
     def combine_signals_to_scored_signals(self, 
                                         reddit_signals: List[Dict], 
                                         financial_signals: List[Dict], 
@@ -2612,7 +2563,7 @@ class UnifiedPipeline:
                 'macd_factor': self._calculate_macd_factor(signal),
                 'volume_factor': self._calculate_volume_factor(signal.get('volume_ratio', 1)),
                 'momentum_factor': self._calculate_momentum_factor(signal),
-                'risk_penalty': self._calculate_risk_penalty(signal.get('risk_score', 50))
+                'risk_penalty': self.signal_scorer._calculate_risk_penalty(signal.get('risk_score', 50))
             }
             
             # Store detailed score breakdown
@@ -2698,15 +2649,7 @@ class UnifiedPipeline:
             
         return round(momentum, 4)
     
-    def _calculate_risk_penalty(self, risk_score: float) -> float:
-        """Calculate risk penalty for score"""
-        if risk_score > 80:
-            return -0.02  # High risk penalty
-        elif risk_score > 60:
-            return -0.01  # Moderate risk penalty  
-        else:
-            return 0.0
-    
+
     def _generate_score_explanation(self, signal: Dict[str, Any], technical_factors: Dict[str, float]) -> str:
         """Generate human-readable score explanation"""
         

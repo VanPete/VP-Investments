@@ -346,44 +346,72 @@ class SignalScorer:
                 confidence=0.0
             )
     
-    def _calculate_reddit_score(self, data: Dict) -> float:
-        """Calculate Reddit-based score component"""
-        score = 0.0
+    def _calculate_reddit_score(self, mention_count: int = None, avg_sentiment: float = None, 
+                               avg_score: float = None, data: Dict = None) -> float:
+        """
+        Calculate Reddit-specific signal score.
+        Moved from pipeline.py for consolidation.
         
-        # Reddit sentiment (normalized to 0-1, then weighted)
-        sentiment = data.get('reddit_sentiment', 0.5)
-        score += sentiment * self.weights.get('Reddit Sentiment', 0.0)
-        
-        # Mentions (log-scaled to prevent outliers)
-        mentions = data.get('reddit_mentions', data.get('mentions', 0))
-        if mentions > 0:
-            mentions_score = min(np.log10(mentions + 1) / 2, 1.0)  # Cap at 1.0
-            score += mentions_score * self.weights.get('Mentions', 0.0)
-        
-        # Upvotes (log-scaled)
-        upvotes = data.get('reddit_upvotes', data.get('upvotes', 0))
-        if upvotes > 0:
-            upvotes_score = min(np.log10(upvotes + 1) / 3, 1.0)  # Cap at 1.0
-            score += upvotes_score * self.weights.get('Upvotes', 0.0)
-        
-        # Post recency (time decay factor)
-        first_mention = data.get('first_mention')
-        if first_mention and isinstance(first_mention, datetime):
-            hours_ago = (datetime.now() - first_mention).total_seconds() / 3600
-            recency_score = np.exp(-hours_ago / 24)  # 24 hour half-life
-            score += recency_score * self.weights.get('Post Recency', 0.0)
-        
-        return max(0.0, score)
+        Can be called with individual params OR with data dict for backward compatibility.
+        """
+        try:
+            # Support both calling patterns
+            if data is not None:
+                mention_count = data.get('reddit_mentions', data.get('mentions', 0))
+                avg_sentiment = data.get('reddit_sentiment', 0.5)
+                avg_score = data.get('reddit_score', data.get('avg_score', 0))
+            
+            if mention_count is None or avg_sentiment is None or avg_score is None:
+                return 0.0
+            
+            # Normalize mention count (1-5 mentions = 0.2-1.0 score)
+            mention_score = min(mention_count / 5, 1.0)
+            
+            # Sentiment factor (positive sentiment boosts, negative reduces)
+            sentiment_factor = max(0.1, (avg_sentiment + 1) / 2)  # Convert -1,1 to 0.1,1
+            
+            # Average post score factor (normalize by typical Reddit scores)
+            score_factor = min(max(avg_score / 100, 0.1), 2.0)  # 0.1 to 2.0 multiplier
+            
+            # Combine factors
+            reddit_score = mention_score * sentiment_factor * min(score_factor, 1.5)
+            
+            return min(max(reddit_score, 0), 1.0)  # Clamp 0-1
+            
+        except Exception:
+            return 0.0
     
-    def _calculate_news_score(self, data: Dict) -> float:
-        """Calculate news-based score component"""
-        # For now, return minimal news score since we don't have comprehensive news data
-        news_sentiment = data.get('news_sentiment', 0)
-        news_mentions = data.get('news_mentions', 0)
+    def _calculate_news_score(self, news_data: Dict[str, Any] = None, data: Dict = None) -> float:
+        """
+        Calculate news-specific signal score.
+        Moved from pipeline.py for consolidation.
         
-        if news_mentions > 0:
-            return min(news_sentiment * 0.5 + (news_mentions / 10) * 0.5, 1.0)
-        return 0.1
+        Can be called with news_data param OR with data dict for backward compatibility.
+        """
+        try:
+            # Support both calling patterns
+            if data is not None:
+                news_data = data
+            
+            if news_data is None:
+                return 0.0
+            
+            # Base news sentiment score
+            base_score = news_data.get('news_score', 0)
+            
+            # Normalize from -1,1 to 0,1 scale
+            normalized_score = (base_score + 1) / 2
+            
+            # Boost based on number of mentions
+            mention_count = news_data.get('news_mentions', 0)
+            mention_multiplier = min(1 + (mention_count / 10), 2.0)
+            
+            news_score = normalized_score * mention_multiplier
+            
+            return min(max(news_score, 0), 1.0)
+            
+        except Exception:
+            return 0.0
     
     def _calculate_financial_score(self, data: Dict) -> float:
         """Calculate financial fundamentals score"""
@@ -443,6 +471,39 @@ class SignalScorer:
             score += macd_score * self.weights.get('MACD Histogram', 0.0)
         
         return max(0.0, score)
+    
+    def _calculate_options_score(self, financial_data: Dict[str, Any]) -> float:
+        """
+        Calculate options sentiment score.
+        Moved from pipeline.py for consolidation.
+        """
+        try:
+            # Put/call ratio (lower is bullish)
+            put_call_ratio = financial_data.get('put_call_ratio')
+            if put_call_ratio and not np.isnan(put_call_ratio):
+                if put_call_ratio < 0.7:
+                    return 1.0  # Very bullish
+                elif put_call_ratio < 1.0:
+                    return 0.7  # Moderately bullish
+                else:
+                    return 0.4  # Bearish
+            
+            return 0.5  # Neutral if no data
+            
+        except Exception:
+            return 0.5
+    
+    def _calculate_risk_penalty(self, risk_score: float) -> float:
+        """
+        Calculate risk penalty for score.
+        Moved from pipeline.py for consolidation.
+        """
+        if risk_score > 80:
+            return -0.02  # High risk penalty
+        elif risk_score > 60:
+            return -0.01  # Moderate risk penalty  
+        else:
+            return 0.0
     
     def _calculate_risk_score(self, data: Dict) -> float:
         """Calculate risk-adjusted score (negative factors)"""
