@@ -42,7 +42,6 @@ class RedditDataIntegrator:
             'SecurityAnalysis',
             'ValueInvesting', 
             'StockMarket',
-            'pennystocks'
         ]
         
         # Cache of known tickers for fast lookup
@@ -727,7 +726,8 @@ class RedditAnalytics:
             Dict[str, Any]: Scraped data with ticker mentions and metadata
         """
         if subreddits is None:
-            subreddits = ['stocks', 'investing', 'wallstreetbets']
+            # Use full list of 7 subreddits in production mode
+            subreddits = self.reddit_integrator.subreddits_full
         
         logger.info(f"Starting Reddit scraping from subreddits: {subreddits}")
         

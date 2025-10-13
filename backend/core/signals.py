@@ -29,6 +29,89 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# NORMALIZATION HELPERS (PHASE 2: FUNDAMENTAL REDESIGN)
+# ============================================================================
+
+def normalize_direct(value: Optional[float], low: float, high: float) -> Optional[float]:
+    """
+    Normalize where higher values are better (ROE, Margins, Growth).
+    
+    Args:
+        value: Value to normalize
+        low: Minimum threshold (0.0 score)
+        high: Maximum threshold (1.0 score)
+        
+    Returns:
+        Score from 0.0 to 1.0 (1.0 = best), or None if value is None
+        
+    Example:
+        normalize_direct(15.0, 0.0, 25.0) = 0.60 (15% ROE normalized)
+    """
+    if value is None:
+        return None
+    # Clamp to range
+    value = max(min(value, high), low)
+    # Normalize to [0, 1]
+    if high == low:
+        return 0.5
+    return (value - low) / (high - low)
+
+
+def normalize_inverted(value: Optional[float], good_low: float, bad_high: float) -> Optional[float]:
+    """
+    Normalize where lower values are better (PE, Debt/Equity).
+    
+    Args:
+        value: Value to normalize
+        good_low: Best possible value (lowest) = 1.0 score
+        bad_high: Worst acceptable value (highest) = 0.0 score
+        
+    Returns:
+        Score from 0.0 to 1.0 (1.0 = best), or None if value is None
+        
+    Example:
+        normalize_inverted(25, 5, 50) = 0.56 (PE of 25 normalized)
+        normalize_inverted(0.5, 0, 2) = 0.75 (Debt/Equity of 0.5 normalized)
+    """
+    if value is None:
+        return None
+    # Clamp to range
+    value = max(min(value, bad_high), good_low)
+    # Invert: lower is better
+    if bad_high == good_low:
+        return 0.5
+    return (bad_high - value) / (bad_high - good_low)
+
+
+def normalize_growth(value: Optional[float], negative_threshold: float = -0.10, 
+                     positive_threshold: float = 0.30) -> Optional[float]:
+    """
+    Normalize growth metrics that can be negative.
+    
+    Args:
+        value: Growth value as decimal (e.g., -0.10 to 0.30 for -10% to +30%)
+        negative_threshold: Growth below this = 0.0 score (default -10%)
+        positive_threshold: Growth above this = 1.0 score (default +30%)
+        
+    Returns:
+        Score from 0.0 to 1.0, or None if value is None
+        
+    Example:
+        normalize_growth(0.15, -0.10, 0.30) = 0.625 (15% growth normalized)
+        normalize_growth(-0.05, -0.10, 0.30) = 0.125 (-5% growth normalized)
+    """
+    if value is None:
+        return None
+    # Clamp to range
+    if value < negative_threshold:
+        return 0.0
+    if value > positive_threshold:
+        return 1.0
+    # Normalize to [0, 1]
+    return (value - negative_threshold) / (positive_threshold - negative_threshold)
+
+
+# ============================================================================
 # PHASE 2: Z-SCORE AND ENHANCEMENT INFRASTRUCTURE
 # ============================================================================
 
@@ -3391,169 +3474,200 @@ async def score_multiple_tickers(tickers_data: List[Dict]) -> List[SignalResult]
 
 def _calculate_fundamental_score_standalone(financial_data: Dict[str, Any]) -> float:
     """
-    Phase 7: Standalone fundamental scoring (25% of total score).
+    Phase 2: REDESIGNED Fundamental Scoring with 100% Weight Distribution.
     
-    Separated from _calculate_financial_score() which previously combined
-    technical + fundamental. Now fundamental is its own group.
+    New 6-Category System (13 signals total):
     
-    Components (9 signals):
-    - Valuation: P/E, PEG, P/S ratios
-    - Profitability: Margins, ROE
-    - Growth: Revenue and earnings growth
-    - Financial health: Debt ratios, cash flow
-    - Analyst consensus: Ratings and target upside
+    1. Growth (25%): revenue_growth (10%), eps_growth (10%), fcf_growth_3y_cagr (5%)
+    2. Profitability (20%): roe (5%), roic (10%), fcf_margin (5%)
+    3. Valuation (20%): pe_ratio (5%), price_to_sales (5%), price_to_book (5%), 
+                        sector_relative_percentile (5% - deferred to Phase 8)
+    4. Financial Health (15%): debt_to_equity (5%), current_ratio (5%), interest_coverage (5%)
+    5. Earnings Quality (10%): last_earnings_surprise (5%), earnings_surprise_streak (5%)
+    6. Income (10%): dividend_yield (5%), share_buyback_yield (5%)
     
-    Returns: float [0.0-1.0] with aggressive normalization (0.2-0.8 spread)
+    NULL Handling Strategy (Hybrid):
+    - Redistribute missing weights proportionally to available signals
+    - If data completeness < 70%, apply 20% penalty to final score
+    - Missing signals don't zero out valid ones
+    
+    Returns: float [0.0-1.0] representing normalized fundamental score
     """
     try:
-        fundamental_components = []
-        weights_used = []
+        # Define weights for all fundamental signals (sums to 1.0)
+        weights = {
+            # Growth (25%)
+            "revenue_growth": 0.10,
+            "eps_growth": 0.10,
+            "fcf_growth_3y_cagr": 0.05,
+            
+            # Profitability (20%)
+            "roe": 0.05,
+            "roic": 0.10,
+            "fcf_margin": 0.05,
+            
+            # Valuation (20%)
+            "pe_ratio": 0.05,
+            "price_to_sales": 0.05,
+            "price_to_book": 0.05,
+            "sector_relative_percentile": 0.05,  # Phase 8 - currently NULL
+            
+            # Financial Health (15%)
+            "debt_to_equity": 0.05,
+            "current_ratio": 0.05,
+            "interest_coverage": 0.05,
+            
+            # Earnings Quality (10%)
+            "last_earnings_surprise_pct": 0.05,
+            "earnings_surprise_streak": 0.05,
+            
+            # Income (10%)
+            "dividend_yield": 0.05,
+            "share_buyback_yield": 0.05,
+        }
         
-        # Get market cap for normalization
-        market_cap = financial_data.get('market_cap', 0)
+        # Normalize all fields using appropriate functions
+        # Note: Values are already in percentage format from FinancialMetricsCalculator
+        normalized_values = {}
         
-        # 1. VALUATION METRICS (30%)
-        pe_ratio = financial_data.get('pe_ratio')
-        if pe_ratio and not np.isnan(pe_ratio) and pe_ratio > 0:
-            if 8 <= pe_ratio <= 18:
-                pe_score = 0.8  # Aggressive range
-            elif 5 <= pe_ratio < 8 or 18 < pe_ratio <= 25:
-                pe_score = 0.5
-            elif pe_ratio < 5:
-                pe_score = 0.3
-            else:
-                pe_score = 0.2
-            fundamental_components.append(pe_score * 0.12)
-            weights_used.append(0.12)
+        # === GROWTH (25%) ===
+        # Revenue growth: -10% to +30% range (stored as percentages: 12.9 = 12.9%)
+        rev_growth = financial_data.get('revenue_growth')
+        if rev_growth is not None:
+            # Convert percentage to decimal for normalize_growth
+            normalized_values['revenue_growth'] = normalize_growth(rev_growth / 100, -0.10, 0.30)
         
-        peg_ratio = financial_data.get('peg_ratio')
-        if peg_ratio and not np.isnan(peg_ratio):
-            if 0.5 <= peg_ratio <= 1.5:
-                peg_score = 0.8
-            elif 0 < peg_ratio < 0.5 or 1.5 < peg_ratio <= 2.5:
-                peg_score = 0.5
-            else:
-                peg_score = 0.2
-            fundamental_components.append(peg_score * 0.10)
-            weights_used.append(0.10)
+        # EPS growth: -10% to +30% range (alias for earnings_growth, stored as percentage)
+        eps_growth = financial_data.get('eps_growth')
+        if eps_growth is not None:
+            normalized_values['eps_growth'] = normalize_growth(eps_growth / 100, -0.10, 0.30)
         
-        ps_ratio = financial_data.get('price_to_sales')
-        if ps_ratio and not np.isnan(ps_ratio):
-            if ps_ratio < 2:
-                ps_score = 0.8
-            elif ps_ratio < 5:
-                ps_score = 0.5
-            else:
-                ps_score = 0.3
-            fundamental_components.append(ps_score * 0.08)
-            weights_used.append(0.08)
+        # FCF growth 3Y CAGR: 0% to +20% range (stored as percentage)
+        fcf_growth = financial_data.get('fcf_growth_3y_cagr')
+        if fcf_growth is not None:
+            normalized_values['fcf_growth_3y_cagr'] = normalize_growth(fcf_growth / 100, 0.0, 0.20)
         
-        # 2. PROFITABILITY METRICS (25%)
-        profit_margin = financial_data.get('profit_margin')
-        if profit_margin and not np.isnan(profit_margin):
-            if profit_margin > 0.15:
-                margin_score = 0.8
-            elif profit_margin > 0.05:
-                margin_score = 0.5
-            else:
-                margin_score = 0.2
-            fundamental_components.append(margin_score * 0.10)
-            weights_used.append(0.10)
-        
-        operating_margin = financial_data.get('operating_margin')
-        if operating_margin and not np.isnan(operating_margin):
-            if operating_margin > 0.15:
-                op_score = 0.8
-            elif operating_margin > 0.05:
-                op_score = 0.5
-            else:
-                op_score = 0.2
-            fundamental_components.append(op_score * 0.08)
-            weights_used.append(0.08)
-        
+        # === PROFITABILITY (20%) ===
+        # ROE: 0% to 25% range (stored as percentage: 5.0, 25.0)
         roe = financial_data.get('roe')
-        if roe and not np.isnan(roe):
-            if roe > 0.15:
-                roe_score = 0.8
-            elif roe > 0.08:
-                roe_score = 0.5
-            else:
-                roe_score = 0.3
-            fundamental_components.append(roe_score * 0.07)
-            weights_used.append(0.07)
+        if roe is not None and not np.isnan(roe):
+            normalized_values['roe'] = normalize_direct(roe, 0.0, 25.0)
         
-        # 3. GROWTH METRICS (20%)
-        revenue_growth = financial_data.get('revenue_growth')
-        if revenue_growth and not np.isnan(revenue_growth):
-            if revenue_growth > 0.20:
-                rev_score = 0.8
-            elif revenue_growth > 0.10:
-                rev_score = 0.5
-            elif revenue_growth > 0:
-                rev_score = 0.3
-            else:
-                rev_score = 0.2
-            fundamental_components.append(rev_score * 0.12)
-            weights_used.append(0.12)
+        # ROIC: 0% to 25% range (stored as percentage)
+        roic = financial_data.get('roic')
+        if roic is not None and not np.isnan(roic):
+            normalized_values['roic'] = normalize_direct(roic, 0.0, 25.0)
         
-        earnings_growth = financial_data.get('earnings_growth')
-        if earnings_growth and not np.isnan(earnings_growth):
-            if earnings_growth > 0.20:
-                earn_score = 0.8
-            elif earnings_growth > 0.10:
-                earn_score = 0.5
-            elif earnings_growth > 0:
-                earn_score = 0.3
-            else:
-                earn_score = 0.2
-            fundamental_components.append(earn_score * 0.08)
-            weights_used.append(0.08)
+        # FCF Margin: 0% to 25% range (stored as percentage)
+        fcf_margin = financial_data.get('fcf_margin')
+        if fcf_margin is not None and not np.isnan(fcf_margin):
+            normalized_values['fcf_margin'] = normalize_direct(fcf_margin, 0.0, 25.0)
         
-        # 4. ANALYST CONSENSUS (15%)
-        target_upside_pct = financial_data.get('target_upside_pct')
-        recommendation_mean = financial_data.get('recommendation_mean')
-        if target_upside_pct is not None and not np.isnan(target_upside_pct):
-            if target_upside_pct > 20:
-                analyst_score = 0.8
-            elif target_upside_pct > 10:
-                analyst_score = 0.5
-            elif target_upside_pct > 0:
-                analyst_score = 0.3
-            else:
-                analyst_score = 0.2
-            if recommendation_mean is not None and not np.isnan(recommendation_mean):
-                if recommendation_mean <= 2.0:
-                    analyst_score = min(analyst_score + 0.15, 0.95)
-                elif recommendation_mean >= 3.5:
-                    analyst_score = max(analyst_score - 0.15, 0.05)
-            fundamental_components.append(analyst_score * 0.15)
-            weights_used.append(0.15)
+        # === VALUATION (20%) ===
+        # PE Ratio: 5 to 50 range (lower is better)
+        pe_ratio = financial_data.get('pe_ratio')
+        if pe_ratio is not None and not np.isnan(pe_ratio) and pe_ratio > 0:
+            normalized_values['pe_ratio'] = normalize_inverted(pe_ratio, 5, 50)
         
-        # 5. FINANCIAL HEALTH (10%)
+        # Price to Sales: 0.5 to 10 range (lower is better)
+        price_to_sales = financial_data.get('price_to_sales')
+        if price_to_sales is not None and not np.isnan(price_to_sales):
+            normalized_values['price_to_sales'] = normalize_inverted(price_to_sales, 0.5, 10)
+        
+        # Price to Book: 0.5 to 8 range (lower is better)
+        price_to_book = financial_data.get('price_to_book')
+        if price_to_book is not None and not np.isnan(price_to_book):
+            normalized_values['price_to_book'] = normalize_inverted(price_to_book, 0.5, 8)
+        
+        # Sector Relative Percentile: 0 to 1 range (already normalized) - Phase 8
+        sector_pct = financial_data.get('sector_relative_percentile')
+        if sector_pct is not None:
+            normalized_values['sector_relative_percentile'] = sector_pct
+        
+        # === FINANCIAL HEALTH (15%) ===
+        # Debt to Equity: 0 to 200 range (lower is better)
+        # Note: Modern large-cap companies often have D/E ratios of 50-150
+        # UNH=75.58, AAPL=154.49 are typical for Fortune 500 companies
         debt_to_equity = financial_data.get('debt_to_equity')
-        if debt_to_equity and not np.isnan(debt_to_equity):
-            if debt_to_equity < 0.3:
-                debt_score = 0.8
-            elif debt_to_equity < 0.6:
-                debt_score = 0.5
+        if debt_to_equity is not None and not np.isnan(debt_to_equity):
+            normalized_values['debt_to_equity'] = normalize_inverted(debt_to_equity, 0, 200)
+        
+        # Current Ratio: 1.0 to 2.5 range (higher is better)
+        current_ratio = financial_data.get('current_ratio')
+        if current_ratio is not None and not np.isnan(current_ratio):
+            normalized_values['current_ratio'] = normalize_direct(current_ratio, 1.0, 2.5)
+        
+        # Interest Coverage: 1.5 to 8.0 range (higher is better)
+        interest_coverage = financial_data.get('interest_coverage')
+        if interest_coverage is not None and not np.isnan(interest_coverage):
+            normalized_values['interest_coverage'] = normalize_direct(interest_coverage, 1.5, 8.0)
+        
+        # === EARNINGS QUALITY (10%) ===
+        # Last Earnings Surprise: -10% to +10% range (as percentage)
+        last_surprise = financial_data.get('last_earnings_surprise_pct')
+        if last_surprise is not None and not np.isnan(last_surprise):
+            normalized_values['last_earnings_surprise_pct'] = normalize_direct(last_surprise, -10.0, 10.0)
+        
+        # Earnings Surprise Streak: 0 to 1 range (already normalized as fraction)
+        surprise_streak = financial_data.get('earnings_surprise_streak')
+        if surprise_streak is not None and not np.isnan(surprise_streak):
+            normalized_values['earnings_surprise_streak'] = surprise_streak  # Already 0-1
+        
+        # === INCOME (10%) ===
+        # Dividend Yield: 0% to 6% range (stored as percentage)
+        div_yield = financial_data.get('dividend_yield')
+        if div_yield is not None and not np.isnan(div_yield):
+            normalized_values['dividend_yield'] = normalize_direct(div_yield, 0.0, 6.0)
+        
+        # Share Buyback Yield: 0% to 5% range (stored as percentage)
+        buyback_yield = financial_data.get('share_buyback_yield')
+        if buyback_yield is not None and not np.isnan(buyback_yield):
+            normalized_values['share_buyback_yield'] = normalize_direct(buyback_yield, 0.0, 5.0)
+        
+        # === CALCULATE WEIGHTED SCORE ===
+        scores = []
+        total_weight_used = 0.0
+        missing_fields = []
+        
+        for field, weight in weights.items():
+            norm_value = normalized_values.get(field)
+            if norm_value is not None:
+                scores.append(norm_value * weight)
+                total_weight_used += weight
             else:
-                debt_score = 0.2
-            fundamental_components.append(debt_score * 0.10)
-            weights_used.append(0.10)
+                missing_fields.append(field)
         
-        # Normalize by actual weights used
-        if fundamental_components and weights_used:
-            total_weight = sum(weights_used)
-            if total_weight > 0:
-                normalization_factor = 1.0 / total_weight
-                total_score = sum(fundamental_components) * normalization_factor
-                return min(total_score, 1.0)
+        # No data at all - return None to indicate insufficient data
+        if total_weight_used == 0:
+            logger.debug(f"[FUNDAMENTAL] No fundamental data available")
+            return None
         
-        # Missing signals return 0.5 (per user decision)
-        return 0.5
+        # Calculate raw score (redistributes weights to available signals)
+        raw_score = sum(scores) / total_weight_used
         
-    except Exception:
-        return 0.5
+        # === DATA COMPLETENESS PENALTY ===
+        total_possible_weight = sum(weights.values())
+        coverage_ratio = total_weight_used / total_possible_weight
+        
+        # Log data completeness for diagnostics
+        logger.info(f"[FUNDAMENTAL] Data completeness: {coverage_ratio:.1%} "
+                   f"({len(normalized_values)}/{len(weights)} fields) - "
+                   f"Missing: {', '.join(missing_fields) if missing_fields else 'None'}")
+        
+        # Apply 20% penalty if coverage < 70%
+        if coverage_ratio < 0.70:
+            raw_score *= 0.80
+            logger.debug(f"[FUNDAMENTAL] Applied 20% penalty for low coverage ({coverage_ratio:.1%})")
+        
+        # Clamp to [0, 1] range
+        final_score = max(0.0, min(1.0, raw_score))
+        
+        logger.debug(f"[FUNDAMENTAL] Final score: {final_score:.4f} (raw: {raw_score:.4f})")
+        return round(final_score, 4)
+        
+    except Exception as e:
+        logger.error(f"[FUNDAMENTAL] Error calculating fundamental score: {e}", exc_info=True)
+        return None
 
 
 def _calculate_social_alternative_score_standalone(reddit_data: Dict[str, Any]) -> float:

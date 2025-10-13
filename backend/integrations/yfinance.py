@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from backend.storage.database import get_database
+from backend.integrations.yfinance_improvements import ImprovedFinancialCalculator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -390,34 +391,37 @@ class YahooFinanceIntegrator:
             Optional[Dict[str, Any]]: Comprehensive financial data or None if unavailable
         """
         try:
-            # Try to use integrators if available
+            logger.info(f"[COMPREHENSIVE] Starting comprehensive financial data fetch for {ticker}")
+            
+            # Use FinancialMetricsCalculator directly (it's defined in this file)
+            financial_calc = FinancialMetricsCalculator()  # Use local class
+            
+            # Get comprehensive financial data
+            financial_data = financial_calc.get_comprehensive_financial_data(ticker)
+            
+            logger.info(f"[COMPREHENSIVE] {ticker} - roic: {financial_data.get('roic')}, revenue_growth: {financial_data.get('revenue_growth')}, roe: {financial_data.get('roe')}")
+            
+            # Try to get technical indicators if available
             try:
-                from backend.integrations.signal_processing import get_technical_calculator, get_financial_calculator
-                
-                technical_calc = get_technical_calculator()
-                financial_calc = get_financial_calculator()
-                
-                # Get comprehensive financial data
-                financial_data = financial_calc.get_comprehensive_financial_data(ticker)
-                
-                # Get technical indicators
+                from backend.integrations.signal_processing import TechnicalIndicatorCalculator
+                technical_calc = TechnicalIndicatorCalculator()
                 technical_data = technical_calc.calculate_all_indicators(ticker)
-                
-                # Merge technical data into financial data
                 financial_data.update(technical_data)
-                
-                # Ensure current_price is not limited to 10 (remove artificial limits)
-                if financial_data.get('current_price'):
-                    financial_data['current_price'] = round(float(financial_data['current_price']), 2)
-                
-                return financial_data
-            except ImportError:
-                # Fallback to enhanced basic method
-                return self.get_enhanced_financial_data(ticker)
+            except (ImportError, AttributeError, Exception) as tech_error:
+                # Continue without technical data - not critical
+                logger.info(f"[COMPREHENSIVE] {ticker} - Technical data unavailable: {tech_error}")
+            
+            # Ensure current_price is not limited to 10 (remove artificial limits)
+            if financial_data.get('current_price'):
+                financial_data['current_price'] = round(float(financial_data['current_price']), 2)
+            
+            logger.info(f"[COMPREHENSIVE] {ticker} - Returning comprehensive data with {len(financial_data)} fields")
+            return financial_data
                 
         except Exception as e:
-            logger.error(f"Comprehensive financial data failed for {ticker}: {e}")
+            logger.error(f"[COMPREHENSIVE] Comprehensive financial data failed for {ticker}: {e}", exc_info=True)
             # Final fallback
+            logger.warning(f"[COMPREHENSIVE] {ticker} - Falling back to basic_financial_data")
             return self.get_basic_financial_data(ticker)
     
     def get_basic_financial_data(self, ticker: str) -> Optional[Dict[str, Any]]:
@@ -1146,6 +1150,7 @@ class FinancialMetricsCalculator:
     
     def __init__(self):
         self.logger = logger
+        self.improved_calc = ImprovedFinancialCalculator(logger=logger)
         
     def get_comprehensive_financial_data(self, ticker: str) -> Dict[str, any]:
         """Get comprehensive financial data for a ticker."""
@@ -1167,20 +1172,23 @@ class FinancialMetricsCalculator:
             # Price and market data
             financial_data.update(self._get_price_metrics(hist, info))
             
-            # Fundamental ratios
-            financial_data.update(self._get_fundamental_ratios(info))
+            # Fundamental ratios (IMPROVED with stock and hist for better PE calculation)
+            financial_data.update(self._get_fundamental_ratios(info, stock, hist))
             
             # Earnings and growth metrics
-            financial_data.update(self._get_earnings_metrics(stock, info))
+            earnings_data = self._get_earnings_metrics(stock, info, hist)
+            financial_data.update(earnings_data)
             
-            # Balance sheet metrics
-            financial_data.update(self._get_balance_sheet_metrics(info))
+            # Balance sheet metrics (now includes ROIC and share buyback yield)
+            market_cap = financial_data.get('market_cap', info.get('marketCap'))
+            balance_sheet_data = self._get_balance_sheet_metrics(stock, info, market_cap)
+            financial_data.update(balance_sheet_data)
             
             # Short interest and ownership
             financial_data.update(self._get_ownership_metrics(info))
             
-            # Volume and liquidity
-            financial_data.update(self._get_liquidity_metrics(hist, info))
+            # Volume and liquidity (IMPROVED with stock for better dividend yield)
+            financial_data.update(self._get_liquidity_metrics(hist, info, stock))
             
             # PHASE 3: Analyst data
             current_price = financial_data.get('current_price', info.get('previousClose', 0))
@@ -1194,6 +1202,9 @@ class FinancialMetricsCalculator:
             
             # PHASE 3: Insider trading activity
             financial_data.update(self._get_insider_trading_data(stock))
+            
+            # POST-PROCESSING: Sanitize data (cap extremes, handle inf/nan)
+            financial_data = ImprovedFinancialCalculator.sanitize_financial_data(financial_data)
             
             return financial_data
             
@@ -1251,12 +1262,17 @@ class FinancialMetricsCalculator:
                 'fifty_two_week_low': None,
             }
     
-    def _get_fundamental_ratios(self, info: Dict[str, any]) -> Dict[str, float]:
-        """Extract fundamental financial ratios."""
-        # Clean and validate PE ratio - remove artificial limits
-        pe_ratio = info.get('trailingPE')
-        if pe_ratio is not None and (pe_ratio < 0 or pe_ratio > 1000):
-            pe_ratio = None  # Remove negative or extremely high PE ratios
+    def _get_fundamental_ratios(self, info: Dict[str, any], stock: yf.Ticker = None, hist: pd.DataFrame = None) -> Dict[str, float]:
+        """Extract fundamental financial ratios with improved calculations."""
+        # IMPROVED: Use enhanced PE ratio calculation with fallbacks
+        pe_ratio = None
+        if stock and hist is not None:
+            pe_ratio = self.improved_calc.calculate_pe_ratio_improved(stock, info, hist)
+        else:
+            # Fallback to original logic
+            pe_ratio = info.get('trailingPE')
+            if pe_ratio is not None and (pe_ratio < 0 or pe_ratio > 1000):
+                pe_ratio = None
         
         return {
             'pe_ratio': round(pe_ratio, 2) if pe_ratio is not None else None,
@@ -1269,13 +1285,16 @@ class FinancialMetricsCalculator:
             'ev_to_ebitda': round(info.get('enterpriseToEbitda', 0), 2) if info.get('enterpriseToEbitda') else None,
         }
     
-    def _get_earnings_metrics(self, stock: yf.Ticker, info: Dict[str, any]) -> Dict[str, any]:
-        """Calculate earnings and growth metrics."""
+    def _get_earnings_metrics(self, stock: yf.Ticker, info: Dict[str, any], hist: pd.DataFrame = None) -> Dict[str, any]:
+        """Calculate earnings and growth metrics with improved calculations."""
         try:
-            # Basic earnings data from info
-            eps_growth = info.get('earningsGrowth')
-            if eps_growth is not None:
-                eps_growth = round(eps_growth * 100, 2)  # Convert to percentage
+            # IMPROVED: EPS growth with fallback calculation
+            eps_growth = self.improved_calc.calculate_eps_growth_improved(stock, info)
+            if eps_growth is None:
+                # Fallback to original
+                eps_growth = info.get('earningsGrowth')
+                if eps_growth is not None:
+                    eps_growth = round(eps_growth * 100, 2)
             
             revenue_growth = info.get('revenueGrowth')
             if revenue_growth is not None:
@@ -1284,16 +1303,29 @@ class FinancialMetricsCalculator:
             # Earnings gap calculation
             earnings_gap = self._calculate_earnings_gap(stock)
             
+            # IMPROVED: FCF growth 3Y CAGR with enhanced calculation
+            fcf_growth = self.improved_calc.calculate_fcf_growth_3y_cagr_improved(stock)
+            if fcf_growth is None:
+                # Fallback to original
+                fcf_growth = self._calculate_fcf_growth_3y_cagr(stock)
+            
             return {
                 'eps_current': round(info.get('trailingEps', 0), 2) if info.get('trailingEps') else None,
                 'eps_forward': round(info.get('forwardEps', 0), 2) if info.get('forwardEps') else None,
                 'eps_growth': eps_growth,
                 'revenue_growth': revenue_growth,
                 'earnings_gap': round(earnings_gap, 2) if earnings_gap is not None else None,
+                'earnings_gap_pct': round(earnings_gap, 2) if earnings_gap is not None else None,  # Alias for consistency
                 'next_earnings_date': self._get_next_earnings_date(stock),
                 'profit_margins': round(info.get('profitMargins', 0) * 100, 2) if info.get('profitMargins') else None,
+                'profit_margin': round(info.get('profitMargins', 0) * 100, 2) if info.get('profitMargins') else None,  # Alias
                 'operating_margins': round(info.get('operatingMargins', 0) * 100, 2) if info.get('operatingMargins') else None,
+                'operating_margin': round(info.get('operatingMargins', 0) * 100, 2) if info.get('operatingMargins') else None,  # Alias
                 'gross_margins': round(info.get('grossMargins', 0) * 100, 2) if info.get('grossMargins') else None,
+                
+                # NEW: Advanced growth and quality metrics (IMPROVED)
+                'fcf_growth_3y_cagr': fcf_growth,
+                'earnings_surprise_streak': self._calculate_earnings_surprise_streak(stock),
             }
             
         except Exception as e:
@@ -1308,10 +1340,215 @@ class FinancialMetricsCalculator:
                 'profit_margins': None,
                 'operating_margins': None,
                 'gross_margins': None,
+                'fcf_growth_3y_cagr': None,
+                'earnings_surprise_streak': None,
             }
     
-    def _get_balance_sheet_metrics(self, info: Dict[str, any]) -> Dict[str, float]:
-        """Extract balance sheet and financial health metrics."""
+    def _calculate_fcf_growth_3y_cagr(self, stock: yf.Ticker) -> float:
+        """
+        Calculate 3-year Free Cash Flow CAGR from cash flow statement.
+        Needs ≥3 years of FCF data.
+        
+        Returns: FCF CAGR as percentage (e.g., 25.5 for 25.5%)
+        """
+        try:
+            cf = stock.cashflow  # Annual cash flow statement
+            if cf is None or cf.empty:
+                return None
+                
+            # Look for Free Cash Flow row
+            fcf_row = None
+            for possible_name in ["Free Cash Flow", "FreeCashFlow", "Free_Cash_Flow"]:
+                if possible_name in cf.index:
+                    fcf_row = cf.loc[possible_name]
+                    break
+                    
+            if fcf_row is None or len(fcf_row) < 3:
+                return None
+            
+            # Get FCF values, drop NaN, and sort by date
+            fcf_values = fcf_row.dropna().sort_index()
+            if len(fcf_values) < 3:
+                return None
+                
+            # Get oldest and newest FCF
+            fcf_start = fcf_values.iloc[0]
+            fcf_end = fcf_values.iloc[-1]
+            
+            # Calculate years between
+            years = (fcf_values.index[-1] - fcf_values.index[0]).days / 365.25
+            
+            # Need positive starting FCF and at least 2.5 years
+            if fcf_start <= 0 or years < 2.5:
+                return None
+                
+            # Calculate CAGR: (End/Start)^(1/years) - 1
+            cagr = ((fcf_end / fcf_start) ** (1 / years) - 1) * 100
+            
+            # Cap at reasonable range (-50% to +100%)
+            if cagr < -50 or cagr > 100:
+                return None
+                
+            return round(cagr, 2)
+            
+        except Exception as e:
+            self.logger.debug(f"FCF CAGR calculation failed: {e}")
+            return None
+    
+    def _calculate_earnings_surprise_streak(self, stock: yf.Ticker) -> float:
+        """
+        Calculate fraction of last 4 quarters that beat earnings estimates.
+        
+        Returns: Fraction (0.0-1.0) where 1.0 = 4/4 quarters beat estimates
+        """
+        try:
+            # Get earnings history with estimates
+            earnings = stock.earnings_dates
+            if earnings is None or earnings.empty or len(earnings) < 4:
+                return None
+                
+            # Get last 4 quarters
+            recent_earnings = earnings.head(4)
+            
+            # Count beats (Reported EPS > EPS Estimate)
+            beats = 0
+            quarters_counted = 0
+            
+            for idx, row in recent_earnings.iterrows():
+                actual = row.get('Reported EPS')
+                estimate = row.get('EPS Estimate')
+                
+                if actual is not None and estimate is not None:
+                    quarters_counted += 1
+                    if actual > estimate:
+                        beats += 1
+                        
+            if quarters_counted < 3:  # Need at least 3 quarters of data
+                return None
+                
+            return round(beats / quarters_counted, 2)
+            
+        except Exception as e:
+            self.logger.debug(f"Earnings surprise streak calculation failed: {e}")
+            return None
+    
+    def _calculate_roic(self, stock: yf.Ticker, info: Dict[str, any], roe_fallback: float = None) -> float:
+        """
+        Calculate Return on Invested Capital (ROIC).
+        Formula: ROIC = NOPAT / Invested Capital
+        Where:
+            NOPAT = EBIT * (1 - tax_rate)
+            Invested Capital = Total Debt + Total Equity
+        
+        Falls back to ROE if components unavailable.
+        
+        Returns: ROIC as percentage (e.g., 15.5 for 15.5%)
+        """
+        try:
+            # Try to get financial statements
+            income_stmt = stock.financials
+            balance_sheet = stock.balance_sheet
+            
+            if income_stmt is None or income_stmt.empty or balance_sheet is None or balance_sheet.empty:
+                return roe_fallback
+            
+            # Get EBIT (Operating Income)
+            ebit = None
+            for ebit_name in ["EBIT", "Operating Income", "OperatingIncome"]:
+                if ebit_name in income_stmt.index:
+                    ebit = income_stmt.loc[ebit_name].iloc[0]
+                    break
+                    
+            if ebit is None or ebit <= 0:
+                return roe_fallback
+            
+            # Get tax rate (default to 21% US corporate tax if missing)
+            tax_rate = info.get('taxRate', 0.21)
+            
+            # Get equity
+            total_equity = None
+            for equity_name in ["Stockholders Equity", "Total Stockholder Equity", "StockholdersEquity"]:
+                if equity_name in balance_sheet.index:
+                    total_equity = balance_sheet.loc[equity_name].iloc[0]
+                    break
+                    
+            # Get debt
+            total_debt = info.get('totalDebt', 0)
+            
+            if total_equity is None or (total_debt + total_equity) <= 0:
+                return roe_fallback
+                
+            # Calculate NOPAT and ROIC
+            nopat = ebit * (1 - tax_rate)
+            invested_capital = total_debt + total_equity
+            roic = (nopat / invested_capital) * 100
+            
+            # Sanity check: ROIC should be reasonable (-50% to +100%)
+            if roic < -50 or roic > 100:
+                return roe_fallback
+                
+            return round(roic, 2)
+            
+        except Exception as e:
+            self.logger.debug(f"ROIC calculation failed, using ROE fallback: {e}")
+            return roe_fallback
+    
+    def _calculate_share_buyback_yield(self, stock: yf.Ticker, market_cap: float = None) -> float:
+        """
+        Calculate share buyback yield.
+        Formula: (Shares_t-1 - Shares_t) / Shares_t-1 * (1 / Market Cap)
+        
+        Most tickers won't have quarterly share data, so this will often be NULL.
+        Redistributes weight to fcf_margin in fundamental scoring if NULL.
+        
+        Returns: Buyback yield as percentage (e.g., 2.5 for 2.5%)
+        """
+        try:
+            if market_cap is None or market_cap <= 0:
+                return None
+                
+            # Try to get quarterly balance sheet for treasury stock changes
+            balance_sheet = stock.quarterly_balance_sheet
+            if balance_sheet is None or balance_sheet.empty:
+                return None
+                
+            # Look for treasury stock or shares outstanding
+            treasury_stock = None
+            for ts_name in ["Treasury Stock", "TreasuryStock", "Treasury Shares Value"]:
+                if ts_name in balance_sheet.index:
+                    treasury_stock = balance_sheet.loc[ts_name].dropna()
+                    break
+                    
+            if treasury_stock is None or len(treasury_stock) < 2:
+                return None
+                
+            # Get most recent two values
+            ts_recent = treasury_stock.iloc[0]
+            ts_previous = treasury_stock.iloc[1]
+            
+            if abs(ts_previous) < 1000:  # Too small to be meaningful
+                return None
+                
+            # Calculate buyback yield
+            # Treasury stock increases (becomes more negative) when shares are bought back
+            buyback_amount = abs(ts_recent) - abs(ts_previous)
+            if buyback_amount <= 0:
+                return None
+                
+            buyback_yield = (buyback_amount / market_cap) * 100
+            
+            # Sanity check: Should be less than 10%
+            if buyback_yield < 0 or buyback_yield > 10:
+                return None
+                
+            return round(buyback_yield, 4)
+            
+        except Exception as e:
+            self.logger.debug(f"Share buyback yield calculation failed (expected for most tickers): {e}")
+            return None
+    
+    def _get_balance_sheet_metrics(self, stock: yf.Ticker, info: Dict[str, any], market_cap: float = None) -> Dict[str, float]:
+        """Extract balance sheet and financial health metrics, including advanced calculations."""
         # ROE calculation and cleanup
         roe = info.get('returnOnEquity')
         if roe is not None:
@@ -1329,13 +1566,29 @@ class FinancialMetricsCalculator:
         if free_cash_flow and total_revenue and total_revenue > 0:
             fcf_margin = round((free_cash_flow / total_revenue) * 100, 2)
         
+        # Calculate ROIC and share buyback yield
+        roic = self._calculate_roic(stock, info, roe)
+        
+        # IMPROVED: Share buyback yield with enhanced calculation
+        share_buyback_yield = self.improved_calc.calculate_share_buyback_yield_improved(stock, info, market_cap)
+        if share_buyback_yield is None:
+            # Fallback to original method
+            share_buyback_yield = self._calculate_share_buyback_yield(stock, market_cap)
+        
+        # IMPROVED: Interest coverage from financials
+        interest_coverage = self.improved_calc.calculate_interest_coverage(stock, info)
+        
         return {
             'roe': roe,
+            'roic': roic,
             'roa': round(info.get('returnOnAssets', 0) * 100, 2) if info.get('returnOnAssets') else None,
             'debt_equity': debt_equity,
+            'debt_to_equity': debt_equity,  # Alias for new schema
             'current_ratio': round(info.get('currentRatio', 0), 2) if info.get('currentRatio') else None,
             'quick_ratio': round(info.get('quickRatio', 0), 2) if info.get('quickRatio') else None,
+            'interest_coverage': interest_coverage,  # NEW: Interest coverage ratio
             'fcf_margin': fcf_margin,
+            'share_buyback_yield': share_buyback_yield,  # IMPROVED
             'book_value': round(info.get('bookValue', 0), 2) if info.get('bookValue') else None,
             'total_cash': info.get('totalCash'),
             'total_debt': info.get('totalDebt'),
@@ -1374,8 +1627,8 @@ class FinancialMetricsCalculator:
             'insider_transactions': info.get('lastSplitFactor'),  # Placeholder - would need separate API
         }
     
-    def _get_liquidity_metrics(self, hist: pd.DataFrame, info: Dict[str, any]) -> Dict[str, float]:
-        """Calculate liquidity and trading metrics."""
+    def _get_liquidity_metrics(self, hist: pd.DataFrame, info: Dict[str, any], stock: yf.Ticker = None) -> Dict[str, float]:
+        """Calculate liquidity and trading metrics with improved dividend yield calculation."""
         try:
             # Market cap
             market_cap = info.get('marketCap')
@@ -1393,13 +1646,22 @@ class FinancialMetricsCalculator:
             if beta is not None:
                 beta = round(beta, 2)
             
+            # IMPROVED: Dividend yield with fallback calculation from actual dividends
+            dividend_yield = None
+            if stock:
+                dividend_yield = self.improved_calc.calculate_dividend_yield_improved(stock, info, hist)
+            
+            if dividend_yield is None:
+                # Fallback to original logic
+                dividend_yield = round(info.get('trailingAnnualDividendYield', 0) * 100, 2) if info.get('trailingAnnualDividendYield') else round(info.get('dividendYield', 0), 2) if info.get('dividendYield') else None
+            
             return {
                 'market_cap': market_cap,
                 'volume': int(current_volume) if current_volume else None,
                 'avg_volume': int(avg_volume) if avg_volume else None,
                 'avg_daily_value_traded': int(avg_daily_value) if avg_daily_value else None,
                 'beta': beta,
-                'dividend_yield': round(info.get('dividendYield', 0) * 100, 2) if info.get('dividendYield') else None,
+                'dividend_yield': dividend_yield,  # IMPROVED
                 'payout_ratio': round(info.get('payoutRatio', 0) * 100, 2) if info.get('payoutRatio') else None,
                 'ex_dividend_date': info.get('exDividendDate'),
                 'dividend_date': info.get('dividendDate'),
@@ -1466,25 +1728,38 @@ class FinancialMetricsCalculator:
     
     def _get_earnings_surprise_data(self, stock: yf.Ticker) -> Dict[str, any]:
         """
-        Collect earnings surprise history.
+        Collect earnings surprise history with improved fallback calculation and confidence scoring.
         
         Returns:
             - last_earnings_surprise_pct: Most recent earnings surprise
+            - earnings_surprise_confidence: Confidence score (1.0=actual, 0.7=seasonal, 0.4=QoQ)
             - avg_earnings_surprise_pct: Average of last 4 quarters
             - earnings_surprise_trend: Improving/Declining/Stable
         """
         try:
-            # Get earnings history
+            # ENHANCED: Try enhanced calculation with confidence scoring
+            last_surprise, confidence = self.improved_calc.calculate_earnings_surprise_pct_enhanced(stock)
+            
+            # Try original method for detailed analysis
             earnings_history = stock.earnings_dates
             
             if earnings_history is None or earnings_history.empty:
+                # Use enhanced calculation result if available
+                if last_surprise is not None:
+                    return {
+                        'last_earnings_surprise_pct': last_surprise,
+                        'earnings_surprise_confidence': confidence,
+                        'avg_earnings_surprise_pct': last_surprise,  # Same as last when no history
+                        'earnings_surprise_trend': None,
+                    }
                 return {
                     'last_earnings_surprise_pct': None,
+                    'earnings_surprise_confidence': 0.0,
                     'avg_earnings_surprise_pct': None,
                     'earnings_surprise_trend': None,
                 }
             
-            # Calculate surprise percentages
+            # Calculate surprise percentages from earnings_dates
             surprises = []
             for idx, row in earnings_history.head(4).iterrows():
                 eps_actual = row.get('Reported EPS')
@@ -1494,13 +1769,23 @@ class FinancialMetricsCalculator:
                     surprise_pct = ((eps_actual - eps_estimate) / abs(eps_estimate)) * 100
                     surprises.append(surprise_pct)
             
+            # If no surprises from earnings_dates, use enhanced calculation
             if not surprises:
+                if last_surprise is not None:
+                    return {
+                        'last_earnings_surprise_pct': last_surprise,
+                        'earnings_surprise_confidence': confidence,
+                        'avg_earnings_surprise_pct': last_surprise,
+                        'earnings_surprise_trend': None,
+                    }
                 return {
                     'last_earnings_surprise_pct': None,
+                    'earnings_surprise_confidence': 0.0,
                     'avg_earnings_surprise_pct': None,
                     'earnings_surprise_trend': None,
                 }
             
+            # Use actual surprises from earnings_dates
             last_surprise = surprises[0]
             avg_surprise = sum(surprises) / len(surprises)
             
@@ -1519,6 +1804,7 @@ class FinancialMetricsCalculator:
             
             return {
                 'last_earnings_surprise_pct': round(last_surprise, 2),
+                'earnings_surprise_confidence': 1.0,  # High confidence from actual data
                 'avg_earnings_surprise_pct': round(avg_surprise, 2),
                 'earnings_surprise_trend': trend,
             }
@@ -1527,6 +1813,7 @@ class FinancialMetricsCalculator:
             self.logger.warning(f"Earnings surprise data extraction failed: {e}")
             return {
                 'last_earnings_surprise_pct': None,
+                'earnings_surprise_confidence': 0.0,
                 'avg_earnings_surprise_pct': None,
                 'earnings_surprise_trend': None,
             }

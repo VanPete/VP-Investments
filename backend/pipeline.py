@@ -207,7 +207,10 @@ class UnifiedPipeline:
         """Delegate to YahooFinanceIntegrator for financial data fetching"""
         from backend.integrations.yfinance import YahooFinanceIntegrator
         yf_integrator = YahooFinanceIntegrator()
-        return yf_integrator.get_comprehensive_financial_data(ticker, use_cache)
+        data = yf_integrator.get_comprehensive_financial_data(ticker, use_cache)
+        if data:
+            self.logger.info(f"[PIPELINE] get_financial_data({ticker}) - roic: {data.get('roic')}, revenue_growth: {data.get('revenue_growth')}, roe: {data.get('roe')}")
+        return data
     
 
     
@@ -467,13 +470,29 @@ class UnifiedPipeline:
                     'exit_signal_strength': self._safe_round(signal.get('exit_signal_strength') or financial_data.get('exit_signal_strength'), 2),
                     'signal_strength_percentile': self._safe_round(signal.get('signal_strength_percentile') or financial_data.get('signal_strength_percentile'), 2),
                     
-                    # Fundamental metrics
+                    # Fundamental metrics (REDESIGNED for 100% scoring)
                     'pe_ratio': self._safe_round(financial_data.get('pe_ratio'), 2),
-                    'earnings_gap_pct': self._safe_round(financial_data.get('earnings_gap_pct'), 2),
+                    'price_to_book': self._safe_round(financial_data.get('price_to_book'), 2),
+                    'price_to_sales': self._safe_round(financial_data.get('price_to_sales'), 2),
+                    'revenue_growth': self._safe_round(financial_data.get('revenue_growth'), 2),
                     'eps_growth': self._safe_round(financial_data.get('eps_growth'), 2),
+                    'fcf_growth_3y_cagr': self._safe_round(financial_data.get('fcf_growth_3y_cagr'), 2),
                     'roe': self._safe_round(financial_data.get('roe'), 2),
-                    'debt_equity': self._safe_round(financial_data.get('debt_equity'), 2),
+                    'roic': self._safe_round(financial_data.get('roic'), 2),
                     'fcf_margin': self._safe_round(financial_data.get('fcf_margin'), 2),
+                    'debt_to_equity': self._safe_round(financial_data.get('debt_to_equity'), 2),
+                    'debt_equity': self._safe_round(financial_data.get('debt_equity'), 2),  # Legacy alias
+                    'current_ratio': self._safe_round(financial_data.get('current_ratio'), 2),
+                    'interest_coverage': self._safe_round(financial_data.get('interest_coverage'), 2),
+                    'last_earnings_surprise_pct': self._safe_round(financial_data.get('last_earnings_surprise_pct'), 2),
+                    'earnings_surprise_streak': self._safe_round(financial_data.get('earnings_surprise_streak'), 2),
+                    'dividend_yield': self._safe_round(financial_data.get('dividend_yield'), 2),
+                    'share_buyback_yield': self._safe_round(financial_data.get('share_buyback_yield'), 4),
+                    'sector_relative_percentile': None,  # Phase 8
+                    # Deprecated fields (keep for backward compatibility)
+                    'earnings_gap_pct': self._safe_round(financial_data.get('earnings_gap_pct'), 2),
+                    'profit_margin': self._safe_round(financial_data.get('profit_margin'), 2),
+                    'operating_margin': self._safe_round(financial_data.get('operating_margin'), 2),
                     
                     # Options data
                     'put_call_oi_ratio': self._safe_round(financial_data.get('put_call_oi_ratio'), 4),
@@ -638,13 +657,25 @@ class UnifiedPipeline:
                     'avg_volume_30d': to_bigint(record.get('avg_volume_30d')),
                     'volume_price_correlation': record.get('volume_price_correlation'),
                     'float_turnover_ratio': record.get('float_turnover_ratio'),
-                    # Fundamentals
+                    # Fundamentals (PHASE 2: REDESIGNED 100% scoring system)
                     'pe_ratio': record.get('pe_ratio'),
-                    'earnings_gap_pct': record.get('earnings_gap_pct'),
+                    'price_to_book': record.get('price_to_book'),
+                    'price_to_sales': record.get('price_to_sales'),
+                    'earnings_gap_pct': record.get('earnings_gap_pct'),  # Deprecated
                     'eps_growth': record.get('eps_growth'),
+                    'revenue_growth': record.get('revenue_growth'),
+                    'fcf_growth_3y_cagr': record.get('fcf_growth_3y_cagr'),
                     'roe': record.get('roe'),
-                    'debt_equity': record.get('debt_equity'),
+                    'roic': record.get('roic'),
                     'fcf_margin': record.get('fcf_margin'),
+                    'debt_equity': record.get('debt_equity'),  # Legacy
+                    'debt_to_equity': record.get('debt_to_equity'),
+                    'current_ratio': record.get('current_ratio'),
+                    'interest_coverage': record.get('interest_coverage'),
+                    'earnings_surprise_streak': record.get('earnings_surprise_streak'),
+                    'dividend_yield': record.get('dividend_yield'),
+                    'share_buyback_yield': record.get('share_buyback_yield'),
+                    'sector_relative_percentile': record.get('sector_relative_percentile'),  # Phase 8
                     # Options
                     'put_call_oi_ratio': record.get('put_call_oi_ratio'),
                     'put_call_vol_ratio': record.get('put_call_vol_ratio'),
@@ -793,15 +824,29 @@ class UnifiedPipeline:
                     'avg_volume_30d': to_bigint(record.get('avg_volume_30d')),
                     'volume_price_correlation': record.get('volume_price_correlation'),
                     'float_turnover_ratio': record.get('float_turnover_ratio'),
-                    # Fundamentals
+                    # Fundamentals (REDESIGNED - 100% weighted scoring)
                     'pe_ratio': record.get('pe_ratio'),
-                    'earnings_gap_pct': record.get('earnings_gap_pct'),
-                    'eps_growth': record.get('eps_growth'),
-                    'roe': record.get('roe'),
-                    'debt_equity': record.get('debt_equity'),
-                    'fcf_margin': record.get('fcf_margin'),
-                    'profit_margin': record.get('profit_margin'),
+                    'price_to_book': record.get('price_to_book'),
+                    'price_to_sales': record.get('price_to_sales'),
                     'revenue_growth': record.get('revenue_growth'),
+                    'eps_growth': record.get('eps_growth'),
+                    'fcf_growth_3y_cagr': record.get('fcf_growth_3y_cagr'),
+                    'roe': record.get('roe'),
+                    'roic': record.get('roic'),
+                    'fcf_margin': record.get('fcf_margin'),
+                    'debt_to_equity': record.get('debt_to_equity'),
+                    'debt_equity': record.get('debt_equity'),  # Legacy
+                    'current_ratio': record.get('current_ratio'),
+                    'interest_coverage': record.get('interest_coverage'),
+                    'last_earnings_surprise_pct': record.get('last_earnings_surprise_pct'),
+                    'earnings_surprise_streak': record.get('earnings_surprise_streak'),
+                    'dividend_yield': record.get('dividend_yield'),
+                    'share_buyback_yield': record.get('share_buyback_yield'),
+                    'sector_relative_percentile': record.get('sector_relative_percentile'),
+                    # Deprecated (keep for backward compatibility)
+                    'earnings_gap_pct': record.get('earnings_gap_pct'),
+                    'profit_margin': record.get('profit_margin'),
+                    'operating_margin': record.get('operating_margin'),
                     'beta': record.get('beta'),
                     # Options
                     'put_call_oi_ratio': record.get('put_call_oi_ratio'),
@@ -1140,7 +1185,8 @@ class UnifiedPipeline:
                     'signal_type': 'financial',
                     'score': financial_score,
                     'confidence': 0.8,  # Financial data generally reliable
-                    'metadata': financial_data
+                    'financial_data': financial_data,  # Fixed: Changed from 'metadata' to 'financial_data'
+                    'metadata': financial_data  # Keep for backward compatibility
                 }
                 
                 financial_signals.append(financial_signal)
@@ -1177,9 +1223,16 @@ class UnifiedPipeline:
                     continue
                 
                 # Convert cached data to financial_data format
-                financial_data = self._convert_cache_to_financial_data(ticker_data)
+                try:
+                    financial_data = self._convert_cache_to_financial_data(ticker_data)
+                except Exception as conv_error:
+                    self.logger.error(f"[CACHED] Exception converting cache to financial_data for {ticker}: {conv_error}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
+                    continue
                 
                 if not financial_data:
+                    self.logger.warning(f"[CACHED] Failed to convert cache to financial_data for {ticker}")
                     continue
                 
                 # Calculate financial signal score (delegated to SignalScorer - Phase 6c)
@@ -1191,7 +1244,8 @@ class UnifiedPipeline:
                     'signal_type': 'financial',
                     'score': financial_score,
                     'confidence': 0.8,  # Financial data generally reliable
-                    'metadata': financial_data
+                    'financial_data': financial_data,  # Fixed: Changed from 'metadata' to 'financial_data'
+                    'metadata': financial_data  # Keep for backward compatibility
                 }
                 
                 financial_signals.append(financial_signal)
@@ -1219,29 +1273,60 @@ class UnifiedPipeline:
             history_1y = ticker_data.get('history_1y', pd.DataFrame())
             history_3m = ticker_data.get('history_3m', pd.DataFrame())
             history_1m = ticker_data.get('history_1m', pd.DataFrame())
+            ticker = ticker_data.get('ticker')
             
-            if history_1m.empty:
+            self.logger.info(f"[CONVERT] START: ticker={ticker}, has_history_1m={not history_1m.empty}, has_info={len(info)}, has_stock={ticker_data.get('stock') is not None}")
+            
+            if history_1m.empty or not ticker:
+                self.logger.warning(f"[CONVERT] EARLY EXIT: ticker={ticker}, history_1m empty={history_1m.empty}")
                 return None
             
-            # Build financial_data dict matching expected format
-            financial_data = {}
+            stock = ticker_data.get('stock')
+            if not stock:
+                return None
             
-            # Basic info
-            financial_data['ticker'] = ticker_data.get('ticker')
-            financial_data['company'] = info.get('longName') or info.get('shortName') or ticker_data.get('ticker')
-            financial_data['company_name'] = financial_data['company']  # Alias for consistency
-            financial_data['sector'] = info.get('sector')
-            financial_data['industry'] = info.get('industry')
-            financial_data['market_cap'] = info.get('marketCap')  # Add this for consistency
-            financial_data['market_cap_numeric'] = info.get('marketCap')
-            financial_data['pe_ratio'] = info.get('trailingPE')
-            financial_data['forward_pe'] = info.get('forwardPE')
-            financial_data['profit_margin'] = info.get('profitMargins')
-            financial_data['roe'] = info.get('returnOnEquity')
-            financial_data['revenue_growth'] = info.get('revenueGrowth')
-            financial_data['earnings_growth'] = info.get('earningsGrowth')
-            financial_data['eps_growth'] = info.get('earningsGrowth')  # Alias for consistency
-            financial_data['debt_equity'] = info.get('debtToEquity')
+            # Get base financial data using FinancialMetricsCalculator with cached data (NO API CALL!)
+            from backend.integrations.yfinance import FinancialMetricsCalculator
+            from backend.integrations.yfinance_improvements import ImprovedFinancialCalculator
+            
+            metrics_calc = FinancialMetricsCalculator()
+            
+            # Build financial_data using the calculator methods with cached data
+            financial_data = {}
+            financial_data.update(metrics_calc._get_basic_info(ticker, info))
+            financial_data.update(metrics_calc._get_price_metrics(history_1y, info))
+            financial_data.update(metrics_calc._get_fundamental_ratios(info, stock, history_1y))
+            financial_data.update(metrics_calc._get_earnings_metrics(stock, info, history_1y))
+            
+            market_cap = financial_data.get('market_cap', info.get('marketCap'))
+            financial_data.update(metrics_calc._get_balance_sheet_metrics(stock, info, market_cap))
+            financial_data.update(metrics_calc._get_ownership_metrics(info))
+            financial_data.update(metrics_calc._get_liquidity_metrics(history_1y, info, stock))
+            
+            # Phase 3 data
+            current_price = financial_data.get('current_price', info.get('previousClose', 0))
+            financial_data.update(metrics_calc._get_analyst_data(stock, info, current_price))
+            financial_data.update(metrics_calc._get_earnings_surprise_data(stock))
+            financial_data.update(metrics_calc._get_institutional_ownership_data(stock, info))
+            financial_data.update(metrics_calc._get_insider_trading_data(stock))
+            
+            # Now add improved fields using the cached stock object (NO API CALLS!)
+            improved_calc = ImprovedFinancialCalculator()
+            
+            # Call each improved method with correct parameters from cached data
+            financial_data['pe_ratio'] = improved_calc.calculate_pe_ratio_improved(stock, info, history_1y)
+            financial_data['dividend_yield'] = improved_calc.calculate_dividend_yield_improved(stock, info, history_1y)
+            financial_data['eps_growth'] = improved_calc.calculate_eps_growth_improved(stock, info)
+            financial_data['interest_coverage'] = improved_calc.calculate_interest_coverage(stock, info)
+            financial_data['share_buyback_yield'] = improved_calc.calculate_share_buyback_yield_improved(stock, info, market_cap)
+            financial_data['fcf_growth_3y_cagr'] = improved_calc.calculate_fcf_growth_3y_cagr_improved(stock)
+            financial_data['last_earnings_surprise_pct'], _ = improved_calc.calculate_earnings_surprise_pct_enhanced(stock)
+            
+            self.logger.info(f"[PIPELINE] _convert_cache_to_financial_data({ticker}) - Base: roic={financial_data.get('roic')}, roe={financial_data.get('roe')} | Improved: pe={financial_data.get('pe_ratio')}, eps_growth={financial_data.get('eps_growth')}, div_yield={financial_data.get('dividend_yield')}")
+            
+            # financial_data already has all fundamental fields with proper formatting from FinancialMetricsCalculator
+            # DON'T overwrite them with raw info values!
+            # Only add fields that FinancialMetricsCalculator doesn't provide
             
             # Price and volume data
             if not history_1m.empty:
@@ -1309,32 +1394,10 @@ class UnifiedPipeline:
                     if bb_range > 0:
                         financial_data['bollinger'] = float((current_price - bb_lower) / bb_range)
             
-            # Additional fundamental metrics from info
-            financial_data['price_to_book'] = info.get('priceToBook')
-            financial_data['book_value'] = info.get('bookValue')
-            financial_data['fcf_margin'] = info.get('freeCashflow') / info.get('totalRevenue') if info.get('freeCashflow') and info.get('totalRevenue') else None
-            financial_data['free_cash_flow'] = info.get('freeCashflow')
-            financial_data['dividend_yield'] = info.get('dividendYield')
-            financial_data['beta'] = info.get('beta')
+            # NOTE: Most fundamental metrics now come from FinancialMetricsCalculator
+            # Only add fields that are not provided by get_comprehensive_financial_data()
             
-            # Ownership metrics
-            financial_data['institutional_ownership_pct'] = info.get('heldPercentInstitutions')
-            financial_data['retail_holding_pct'] = info.get('heldPercentInsiders')
-            
-            # Options data
-            financial_data['put_call_ratio'] = info.get('putCallRatio')
-            financial_data['put_call_vol_ratio'] = info.get('putCallVolumeRatio')
-            financial_data['put_call_oi_ratio'] = info.get('putCallOIRatio')
-            financial_data['implied_volatility'] = info.get('impliedVolatility')
-            
-            # Short interest
-            financial_data['short_interest'] = info.get('shortPercentOfFloat')
-            financial_data['short_pct_float'] = info.get('shortPercentOfFloat')
-            financial_data['short_pct_outstanding'] = info.get('shortPercentOfSharesOutstanding')
-            financial_data['short_ratio'] = info.get('shortRatio')
-            financial_data['shares_short'] = info.get('sharesShort')
-            
-            # Sector/relative strength (placeholder - would need market data)
+            # Sector/relative strength (not provided by FinancialMetricsCalculator)
             financial_data['sector_relative_strength'] = 0.0
             financial_data['relative_strength'] = 0.0
             
@@ -1367,7 +1430,9 @@ class UnifiedPipeline:
             return financial_data
             
         except Exception as e:
-            self.logger.debug(f"Error converting cache to financial_data for {ticker_data.get('ticker')}: {e}")
+            self.logger.error(f"[CONVERT] Error converting cache to financial_data for {ticker_data.get('ticker')}: {e}")
+            import traceback
+            self.logger.error(f"[CONVERT] Traceback: {traceback.format_exc()}")
             return None
     
     # ===== REMOVED: _calculate_financial_score() - moved to SignalScorer (Phase 6c-Part3) - 77 lines =====
