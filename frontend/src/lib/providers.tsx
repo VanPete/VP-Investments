@@ -14,9 +14,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 60 * 1000, // 1 minute
-            retry: (failureCount, error: any) => {
+            retry: (failureCount, error: unknown) => {
               // Don't retry on 4xx errors
-              if (error?.code >= 400 && error?.code < 500) return false;
+              const errorCode = (error as { code?: number })?.code;
+              if (errorCode && errorCode >= 400 && errorCode < 500) return false;
               // Retry up to 2 times on other errors
               return failureCount < 2;
             },

@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/lib/providers";
 import { Toaster } from "@/components/ui/sonner";
+import { Navigation } from "@/components/Navigation";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -10,8 +11,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "VP Investments - Trading Dashboard",
-  description: "Real-time trading signals and investment analytics platform",
+  title: "VanPIQ Investments - Signal Rankings",
+  description: "Quantitative investment signals powered by 158 factors across 6 signal groups",
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({
@@ -21,8 +25,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} font-sans antialiased bg-gray-50`}>
         <QueryProvider>
+          <Navigation />
           {children}
           <Toaster />
         </QueryProvider>
