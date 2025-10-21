@@ -24,7 +24,8 @@ export function getProjectRoot(): string {
  * Get all pipeline result files sorted by timestamp (newest first)
  */
 export function getAvailableResults(): FileOption[] {
-  const resultsDir = path.join(getProjectRoot(), 'results');
+  // Look in frontend/public/results where backend saves files
+  const resultsDir = path.join(process.cwd(), 'public', 'results');
   
   if (!fs.existsSync(resultsDir)) {
     return [];
@@ -73,7 +74,7 @@ export function getAvailableResults(): FileOption[] {
  */
 export function readPipelineResults(filename: string): PipelineResults | null {
   try {
-    const filePath = path.join(getProjectRoot(), 'results', filename);
+    const filePath = path.join(process.cwd(), 'public', 'results', filename);
     
     if (!fs.existsSync(filePath)) {
       console.error(`Pipeline results file not found: ${filename}`);
@@ -107,7 +108,7 @@ export function getLatestResults(): PipelineResults | null {
  */
 export function readWeightsConfig(): WeightsConfig | null {
   try {
-    const filePath = path.join(getProjectRoot(), 'config', 'weights.yaml');
+    const filePath = path.join(process.cwd(), 'public', 'config', 'weights.yaml');
     
     if (!fs.existsSync(filePath)) {
       console.error('weights.yaml not found');
@@ -127,7 +128,7 @@ export function readWeightsConfig(): WeightsConfig | null {
  */
 export function readFactorToGroup(): FactorToGroup | null {
   try {
-    const filePath = path.join(getProjectRoot(), 'config', 'factor_to_group.yaml');
+    const filePath = path.join(process.cwd(), 'public', 'config', 'factor_to_group.yaml');
     
     if (!fs.existsSync(filePath)) {
       console.error('factor_to_group.yaml not found');
@@ -157,7 +158,7 @@ export function readFactorToGroup(): FactorToGroup | null {
  */
 export function readMethodologyConfig(): MethodologyConfig | null {
   try {
-    const filePath = path.join(getProjectRoot(), 'config', 'methodology.yaml');
+    const filePath = path.join(process.cwd(), 'public', 'config', 'methodology.yaml');
     
     if (!fs.existsSync(filePath)) {
       console.error('methodology.yaml not found');

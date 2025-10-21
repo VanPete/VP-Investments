@@ -1,0 +1,239 @@
+# VP Investments - Feature Configuration
+# Which yfinance endpoints and fields to extract per domain
+# Based on: docs/yfinance_endpoints_full.md
+
+# Stock/Meta/News
+stock_meta_news:
+  endpoints:
+    - get_isin
+    - history  # price/volume timeseries
+    - get_history_metadata
+    - get_dividends
+    - get_splits
+    - get_actions
+    - get_capital_gains
+    - get_shares_full
+    - get_info  # comprehensive ticker metadata
+    - get_fast_info  # lightweight price/volume/cap
+    - get_news  # recent news articles
+  
+  fields:
+    info:
+      - currentPrice
+      - previousClose
+      - open
+      - dayHigh
+      - dayLow
+      - volume
+      - averageVolume
+      - averageVolume10days
+      - marketCap
+      - fiftyTwoWeekLow
+      - fiftyTwoWeekHigh
+      - beta
+      - trailingPE
+      - forwardPE
+      - dividendYield
+      - exDividendDate
+      - sector
+      - industry
+      - fullTimeEmployees
+      - longBusinessSummary
+      - city
+      - state
+      - country
+      - website
+    
+    fast_info:
+      - lastPrice
+      - lastVolume
+      - marketCap
+      - shares
+      - yearHigh
+      - yearLow
+      - yearChange
+      - currency
+      - timezone
+
+# Financials & Events
+financials_events:
+  endpoints:
+    - get_income_stmt  # annual
+    - income_stmt
+    - quarterly_income_stmt
+    - ttm_income_stmt
+    - get_balance_sheet  # annual
+    - balance_sheet
+    - quarterly_balance_sheet
+    - get_cashflow  # annual
+    - cashflow
+    - quarterly_cashflow
+    - ttm_cashflow
+    - get_earnings
+    - earnings
+    - calendar  # upcoming earnings
+    - get_earnings_dates
+    - earnings_dates
+    - get_sec_filings
+    - sec_filings
+  
+  fields:
+    income_stmt:
+      - TotalRevenue
+      - CostOfRevenue
+      - GrossProfit
+      - OperatingIncome
+      - EBITDA
+      - NetIncome
+      - BasicEPS
+      - DilutedEPS
+      - TaxProvision
+      - InterestExpense
+    
+    balance_sheet:
+      - TotalAssets
+      - TotalLiabilities
+      - StockholdersEquity
+      - TotalDebt
+      - Cash
+      - CashAndCashEquivalents
+      - CurrentAssets
+      - CurrentLiabilities
+      - WorkingCapital
+      - Goodwill
+    
+    cashflow:
+      - OperatingCashFlow
+      - CapitalExpenditures
+      - FreeCashFlow
+      - IssuanceOfDebt
+      - RepurchaseOfCapitalStock
+      - DividendsPaid
+
+# Analysis & Holdings
+analysis_holdings:
+  endpoints:
+    - get_recommendations
+    - recommendations
+    - get_recommendations_summary
+    - recommendations_summary
+    - get_upgrades_downgrades
+    - upgrades_downgrades
+    - get_sustainability  # ESG scores
+    - sustainability
+    - get_analyst_price_targets
+    - analyst_price_targets
+    - get_earnings_estimate
+    - earnings_estimate
+    - get_revenue_estimate
+    - revenue_estimate
+    - get_earnings_history
+    - earnings_history
+    - get_eps_trend
+    - eps_trend
+    - get_eps_revisions
+    - eps_revisions
+    - get_growth_estimates
+    - growth_estimates
+    - get_funds_data
+    - funds_data
+    - get_insider_purchases
+    - insider_purchases
+    - get_insider_transactions
+    - insider_transactions
+    - get_insider_roster_holders
+    - insider_roster_holders
+    - get_major_holders
+    - major_holders
+    - get_institutional_holders
+    - institutional_holders
+    - get_mutualfund_holders
+    - mutualfund_holders
+  
+  fields:
+    analyst_price_targets:
+      - current
+      - low
+      - high
+      - mean
+      - median
+    
+    recommendations_summary:
+      - strongBuy
+      - buy
+      - hold
+      - sell
+      - strongSell
+    
+    major_holders:
+      - insidersPercentHeld
+      - institutionsPercentHeld
+      - institutionsFloatPercentHeld
+      - institutionsCount
+
+# Market Context (optional, apply to SPY or index tickers)
+market_context:
+  endpoints:
+    - Market  # market summary/status
+
+# Taxonomy (Sector/Industry context)
+taxonomy:
+  endpoints:
+    - Sector  # sector key lookup
+    - Industry  # industry key lookup
+  
+  methods:
+    - top_companies
+    - top_etfs
+    - top_mutual_funds
+    - overview
+
+# Endpoint priority levels (for rate limiting / fallback)
+priority:
+  critical:  # Must succeed for ticker to be viable
+    - get_info
+    - get_fast_info
+    - history
+  
+  high:  # Important for scoring
+    - get_income_stmt
+    - get_balance_sheet
+    - get_cashflow
+    - get_analyst_price_targets
+    - get_recommendations_summary
+    - get_institutional_holders
+  
+  medium:  # Nice to have
+    - get_earnings_dates
+    - get_insider_transactions
+    - get_news
+    - get_earnings_history
+    - get_growth_estimates
+  
+  low:  # Optional enrichment
+    - get_sustainability
+    - get_sec_filings
+    - get_splits
+    - get_dividends
+
+# ============================================================================
+# PERFORMANCE CONFIGURATION
+# ============================================================================
+performance:
+  # Parallel fetching configuration
+  parallel_fetch_batch_size: 8       # Number of tickers to fetch concurrently
+                                     # Start conservative (3-5), increase to 10 if stable
+                                     # Higher = faster but more API load
+  
+  fetch_timeout_seconds: 30          # Timeout per ticker (seconds)
+                                     # Prevents hanging on problematic tickers
+  
+  # Rate limiting
+  rate_limit_delay_seconds: 0.1      # Delay between API calls (seconds)
+  max_retries: 3                     # Retry attempts on failure
+  retry_delay_seconds: 1.0           # Delay before retry (seconds)
+  
+  # Exponential backoff for rate limit errors
+  enable_exponential_backoff: true   # Use exponential backoff on 429 errors
+  backoff_base_seconds: 2.0          # Base delay for exponential backoff
+  backoff_max_seconds: 60.0          # Maximum backoff delay

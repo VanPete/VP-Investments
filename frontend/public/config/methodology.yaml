@@ -1,0 +1,298 @@
+# VP Investments - Scoring Methodology Documentation
+# This file defines how the quantitative signal scoring system works
+# Used by frontend to display methodology explanations
+
+# OVERVIEW
+overview:
+  title: "VP Investments Quantitative Signal Scoring"
+  description: |
+    VP Investments uses a multi-factor quantitative model to rank investment opportunities
+    across 6 distinct signal groups. Each stock receives a composite score based on 158 factors
+    spanning technical analysis, fundamental metrics, news sentiment, social media buzz,
+    risk characteristics, and institutional activity.
+  
+  key_principles:
+    - "Data-driven: All signals derived from quantitative factors"
+    - "Multi-dimensional: 6 distinct signal groups capture different aspects"
+    - "Normalized scoring: Z-score normalization enables fair comparison"
+    - "Weighted aggregation: Factor and group weights based on predictive power"
+    - "Transparent: Full factor breakdown and methodology documentation"
+
+# PIPELINE PHASES
+phases:
+  phase_1:
+    name: "Data Collection"
+    description: |
+      Fetches raw data from multiple sources including yfinance (price/fundamentals),
+      Reddit API (social sentiment), and news APIs. Collects historical price data,
+      financial statements, analyst ratings, institutional holdings, and alternative data.
+    status: "operational"
+    
+  phase_2:
+    name: "Factor Calculation"
+    description: |
+      Computes 158 quantitative factors across 6 groups. Each factor is calculated from
+      raw data using predefined formulas. Handles missing data gracefully and logs
+      calculation success rates for monitoring.
+    status: "operational"
+    
+  phase_3:
+    name: "Normalization"
+    description: |
+      Applies robust z-score normalization to all factors. Z-scores are calculated using
+      median and MAD (Median Absolute Deviation) for outlier resistance. Extreme values
+      are clipped to ±5 standard deviations. This enables fair comparison across factors
+      with different scales and distributions.
+    formula: "z = (x - median) / (1.4826 * MAD)"
+    status: "operational"
+    
+  phase_4:
+    name: "Scoring & Aggregation"
+    description: |
+      Aggregates normalized factors into group scores using factor-specific weights,
+      then combines group scores using group weights to produce the final overall signal.
+      All weights are configurable via weights.yaml.
+    formula: |
+      group_score = Σ(factor_i * weight_i) for all factors in group
+      overall_score = Σ(group_score_j * group_weight_j) for all 6 groups
+    status: "operational"
+    
+  phase_5:
+    name: "Backtesting & Validation"
+    description: |
+      Historical performance analysis to validate signal effectiveness. Tests signals
+      against past market data to measure predictive power, risk-adjusted returns,
+      and drawdown characteristics. Used for continuous model improvement.
+    status: "coming_soon"
+    note: "Under development - will include walk-forward analysis and out-of-sample testing"
+    
+  phase_6:
+    name: "Portfolio Optimization"
+    description: |
+      Constructs optimal portfolios from top-ranked signals using modern portfolio theory.
+      Considers position sizing, sector constraints, risk limits, and diversification
+      requirements. Generates actionable portfolio recommendations.
+    status: "coming_soon"
+    note: "Planned feature - will include risk parity and mean-variance optimization"
+
+# SCORING DETAILS
+scoring:
+  normalization:
+    method: "Robust Z-Score"
+    description: |
+      Each factor is normalized using robust statistics to handle outliers:
+      1. Calculate median and MAD (Median Absolute Deviation) across all tickers
+      2. Compute z-score: (value - median) / (1.4826 * MAD)
+      3. Clip extreme values to [-5, +5] range
+      4. Result: normalized scores centered at 0, typically in [-3, +3] range
+    
+    advantages:
+      - "Resistant to outliers and extreme values"
+      - "Comparable across factors with different scales"
+      - "Maintains relative ranking information"
+      - "Statistically interpretable (standard deviations from median)"
+  
+  factor_weighting:
+    description: |
+      Within each group, factors are weighted based on their relative importance and
+      historical predictive power. Factor weights sum to 1.0 within each group.
+      Configured in weights.yaml under factor_weights_[group_name].
+    
+    example: |
+      Technical Group Example:
+      - price_30d_pct: 6% (strong momentum signal)
+      - rsi_14: 5% (overbought/oversold indicator)
+      - volume_spike_ratio: 2.5% (unusual volume activity)
+      All technical factors sum to 100% of technical group score.
+  
+  group_weighting:
+    description: |
+      Six signal groups are combined using predefined weights that reflect their
+      relative importance in the overall investment decision. Group weights sum to 1.0.
+    
+    current_weights:
+      technical: 0.20
+      fundamental: 0.25
+      news_macro: 0.15
+      social_alternative: 0.10
+      risk_stability: 0.15
+      institutional_smart_money: 0.15
+    
+    rationale: |
+      Fundamental signals receive highest weight (25%) as they capture intrinsic value.
+      Technical signals (20%) capture price momentum and market sentiment.
+      Risk and institutional signals (15% each) provide risk management and smart money insights.
+      News/macro and social signals (15% and 10%) capture market catalysts and retail sentiment.
+
+# GROUP DESCRIPTIONS
+groups:
+  technical:
+    name: "Technical Signals"
+    weight: 0.20
+    description: |
+      Price momentum, volume patterns, and technical indicators. Captures market
+      sentiment through price action and trading activity.
+    key_factors:
+      - "Price momentum (1d, 7d, 30d, 60d, 90d)"
+      - "Technical indicators (RSI, MACD, Bollinger Bands)"
+      - "Moving averages (SMA, EMA, golden cross)"
+      - "Volume analysis (spikes, trends, correlations)"
+      - "Volatility measures (ATR, contractions)"
+    
+  fundamental:
+    name: "Fundamental Signals"
+    weight: 0.25
+    description: |
+      Valuation ratios, profitability metrics, growth rates, and financial health.
+      Captures intrinsic value and company quality.
+    key_factors:
+      - "Valuation (PE, PB, PS, EV/EBITDA)"
+      - "Profitability (margins, ROE, ROIC)"
+      - "Growth (revenue, earnings, FCF)"
+      - "Financial health (debt ratios, liquidity)"
+      - "Efficiency (turnover ratios)"
+    
+  news_macro:
+    name: "News & Macro Signals"
+    weight: 0.15
+    description: |
+      News sentiment, earnings events, and market regime indicators. Captures
+      information flow and macroeconomic environment.
+    key_factors:
+      - "News sentiment and consensus"
+      - "Earnings surprises and timing"
+      - "Market regime (bull/bear/neutral)"
+      - "Correlations and relative strength"
+      - "Analyst revisions and upgrades"
+    
+  social_alternative:
+    name: "Social & Alternative Signals"
+    weight: 0.10
+    description: |
+      Reddit mentions, social media sentiment, and buzz metrics. Captures retail
+      investor interest and social media momentum.
+    key_factors:
+      - "Reddit mentions and sentiment"
+      - "Social media buzz versus baseline"
+      - "Mention velocity and engagement"
+      - "Sentiment consensus"
+      - "Contrarian signals"
+    
+  risk_stability:
+    name: "Risk & Stability Signals"
+    weight: 0.15
+    description: |
+      Volatility measures, drawdown metrics, beta, and liquidity scores. Captures
+      downside risk and portfolio stability characteristics.
+    key_factors:
+      - "Volatility (30d, 60d, 90d, percentile)"
+      - "Beta and market correlation"
+      - "Drawdown measures (max, current, recovery)"
+      - "Risk-adjusted returns (Sharpe, Sortino, Calmar)"
+      - "Liquidity and tail risk metrics"
+    
+  institutional_smart_money:
+    name: "Institutional & Smart Money Signals"
+    weight: 0.15
+    description: |
+      Institutional ownership, insider activity, and analyst ratings. Captures
+      smart money positioning and expert opinions.
+    key_factors:
+      - "Institutional ownership and concentration"
+      - "Insider transactions (buying/selling)"
+      - "Analyst ratings and consensus"
+      - "Price targets and revisions"
+      - "Smart money flow composite"
+
+# INTERPRETATION GUIDE
+interpretation:
+  overall_score:
+    description: |
+      The overall signal score is a weighted combination of all six group scores.
+      Higher scores indicate stronger bullish signals across multiple dimensions.
+    
+    ranges:
+      strong_buy: "> 0.75"
+      buy: "0.50 to 0.75"
+      hold: "-0.25 to 0.50"
+      sell: "-0.50 to -0.25"
+      strong_sell: "< -0.50"
+    
+    notes: |
+      Scores are relative rankings within the analyzed universe. A score of 0.80
+      means the stock ranks highly across most signal groups. Focus on top-ranked
+      stocks for long positions, lowest-ranked for short or avoid.
+  
+  group_scores:
+    description: |
+      Individual group scores show strength in specific dimensions. A stock may
+      have high technical score (strong momentum) but low fundamental score
+      (expensive valuation), or vice versa.
+    
+    interpretation: |
+      Positive group scores indicate strength in that dimension.
+      Negative group scores indicate weakness.
+      Review group score breakdown to understand sources of overall signal strength.
+  
+  coverage:
+    description: |
+      Coverage percentage indicates what fraction of factors could be calculated.
+      Low coverage may indicate missing data or lack of applicability (e.g., ETFs
+      don't have fundamental data like earnings).
+    
+    guidance:
+      excellent: "> 90% coverage"
+      good: "80-90% coverage"
+      acceptable: "70-80% coverage"
+      caution: "< 70% coverage"
+    
+    notes: |
+      Higher coverage generally means more reliable signals. Be cautious with
+      low-coverage scores as they may be based on incomplete information.
+
+# DATA SOURCES
+data_sources:
+  price_data:
+    source: "yfinance"
+    description: "Historical OHLCV data, splits, dividends"
+    update_frequency: "Daily (end-of-day)"
+    
+  fundamental_data:
+    source: "yfinance"
+    description: "Financial statements, ratios, analyst estimates"
+    update_frequency: "Quarterly (earnings releases)"
+    
+  social_data:
+    source: "Reddit API"
+    description: "Mentions, sentiment, upvotes, comments"
+    update_frequency: "Daily"
+    
+  news_data:
+    source: "News APIs"
+    description: "News articles, sentiment analysis"
+    update_frequency: "Real-time / Intraday"
+    
+  institutional_data:
+    source: "yfinance / SEC Filings"
+    description: "Ownership, insider transactions"
+    update_frequency: "Quarterly (13F filings)"
+
+# LIMITATIONS & DISCLAIMERS
+limitations:
+  - "Historical performance does not guarantee future results"
+  - "Quantitative models may not capture all market dynamics"
+  - "Data quality and availability vary across tickers"
+  - "Model performance depends on market regime and conditions"
+  - "Not investment advice - for informational purposes only"
+  - "Backtesting in development - current signals not validated"
+  - "ETFs and certain securities may have limited factor coverage"
+
+# VERSION CONTROL
+version:
+  current: "1.0"
+  last_updated: "2025-10-20"
+  changes:
+    - "Initial methodology documentation"
+    - "158 factors across 6 groups operational"
+    - "Robust z-score normalization implemented"
+    - "Phases 1-4 operational, 5-6 in development"

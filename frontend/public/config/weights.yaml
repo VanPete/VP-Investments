@@ -1,0 +1,322 @@
+# VP Investments - Scoring Weights Configuration
+# Used by Phase 4 (score_assemble) to calculate group scores and overall signal score
+
+# GROUP WEIGHTS (must sum to 1.0)
+# These determine how much each group contributes to the overall signal score
+group_weights:
+  technical: 0.20              # 20% - Price momentum, volume, indicators
+  fundamental: 0.25            # 25% - Valuation, profitability, growth
+  news_macro: 0.15             # 15% - News sentiment, earnings, regime
+  social_alternative: 0.10     # 10% - Reddit, social media, buzz
+  risk_stability: 0.15         # 15% - Volatility, drawdowns, beta
+  institutional_smart_money: 0.15  # 15% - Ownership, insiders, analysts
+
+# FACTOR WEIGHTS (per group, must sum to 1.0 within each group)
+# These determine how much each factor contributes to its group score
+
+# TECHNICAL GROUP (20% of overall) - 41 factors total (was 35, added 6)
+factor_weights_technical:
+  # Price momentum (28% - reduced from 30%)
+  price_1d_pct: 0.07
+  price_7d_pct: 0.07
+  price_30d_pct: 0.06
+  momentum_30d_pct: 0.03
+  momentum_60d_pct: 0.03
+  momentum_90d_pct: 0.02
+  
+  # Technical indicators (23% - reduced from 25%)
+  rsi_14: 0.05
+  rsi_overbought: 0.02
+  rsi_oversold: 0.02
+  macd_value: 0.03
+  macd_signal: 0.02
+  macd_hist: 0.04
+  macd_bullish: 0.03
+  bb_position: 0.02
+  
+  # Moving averages (16% - reduced from 18%)
+  sma_20: 0.02
+  sma_50: 0.03
+  sma_200: 0.03
+  ema_12: 0.01
+  ema_26: 0.01
+  price_vs_sma_50_pct: 0.03
+  price_vs_sma_200_pct: 0.02
+  sma_50_above_200: 0.01
+  
+  # Bollinger bands (5%)
+  bb_upper: 0.01
+  bb_middle: 0.01
+  bb_lower: 0.01
+  bb_width: 0.02
+  
+  # Volume (11% - reduced from 12%)
+  volume_20d_avg: 0.03
+  volume_spike_ratio: 0.03
+  volume_price_correlation: 0.03
+  adv_20d_usd: 0.02
+  
+  # Price levels & volatility (9% - reduced from 10%)
+  off_high_52w_pct: 0.03
+  off_low_52w_pct: 0.02
+  intraday_range_pct: 0.02
+  atr_14: 0.01
+  atr_14_norm: 0.01
+  
+  # NEW TECHNICAL SIGNALS (8%)
+  momentum_consistency_3m: 0.02
+  breakout_flag_20d: 0.02
+  volatility_contraction_rank: 0.01
+  intraday_reversal_strength: 0.01
+  volume_dryup_ratio: 0.01
+  gap_strength_30d: 0.01
+
+# FUNDAMENTAL GROUP (25% of overall) - 45 factors total (was 38, added 7)
+factor_weights_fundamental:
+  # Valuation (26% - reduced from 28%)
+  pe_ratio: 0.040
+  forward_pe: 0.036
+  peg_ratio: 0.040
+  pb_ratio: 0.022
+  ps_ratio: 0.018
+  ev_ebitda: 0.031
+  ev_sales: 0.018
+  ev_fcf: 0.027
+  p_fcf: 0.018
+  earnings_yield: 0.018
+  
+  # Profitability margins (18% - reduced from 20%)
+  gross_margin: 0.038
+  operating_margin: 0.045  # +0.002 to fix sum
+  net_margin: 0.037        # +0.002 to fix sum
+  ebitda_margin: 0.031
+  fcf_margin: 0.027
+  
+  # Returns (14% - reduced from 15%)
+  roe: 0.042               # +0.002 to fix sum (total +0.006)
+  roa: 0.031
+  roic: 0.036
+  roce: 0.027
+  
+  # Growth rates (18% - reduced from 20%)
+  revenue_growth_yoy: 0.036
+  revenue_growth_qoq: 0.018
+  earnings_growth_yoy: 0.040
+  earnings_growth_qoq: 0.022
+  eps_growth_yoy: 0.036
+  eps_growth_qoq: 0.018
+  fcf_growth_yoy: 0.010
+  
+  # Financial health (11% - reduced from 12%)
+  current_ratio: 0.022
+  quick_ratio: 0.018
+  debt_to_equity: 0.027
+  debt_to_assets: 0.018
+  interest_coverage: 0.014
+  cash_to_debt: 0.009
+  
+  # Efficiency (3%)
+  asset_turnover: 0.010
+  inventory_turnover: 0.010
+  receivables_turnover: 0.010
+  
+  # Per-share metrics (2%)
+  book_value_per_share: 0.007
+  tangible_book_per_share: 0.006
+  fcf_per_share: 0.007
+  
+  # NEW FUNDAMENTAL SIGNALS (8%)
+  gross_profit_to_assets: 0.015
+  accruals_ratio: 0.015
+  interest_burden: 0.012
+  profitability_trend_3y: 0.010
+  capex_to_cfo: 0.012
+  net_debt_to_ebitda: 0.012
+  shares_change_1y: 0.004
+
+# NEWS/MACRO GROUP (15% of overall) - 21 factors total (was 17, added 4)
+factor_weights_news_macro:
+  # News sentiment (23% - reduced from 25%)
+  news_sentiment: 0.12
+  news_sentiment_consensus: 0.11
+  
+  # Earnings events (28% - reduced from 30%)
+  days_to_earnings: 0.05
+  pre_earnings_flag: 0.04
+  post_earnings_flag: 0.04
+  earnings_surprise_last: 0.08
+  earnings_beat_streak: 0.07
+  
+  # Market regime (23% - reduced from 25%)
+  market_regime: 0.09
+  spy_correlation_60d: 0.05
+  sector_momentum_30d: 0.05
+  sector_relative_strength: 0.04
+  
+  # Macro indicators (12% - removed unemployment/gdp/inflation)
+  vix_level: 0.05
+  treasury_yield_10y: 0.04
+  credit_spread: 0.03
+  # REMOVED: unemployment_rate, gdp_growth_rate, inflation_rate (require FRED API)
+  
+  # NEW NEWS/MACRO SIGNALS (8%)
+  earnings_revision_3m: 0.02
+  eps_surprise_std_4q: 0.02
+  post_earnings_drift_21d: 0.02
+  price_target_dispersion_ratio: 0.02
+
+# SOCIAL/ALTERNATIVE GROUP (10% of overall) - 10 factors total
+factor_weights_social_alternative:
+  # Primary Reddit sentiment (45%)
+  reddit_sentiment: 0.18                    # 18% (was 0.13)
+  reddit_sentiment_consensus: 0.15          # 15% (was 0.10)
+  reddit_sentiment_7d: 0.12                 # 12% (was 0.10)
+  
+  # Reddit activity (22%)
+  reddit_mentions_7d: 0.15                  # 15% (was 0.12)
+  reddit_upvotes_avg: 0.07                  # 7% (was 0.05)
+  reddit_comments_avg: 0.05                 # 5% (was 0.03)
+  
+  # Buzz metrics (17%)
+  buzz_vs_baseline: 0.09                    # 9% (was 0.08)
+  mention_velocity: 0.08                    # 8% (was 0.06)
+  
+  # Sentiment meta (16%)
+  sentiment_consensus: 0.08                 # 8% (was 0.07)
+  contrarian_signal: 0.03                   # 3% (was 0.02)
+
+# RISK/STABILITY GROUP (15% of overall) - 23 factors total (was 18, added 5)
+factor_weights_risk_stability:
+  # Volatility (32% - reduced from 35%)
+  volatility_30d: 0.07
+  volatility_60d: 0.09
+  volatility_90d: 0.06
+  volatility_percentile: 0.06
+  downside_deviation_60d: 0.04
+  
+  # Beta & correlation (16% - reduced from 18%)
+  beta_60d: 0.05
+  beta_252d: 0.04
+  correlation_spy_60d: 0.07
+  
+  # Drawdowns (20% - reduced from 22%)
+  max_drawdown_1y: 0.06
+  max_drawdown_6m: 0.04
+  drawdown_current: 0.05
+  recovery_time: 0.05
+  
+  # Risk-adjusted returns (14% - reduced from 15%)
+  sharpe_ratio_60d: 0.06
+  sortino_ratio_60d: 0.05
+  calmar_ratio: 0.03
+  
+  # Liquidity (9% - reduced from 10%)
+  bid_ask_spread_pct: 0.03
+  liquidity_score: 0.04
+  days_to_trade_position: 0.02
+  
+  # NEW RISK SIGNALS (9%)
+  volatility_of_volatility_30d: 0.02
+  skewness_90d: 0.02
+  kurtosis_90d: 0.02
+  drawdown_frequency_90d: 0.02
+  downside_capture_1y: 0.01
+
+# INSTITUTIONAL/SMART MONEY GROUP (15% of overall) - 25 factors total (was 22, added 3)
+factor_weights_institutional_smart_money:
+  # Institutional ownership (12% - removed deltas)
+  inst_ownership_pct: 0.05
+  inst_holder_count: 0.04
+  inst_concentration_top10: 0.03
+  # REMOVED: inst_ownership_delta_3m, inst_holder_count_delta_3m (require historical snapshots)
+  
+  # Insider activity (7% - removed buy/sell ratios)
+  insider_txn_count_6m: 0.04
+  insider_net_shares_6m: 0.03
+  # REMOVED: insider_buy_ratio, insider_sell_ratio, insider_buy_score (require detailed SEC data)
+  
+  # Analyst ratings (32% - reduced from 35%)
+  analyst_rating_avg: 0.06
+  analyst_rating_momentum_3m: 0.07
+  analyst_count: 0.04
+  analyst_consensus_change: 0.03
+  strong_buy_count: 0.04
+  strong_sell_count: 0.03
+  price_target_upside_pct: 0.05
+  
+  # Price targets (9% - reduced from 10%)
+  price_target_mean: 0.03
+  price_target_high: 0.02
+  price_target_low: 0.02
+  price_target_dispersion: 0.02
+  
+  # Smart money composite (5%)
+  smart_money_flow: 0.05
+  
+  # NEW INSTITUTIONAL SIGNALS (5%)
+  institutional_concentration_top5: 0.03
+  # REMOVED: institutional_turnover_qoq (requires historical snapshots)
+  insider_transaction_intensity: 0.02
+
+# SCORING PARAMETERS
+scoring_parameters:
+  # Normalization method
+  normalization_method: robust_z  # options: robust_z, standard_z, minmax, rank
+  
+  # Winsorization (clip outliers)
+  winsorize: true
+  winsor_pct: 0.01  # clip at 1st and 99th percentile
+  
+  # Missing data handling
+  missing_factor_penalty: 0.0  # score to assign if factor is null
+  min_factors_required: 0.5    # minimum fraction of factors needed per group
+  
+  # Score bounds
+  min_score: 0.0
+  max_score: 1.0
+  
+  # Trade type weight adjustments (optional)
+  trade_type_adjustments:
+    growth:
+      technical: 0.25
+      fundamental: 0.20
+      news_macro: 0.15
+      social_alternative: 0.15
+      risk_stability: 0.10
+      institutional_smart_money: 0.15
+    
+    value:
+      technical: 0.15
+      fundamental: 0.35
+      news_macro: 0.10
+      social_alternative: 0.05
+      risk_stability: 0.15
+      institutional_smart_money: 0.20
+    
+    momentum:
+      technical: 0.35
+      fundamental: 0.10
+      news_macro: 0.20
+      social_alternative: 0.15
+      risk_stability: 0.10
+      institutional_smart_money: 0.10
+    
+    contrarian:
+      technical: 0.15
+      fundamental: 0.25
+      news_macro: 0.10
+      social_alternative: 0.20
+      risk_stability: 0.20
+      institutional_smart_money: 0.10
+
+# VALIDATION
+validation:
+  # Ensure all weights sum to 1.0
+  enforce_weight_sum: true
+  weight_sum_tolerance: 0.001
+  
+  # Ensure all factors in factor_to_group.yaml have weights
+  enforce_complete_coverage: true
+  
+  # Log warnings for unused factors
+  warn_unused_factors: true

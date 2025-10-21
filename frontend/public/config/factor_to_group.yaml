@@ -1,0 +1,265 @@
+# VP Investments - Factor to Group Mapping with Descriptions
+# Each computed factor MUST belong to exactly ONE of the six signal groups
+# Used by Phase 2 (calculate) to assign factors and Phase 4 (score) to weight them
+# Format: factor_name: "Description for frontend display"
+
+# GROUP 1: TECHNICAL (20%)
+# Price momentum, volume, technical indicators
+technical:
+  # Price momentum
+  price_1d_pct: "1-day percentage price change"
+  price_7d_pct: "7-day percentage price change"
+  price_30d_pct: "30-day percentage price change"
+  momentum_30d_pct: "30-day momentum indicator (rate of change)"
+  momentum_60d_pct: "60-day momentum indicator (rate of change)"
+  momentum_90d_pct: "90-day momentum indicator (rate of change)"
+  
+  # Technical indicators
+  rsi_14: "14-period Relative Strength Index (0-100 scale)"
+  rsi_overbought: "Boolean flag indicating RSI > 70 (overbought condition)"
+  rsi_oversold: "Boolean flag indicating RSI < 30 (oversold condition)"
+  macd_value: "Moving Average Convergence Divergence value"
+  macd_signal: "MACD signal line (9-period EMA of MACD)"
+  macd_hist: "MACD histogram (MACD value minus signal line)"
+  macd_bullish: "Boolean flag indicating positive MACD histogram"
+  
+  # Moving averages
+  sma_20: "20-day Simple Moving Average"
+  sma_50: "50-day Simple Moving Average"
+  sma_200: "200-day Simple Moving Average"
+  ema_12: "12-day Exponential Moving Average"
+  ema_26: "26-day Exponential Moving Average"
+  price_vs_sma_50_pct: "Percentage distance of price from 50-day SMA"
+  price_vs_sma_200_pct: "Percentage distance of price from 200-day SMA"
+  sma_50_above_200: "Boolean golden cross indicator (50-day SMA > 200-day SMA)"
+  
+  # Bollinger bands
+  bb_upper: "Upper Bollinger Band (20-day SMA + 2 std dev)"
+  bb_middle: "Middle Bollinger Band (20-day SMA)"
+  bb_lower: "Lower Bollinger Band (20-day SMA - 2 std dev)"
+  bb_width: "Bollinger Band width (normalized volatility measure)"
+  bb_position: "Price position within Bollinger Bands (0-1 scale)"
+  
+  # Volume
+  volume_20d_avg: "20-day average trading volume"
+  volume_spike_ratio: "Current volume divided by 20-day average volume"
+  volume_price_correlation: "Correlation between volume and price changes"
+  adv_20d_usd: "Average daily dollar volume over 20 trading days"
+  
+  # Price levels
+  off_high_52w_pct: "Percentage distance from 52-week high"
+  off_low_52w_pct: "Percentage distance from 52-week low"
+  intraday_range_pct: "Intraday high-low range as percentage of close"
+  
+  # Volatility (technical aspect)
+  atr_14: "14-period Average True Range (absolute volatility)"
+  atr_14_norm: "Normalized ATR (ATR divided by current price)"
+  
+  # NEW TECHNICAL SIGNALS
+  momentum_consistency_3m: "Percentage of up-days over 63 trading days (3 months)"
+  breakout_flag_20d: "Boolean flag for price breakout above 20-day high with volume confirmation"
+  volatility_contraction_rank: "ATR percentile rank versus 1-year historical distribution"
+  intraday_reversal_strength: "Intraday reversal measure: (Close-Low)/(High-Low)"
+  volume_dryup_ratio: "Volume decline indicator: 5-day avg / 60-day avg volume"
+  gap_strength_30d: "Average opening gap size over 30 days (normalized by close)"
+
+# GROUP 2: FUNDAMENTAL (25%)
+# Valuation, profitability, growth, financial health
+fundamental:
+  # Valuation ratios
+  pe_ratio: "Price-to-Earnings ratio (trailing 12 months)"
+  forward_pe: "Forward Price-to-Earnings ratio (next 12 months estimate)"
+  peg_ratio: "Price/Earnings-to-Growth ratio (PE / earnings growth rate)"
+  pb_ratio: "Price-to-Book ratio (market cap / book value)"
+  ps_ratio: "Price-to-Sales ratio (market cap / revenue)"
+  ev_ebitda: "Enterprise Value to EBITDA ratio"
+  ev_sales: "Enterprise Value to Sales ratio"
+  ev_fcf: "Enterprise Value to Free Cash Flow ratio"
+  p_fcf: "Price to Free Cash Flow ratio"
+  earnings_yield: "Earnings Yield (inverse of PE ratio)"
+  
+  # Profitability margins
+  gross_margin: "Gross Profit Margin (gross profit / revenue)"
+  operating_margin: "Operating Profit Margin (operating income / revenue)"
+  net_margin: "Net Profit Margin (net income / revenue)"
+  ebitda_margin: "EBITDA Margin (EBITDA / revenue)"
+  fcf_margin: "Free Cash Flow Margin (FCF / revenue)"
+  
+  # Returns
+  roe: "Return on Equity (net income / shareholder equity)"
+  roa: "Return on Assets (net income / total assets)"
+  roic: "Return on Invested Capital (NOPAT / invested capital)"
+  roce: "Return on Capital Employed (EBIT / capital employed)"
+  
+  # Growth rates
+  revenue_growth_yoy: "Year-over-year revenue growth rate"
+  revenue_growth_qoq: "Quarter-over-quarter revenue growth rate"
+  earnings_growth_yoy: "Year-over-year earnings growth rate"
+  earnings_growth_qoq: "Quarter-over-quarter earnings growth rate"
+  eps_growth_yoy: "Year-over-year earnings per share growth rate"
+  eps_growth_qoq: "Quarter-over-quarter earnings per share growth rate"
+  fcf_growth_yoy: "Year-over-year free cash flow growth rate"
+  
+  # Financial health
+  current_ratio: "Current Ratio (current assets / current liabilities)"
+  quick_ratio: "Quick Ratio (liquid assets / current liabilities)"
+  debt_to_equity: "Debt-to-Equity ratio (total debt / shareholder equity)"
+  debt_to_assets: "Debt-to-Assets ratio (total debt / total assets)"
+  interest_coverage: "Interest Coverage ratio (EBIT / interest expense)"
+  cash_to_debt: "Cash-to-Debt ratio (cash & equivalents / total debt)"
+  
+  # Efficiency
+  asset_turnover: "Asset Turnover ratio (revenue / average total assets)"
+  inventory_turnover: "Inventory Turnover ratio (COGS / average inventory)"
+  receivables_turnover: "Receivables Turnover ratio (revenue / average receivables)"
+  
+  # Per-share metrics
+  book_value_per_share: "Book Value per Share (equity / shares outstanding)"
+  tangible_book_per_share: "Tangible Book Value per Share (tangible equity / shares)"
+  fcf_per_share: "Free Cash Flow per Share (FCF / shares outstanding)"
+  
+  # NEW FUNDAMENTAL SIGNALS
+  gross_profit_to_assets: "Gross Profit to Assets ratio (profitability efficiency metric)"
+  accruals_ratio: "Accruals Ratio: (Net Income - Operating CF) / Total Assets"
+  interest_burden: "Interest Burden ratio (EBIT / Interest Expense)"
+  profitability_trend_3y: "3-year profitability trend (slope of quarterly gross margins)"
+  capex_to_cfo: "Capital Expenditure to Operating Cash Flow ratio"
+  net_debt_to_ebitda: "Net Debt to EBITDA: (Total Debt - Cash) / EBITDA"
+  shares_change_1y: "Year-over-year change in shares outstanding (dilution/buyback)"
+
+# GROUP 3: NEWS/MACRO (15%)
+# News sentiment, earnings events, market regime
+news_macro:
+  # News sentiment
+  news_sentiment: "Average sentiment score from recent news articles"
+  news_sentiment_consensus: "Consensus news sentiment (% positive articles)"
+  
+  # Earnings events
+  days_to_earnings: "Days until next earnings announcement"
+  pre_earnings_flag: "Boolean flag indicating within 5 days before earnings"
+  post_earnings_flag: "Boolean flag indicating within 5 days after earnings"
+  earnings_surprise_last: "Most recent earnings surprise (actual - expected)"
+  earnings_beat_streak: "Consecutive quarters of beating earnings estimates"
+  
+  # Market regime
+  market_regime: "Current market regime classification (bull/bear/neutral)"
+  spy_correlation_60d: "60-day correlation with S&P 500 index"
+  sector_momentum_30d: "30-day momentum of stock's sector"
+  sector_relative_strength: "Stock's relative strength versus sector"
+  
+  # Macro indicators
+  vix_level: "Current VIX volatility index level"
+  treasury_yield_10y: "10-year US Treasury yield"
+  credit_spread: "Corporate credit spread (BBB - Treasury)"
+  
+  # NEW NEWS/MACRO SIGNALS
+  earnings_revision_3m: "Net analyst earnings revisions over 3 months (upgrades - downgrades)"
+  eps_surprise_std_4q: "Standard deviation of earnings surprises over last 4 quarters"
+  post_earnings_drift_21d: "21-day cumulative return following earnings announcement"
+  price_target_dispersion_ratio: "Price target dispersion: (High - Low) / Mean target"
+
+# GROUP 4: SOCIAL/ALTERNATIVE (10%)
+# Reddit, social media, alternative data
+social_alternative:
+  # Reddit metrics
+  reddit_mentions_7d: "Number of Reddit mentions over last 7 days"
+  reddit_sentiment_7d: "Average Reddit sentiment score over last 7 days"
+  reddit_sentiment: "Current Reddit sentiment score"
+  reddit_sentiment_consensus: "Reddit sentiment consensus (% positive mentions)"
+  reddit_upvotes_avg: "Average upvotes per Reddit mention"
+  reddit_comments_avg: "Average comments per Reddit mention"
+  
+  # Buzz metrics
+  buzz_vs_baseline: "Current buzz level versus historical baseline"
+  mention_velocity: "Rate of mentions (mentions per hour)"
+  
+  # Social sentiment
+  sentiment_consensus: "Overall social sentiment consensus (% positive)"
+  contrarian_signal: "Contrarian indicator (high mentions with negative price action)"
+
+# GROUP 5: RISK/STABILITY (15%)
+# Volatility, drawdowns, liquidity, beta
+risk_stability:
+  # Volatility
+  volatility_30d: "30-day annualized volatility (standard deviation of returns)"
+  volatility_60d: "60-day annualized volatility"
+  volatility_90d: "90-day annualized volatility"
+  volatility_percentile: "Current volatility percentile versus 1-year history"
+  downside_deviation_60d: "60-day downside deviation (volatility of negative returns only)"
+  
+  # Beta & correlation
+  beta_60d: "60-day beta versus S&P 500 (systematic risk measure)"
+  beta_252d: "252-day (1-year) beta versus S&P 500"
+  correlation_spy_60d: "60-day correlation coefficient with S&P 500"
+  
+  # Drawdowns
+  max_drawdown_1y: "Maximum peak-to-trough decline over past year"
+  max_drawdown_6m: "Maximum peak-to-trough decline over past 6 months"
+  drawdown_current: "Current drawdown from most recent peak"
+  recovery_time: "Days elapsed since maximum drawdown"
+  
+  # Sharpe & risk-adjusted
+  sharpe_ratio_60d: "60-day Sharpe ratio (risk-adjusted return)"
+  sortino_ratio_60d: "60-day Sortino ratio (downside risk-adjusted return)"
+  calmar_ratio: "Calmar ratio (annual return / max drawdown)"
+  
+  # Liquidity
+  bid_ask_spread_pct: "Bid-ask spread as percentage of mid price"
+  liquidity_score: "Composite liquidity score (volume, spread, market cap)"
+  days_to_trade_position: "Estimated days to liquidate position without market impact"
+  
+  # NEW RISK SIGNALS
+  volatility_of_volatility_30d: "Volatility of volatility (standard deviation of 30-day rolling vol)"
+  skewness_90d: "90-day return distribution skewness (asymmetry measure)"
+  kurtosis_90d: "90-day return distribution kurtosis (tail risk measure)"
+  drawdown_frequency_90d: "Frequency of drawdowns exceeding -3% over 90 days"
+  downside_capture_1y: "1-year downside capture ratio vs S&P 500"
+
+# GROUP 6: INSTITUTIONAL/SMART MONEY (15%)
+# Institutional ownership, insider activity, analyst ratings
+institutional_smart_money:
+  # Institutional ownership
+  inst_ownership_pct: "Percentage of shares held by institutional investors"
+  inst_holder_count: "Number of institutional holders"
+  inst_concentration_top10: "Percentage of shares held by top 10 institutions"
+  
+  # Insider activity
+  insider_txn_count_6m: "Number of insider transactions over past 6 months"
+  insider_net_shares_6m: "Net insider buying/selling (shares bought - sold)"
+  
+  # Analyst ratings
+  analyst_rating_avg: "Average analyst rating (1=Strong Buy, 5=Strong Sell)"
+  analyst_rating_momentum_3m: "3-month analyst rating momentum (upgrade/downgrade trend)"
+  analyst_count: "Number of analysts covering the stock"
+  analyst_consensus_change: "Change in analyst consensus rating"
+  strong_buy_count: "Number of Strong Buy ratings"
+  strong_sell_count: "Number of Strong Sell ratings"
+  
+  # Price targets
+  price_target_mean: "Mean analyst price target"
+  price_target_high: "Highest analyst price target"
+  price_target_low: "Lowest analyst price target"
+  price_target_upside_pct: "Implied upside from current price to mean target"
+  price_target_dispersion: "Standard deviation of analyst price targets"
+  
+  # Smart money composite
+  smart_money_flow: "Composite smart money indicator (institutional + insider + analyst signals)"
+  
+  # NEW INSTITUTIONAL SIGNALS
+  institutional_concentration_top5: "Percentage of shares held by top 5 institutions"
+  insider_transaction_intensity: "Log-transformed insider transaction count"
+  analyst_consensus_strength: "Strength of analyst consensus (low dispersion = high strength)"
+  analyst_upgrade_count_3m: "Number of analyst upgrades over past 3 months"
+  analyst_downgrade_count_3m: "Number of analyst downgrades over past 3 months"
+  analyst_momentum: "Net analyst momentum score (upgrades - downgrades)"
+
+# Validation rules
+validation:
+  # Each factor must appear exactly once
+  enforce_unique: true
+  
+  # Group assignment is immutable
+  enforce_immutable: true
+  
+  # Factors not listed here will log warnings
+  require_explicit_mapping: true
