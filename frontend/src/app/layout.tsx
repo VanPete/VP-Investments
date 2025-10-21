@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased bg-gray-50`}>
+      <body className={`${inter.variable} font-sans antialiased bg-gradient-to-b from-[#0d1117] to-[#0f141a] dark:from-[#0d1117] dark:to-[#0f141a] light:from-[#f9fafb] light:to-[#f3f4f6] min-h-screen`}>
         <QueryProvider>
           <Navigation />
           {children}

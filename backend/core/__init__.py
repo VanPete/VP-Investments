@@ -1,19 +1,29 @@
 """Core module initialization."""
 
 from backend.core.config import get_config, setup_logging
-from backend.core.core import (
+from backend.exceptions import (
     VPInvestmentsError, 
-    ConfigurationError, 
-    DataError,
-    APIError,
+    ConfigurationError,
+    DataFetchError as DataError,
+    DatabaseError as APIError,
+)
+from backend.enums import (
     SignalType,
     TradeType,
     RiskLevel,
-    MarketCondition,
-    DataSource,
     FeatureType,
-    DEFAULT_TICKERS
 )
+
+# Legacy compatibility - these were in old core.py
+class MarketCondition:
+    """Market condition placeholder (deprecated)"""
+    pass
+
+class DataSource:
+    """Data source placeholder (deprecated)"""
+    pass
+
+DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]  # Moved from legacy core.py
 
 __all__ = [
     "get_config",

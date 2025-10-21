@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any, Union
 import numpy as np
 import pandas as pd
-import yfinance as yf
+import backend.integrations.yfinance as yf
 from dataclasses import dataclass
 from enum import Enum
 
@@ -97,72 +97,13 @@ class BacktestEngine:
         """Initialize database connection asynchronously"""
         if self.db is None:
             self.db = await get_supabase_database()
-        
-    def get_price_data(self, ticker: str, start_date: datetime, end_date: datetime = None) -> pd.DataFrame:
-        """Get historical price data for backtesting"""
-        try:
-            if end_date is None:
-                end_date = datetime.now()
-            
-            stock = yf.Ticker(ticker)
-            hist = stock.history(start=start_date, end=end_date)
-            
-            if hist.empty:
-                logger.warning(f"No price data available for {ticker}")
-                return pd.DataFrame()
-            
-            return hist
-            
-        except Exception as e:
-            logger.error(f"Error getting price data for {ticker}: {e}")
-            return pd.DataFrame()
     
-    async def _get_historical_price(self, ticker: str, target_date: datetime) -> Optional[float]:
-        """Get historical price for a specific date"""
-        try:
-            # Get data for a few days around the target date to handle weekends/holidays
-            start_date = target_date - timedelta(days=5)
-            end_date = target_date + timedelta(days=5)
-            
-            data = self.get_price_data(ticker, start_date, end_date)
-            if data.empty:
-                return None
-            
-            # Find the closest trading day to the target date
-            target_str = target_date.strftime('%Y-%m-%d')
-            
-            # Try exact date first
-            if target_str in data.index.strftime('%Y-%m-%d'):
-                return float(data.loc[data.index.strftime('%Y-%m-%d') == target_str, 'Close'].iloc[0])
-            
-            # Find closest date if exact match not available
-            data_dates = pd.to_datetime(data.index.date)
-            target_pd = pd.to_datetime(target_date.date())
-            
-            closest_idx = (data_dates - target_pd).abs().idxmin()
-            return float(data.loc[closest_idx, 'Close'])
-            
-        except Exception as e:
-            logger.debug(f"Error getting historical price for {ticker} at {target_date}: {e}")
-            return None
-    
-    def get_spy_benchmark_data(self, start_date: datetime, end_date: datetime = None) -> pd.DataFrame:
-        """Get SPY benchmark data for comparison"""
-        try:
-            if end_date is None:
-                end_date = datetime.now()
-            
-            spy = yf.Ticker("SPY")
-            hist = spy.history(start=start_date, end=end_date)
-            
-            return hist
-            
-        except Exception as e:
-            logger.error(f"Error getting SPY benchmark data: {e}")
-            return pd.DataFrame()
+    # NOTE: Data fetching moved to Phase 1 (yfinance.py + cache.py)
+    # All historical price data must be pre-fetched and passed as parameters
+    # No mid-pipeline API calls allowed in 3.0 architecture
     
     def calculate_returns(self, price_data: pd.DataFrame, entry_date: datetime, 
-                         target_days: List[int] = None) -> Dict[str, float]:
+                         target_days: Optional[List[int]] = None) -> Dict[str, float]:
         """Calculate returns for specified time periods"""
         try:
             if target_days is None:
@@ -202,7 +143,7 @@ class BacktestEngine:
             return {}
     
     def calculate_spy_returns(self, spy_data: pd.DataFrame, entry_date: datetime,
-                             target_days: List[int] = None) -> Dict[str, float]:
+                             target_days: Optional[List[int]] = None) -> Dict[str, float]:
         """Calculate SPY benchmark returns"""
         try:
             if target_days is None:
@@ -293,7 +234,7 @@ class BacktestEngine:
             return {}
     
     def calculate_signal_duration(self, price_data: pd.DataFrame, entry_date: datetime,
-                                 exit_criteria: Dict[str, float] = None) -> Optional[int]:
+                                 exit_criteria: Optional[Dict[str, float]] = None) -> Optional[int]:
         """Calculate optimal signal duration based on exit criteria"""
         try:
             if exit_criteria is None:
@@ -454,7 +395,7 @@ class BacktestEngine:
             emit_metric('backtest.performance_tracking.error', signal_id=signal_id, error=str(e))
             return None
     
-    async def update_signal_performance(self, signal_id: str, ticker: str = None, interval: str = None, metrics: PerformanceMetrics = None) -> bool:
+    async def update_signal_performance(self, signal_id: str, ticker: Optional[str] = None, interval: Optional[str] = None, metrics: Optional[PerformanceMetrics] = None) -> bool:
         """
         Update signal with calculated performance metrics for a specific interval
         
@@ -1450,7 +1391,7 @@ async def backtest_eligible_signals(limit: int = 100) -> Dict[str, Any]:
                 logger.info(f"    Backtesting {days_elapsed} days elapsed, calculating intervals: {intervals_to_calculate}")
                 
                 # Fetch historical price data from yfinance
-                import yfinance as yf
+                import backend.integrations.yfinance as yf
                 
                 # Get data from signal date to now + 1 day buffer
                 end_date = now + timedelta(days=1)

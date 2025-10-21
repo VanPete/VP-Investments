@@ -19,7 +19,7 @@ import asyncio
 import logging
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable
 from dataclasses import dataclass, asdict
 from enum import Enum
 
@@ -269,7 +269,7 @@ class CacheLayer:
         ticker: str,
         group: DataGroup,
         provider: Provider,
-        fetch_func: callable,
+        fetch_func: Callable,
         force_refresh: bool = False,
         **fetch_kwargs
     ) -> Tuple[Optional[Dict[str, Any]], bool]:

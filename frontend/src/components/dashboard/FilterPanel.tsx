@@ -25,7 +25,6 @@ interface FilterPanelProps {
 export function FilterPanel({
   filters,
   onFiltersChange,
-  weightsConfig,
   factorToGroup,
 }: FilterPanelProps) {
   // Get factors for selected group
@@ -83,12 +82,12 @@ export function FilterPanel({
   };
 
   return (
-    <Card>
+    <Card className="shadow-lg rounded-2xl border-gray-200 dark:border-gray-800">
       <CardContent className="pt-6">
         <div className="space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Quick Filters</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Quick Filters</h3>
             <Button variant="ghost" size="sm" onClick={handleReset}>
               Reset
             </Button>
@@ -98,7 +97,7 @@ export function FilterPanel({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Search */}
             <div className="space-y-2">
-              <Label htmlFor="search">Search Ticker</Label>
+              <Label htmlFor="search" className="dark:text-gray-200">Search Ticker</Label>
               <Input
                 id="search"
                 type="text"
@@ -110,7 +109,7 @@ export function FilterPanel({
 
             {/* Group Filter */}
             <div className="space-y-2">
-              <Label htmlFor="group">Group</Label>
+              <Label htmlFor="group" className="dark:text-gray-200">Group</Label>
               <Select
                 value={filters.selectedGroup || 'all'}
                 onValueChange={handleGroupChange}
@@ -131,7 +130,7 @@ export function FilterPanel({
 
             {/* Factor Filter */}
             <div className="space-y-2">
-              <Label htmlFor="factor">Factor</Label>
+              <Label htmlFor="factor" className="dark:text-gray-200">Factor</Label>
               <Select
                 value={filters.selectedFactor || 'all'}
                 onValueChange={handleFactorChange}
@@ -153,7 +152,7 @@ export function FilterPanel({
 
             {/* Min Coverage */}
             <div className="space-y-2">
-              <Label htmlFor="coverage">
+              <Label htmlFor="coverage" className="dark:text-gray-200">
                 Min Coverage: {(filters.minCoverage * 100).toFixed(0)}%
               </Label>
               <Input

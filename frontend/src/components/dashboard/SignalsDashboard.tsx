@@ -7,11 +7,9 @@ import type {
   FactorToGroup,
   FileOption,
   FilterState,
-  SignalRanking,
 } from '@/types/pipeline';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
 import { SignalsTable } from './SignalsTable';
 import { FilterPanel } from './FilterPanel';
 import { DashboardHeader } from './DashboardHeader';

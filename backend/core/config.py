@@ -15,7 +15,10 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from .core import ConfigurationError, LOG_DIR
+from backend.exceptions import ConfigurationError
+
+# Define LOG_DIR (moved from legacy core.py)
+LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 
 # Load environment variables from .env file
 load_dotenv()

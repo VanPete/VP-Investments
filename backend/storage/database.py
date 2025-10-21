@@ -8,7 +8,7 @@ with connection pooling, error handling, and monitoring.
 import os
 import asyncio
 import logging
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Callable
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import json
@@ -33,7 +33,7 @@ class DatabaseInterface:
         """Close database connection.""" 
         raise NotImplementedError
     
-    async def execute_query(self, query: str, params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    async def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Execute a query and return results."""
         raise NotImplementedError
 
@@ -327,9 +327,9 @@ class SupabaseInterface(DatabaseInterface):
     # UPSERT OPERATIONS FOR HOURLY SCHEDULER (Replaces all SQLite operations)
     # =============================================================================
     
-    async def upsert_run(self, run_id: str, started_at: str = None, ended_at: str = None,
-                        config_json: str = None, code_version: str = None, 
-                        notes: str = None) -> None:
+    async def upsert_run(self, run_id: str, started_at: Optional[str] = None, ended_at: Optional[str] = None,
+                        config_json: Optional[str] = None, code_version: Optional[str] = None, 
+                        notes: Optional[str] = None) -> None:
         """Upsert run record - replaces utils.db.upsert_run"""
         query = """
         INSERT INTO runs (run_id, started_at, ended_at, config_json, code_version, notes)
@@ -344,10 +344,10 @@ class SupabaseInterface(DatabaseInterface):
         params = [run_id, started_at, ended_at, config_json, code_version, notes]
         await self.execute_non_query(query, params)
     
-    async def upsert_signal_norm(self, run_id: str, ticker: str, score: float = None,
-                               rank: int = None, trade_type: str = None, risk_level: str = None,
-                               reddit_score: float = None, news_score: float = None,
-                               financial_score: float = None, run_datetime = None) -> None:
+    async def upsert_signal_norm(self, run_id: str, ticker: str, score: Optional[float] = None,
+                               rank: Optional[int] = None, trade_type: Optional[str] = None, risk_level: Optional[str] = None,
+                               reddit_score: Optional[float] = None, news_score: Optional[float] = None,
+                               financial_score: Optional[float] = None, run_datetime = None) -> None:
         """Upsert signal_norm record - replaces utils.db.upsert_signal_norm"""
         query = """
         INSERT INTO signals_norm (run_id, ticker, score, rank, trade_type, risk_level,
@@ -367,8 +367,8 @@ class SupabaseInterface(DatabaseInterface):
                  reddit_score, news_score, financial_score, run_datetime]
         await self.execute_non_query(query, params)
     
-    async def insert_metric(self, run_id: str, name: str, value: float = None,
-                          context_json: str = None, created_at = None) -> None:
+    async def insert_metric(self, run_id: str, name: str, value: Optional[float] = None,
+                          context_json: Optional[str] = None, created_at = None) -> None:
         """Insert metric record - replaces utils.db.insert_metric"""
         if created_at is None:
             created_at = datetime.now(timezone.utc)
@@ -390,7 +390,7 @@ class SupabaseInterface(DatabaseInterface):
         """
         return await self.execute_query(query, [limit])
     
-    async def get_signals_by_run(self, run_id: str, limit: int = None) -> List[Dict]:
+    async def get_signals_by_run(self, run_id: str, limit: Optional[int] = None) -> List[Dict]:
         """Get signals for a specific run ordered by score DESC"""
         query = """
         SELECT run_id, ticker, score, rank, trade_type, risk_level,
@@ -674,7 +674,7 @@ class SupabaseInterface(DatabaseInterface):
             raise
     
     async def upsert_batch(self, table_name: str, records: List[Dict], 
-                          on_conflict: str = None) -> Dict:
+                          on_conflict: Optional[str] = None) -> Dict:
         """
         Upsert multiple records using Supabase client
         
@@ -720,7 +720,7 @@ class SupabaseInterface(DatabaseInterface):
     # Real-time subscriptions (Supabase feature)
     
     def create_realtime_subscription(self, table: str, event: str = "*", 
-                                   callback: callable = None):
+                                   callback: Optional[Callable] = None):
         """
         Create real-time subscription to table changes
         
@@ -823,7 +823,7 @@ class SupabaseInterface(DatabaseInterface):
             logger.error(f"Failed to get dashboard data: {e}")
             return {}
     
-    async def get_signal_performance_metrics(self, run_id: str = None) -> Dict[str, Any]:
+    async def get_signal_performance_metrics(self, run_id: Optional[str] = None) -> Dict[str, Any]:
         """Get detailed performance metrics for signals"""
         try:
             where_clause = "WHERE s.run_id = $1" if run_id else ""
@@ -947,7 +947,7 @@ class SupabaseInterface(DatabaseInterface):
             logger.error(f"Failed to update backtest results for signal {signal_id}: {e}")
             return False
     
-    async def get_signals_for_backtest(self, run_id: str = None, limit: int = 1000) -> List[Dict]:
+    async def get_signals_for_backtest(self, run_id: Optional[str] = None, limit: int = 1000) -> List[Dict]:
         """Get signals that need backtest processing"""
         try:
             where_clause = ""
@@ -985,7 +985,7 @@ class SupabaseInterface(DatabaseInterface):
             logger.warning(f"Failed to refresh performance views: {e}")
             return False
     
-    async def get_system_config(self, category: str = None) -> Dict[str, Any]:
+    async def get_system_config(self, category: Optional[str] = None) -> Dict[str, Any]:
         """Get system configuration from database"""
         try:
             where_clause = "WHERE category = $1" if category else ""

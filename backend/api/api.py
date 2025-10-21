@@ -27,11 +27,20 @@ from pydantic import BaseModel, Field
 import uvicorn
 
 # Import from VP Investments modules
-from ..core.signals import Signal
-from ..core.models import AnalysisRun
-from ..core.core import SignalType
+from backend.enums import SignalType
 from ..core.config import ConfigManager, get_config
 from ..storage.database import get_database, DatabaseInterface
+
+# Legacy imports - these modules are archived but API may still reference them
+try:
+    from ..core.models import AnalysisRun
+except ImportError:
+    AnalysisRun = None  # Archived with old pipeline
+
+try:
+    from archive.core.signals_legacy import Signal
+except ImportError:
+    Signal = None  # Archived with old pipeline
 
 logger = logging.getLogger(__name__)
 

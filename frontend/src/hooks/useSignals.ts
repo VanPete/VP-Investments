@@ -5,7 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_ENDPOINTS, handleApiError } from '@/lib/api';
-import { TradingSignal, ApiResponse, DashboardFilters } from '@/types/api';
+import { TradingSignal, DashboardFilters } from '@/types/api';
 
 // Fetch all trading signals
 export const useSignals = (filters?: DashboardFilters) => {

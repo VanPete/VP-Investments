@@ -7,7 +7,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
-import yfinance as yf
+import backend.integrations.yfinance as yf
 import pandas as pd
 import numpy as np
 
@@ -91,26 +91,9 @@ class PerformanceTracker:
         
         return enhanced_signals
     
-    async def _get_benchmark_data(self) -> pd.Series:
-        """Get SPY benchmark data for performance comparisons."""
-        try:
-            # Get 1 year of SPY data for comprehensive benchmarking
-            spy = yf.Ticker(self.benchmark_ticker)
-            hist = spy.history(period="1y")
-            
-            if hist.empty:
-                self.logger.warning("Could not retrieve SPY benchmark data")
-                return pd.Series(dtype=float)
-            
-            # Return adjusted close prices with timezone-aware index
-            spy_prices = hist['Close']
-            spy_prices.index = pd.to_datetime(spy_prices.index, utc=True)
-            
-            return spy_prices
-            
-        except Exception as e:
-            self.logger.warning(f"Failed to get benchmark data: {e}")
-            return pd.Series(dtype=float)
+    # NOTE: Benchmark data fetching moved to Phase 1 (yfinance.py + cache.py)
+    # SPY data must be pre-fetched and passed to methods requiring it
+    # No mid-pipeline API calls allowed in 3.0 architecture
     
     async def _calculate_historical_returns(self, ticker: str, run_datetime: str, spy_data: pd.Series) -> Dict[str, Any]:
         """Calculate historical returns for a signal from its run date."""
@@ -196,58 +179,13 @@ class PerformanceTracker:
             self.logger.warning(f"Historical return calculation failed for {ticker}: {e}")
             return self._get_null_performance_data()
     
-    async def _calculate_forward_metrics(self, ticker: str) -> Dict[str, Any]:
-        """Calculate forward-looking performance metrics."""
-        try:
-            # Get recent price data for technical analysis
-            ticker_obj = yf.Ticker(ticker)
-            hist = ticker_obj.history(period="3mo")  # 3 months for volatility analysis
-            
-            if hist.empty:
-                return {}
-            
-            prices = hist['Close']
-            returns = prices.pct_change().dropna()
-            
-            # Calculate forward volatility (annualized)
-            volatility = returns.std() * np.sqrt(252) * 100  # Annualized percentage
-            
-            # Calculate forward Sharpe ratio estimate (using risk-free rate of 4%)
-            risk_free_rate = 0.04
-            excess_returns = returns.mean() * 252 - risk_free_rate
-            sharpe_ratio = excess_returns / (returns.std() * np.sqrt(252)) if returns.std() > 0 else None
-            
-            return {
-                'forward_volatility': self._safe_round(volatility, 2),
-                'forward_sharpe_ratio': self._safe_round(sharpe_ratio, 2)
-            }
-            
-        except Exception as e:
-            self.logger.warning(f"Forward metrics calculation failed for {ticker}: {e}")
-            return {}
+    # NOTE: Forward metrics calculation moved to Phase 2/3 (calculator.py)
+    # Volatility and Sharpe ratios should be calculated from pre-fetched historical data
+    # No mid-pipeline API calls allowed in 3.0 architecture
     
-    async def _get_price_data(self, ticker: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> Optional[pd.Series]:
-        """Get price data for a ticker within a date range."""
-        try:
-            ticker_obj = yf.Ticker(ticker)
-            
-            # Convert timestamps to date strings for yfinance
-            start_str = start_date.strftime('%Y-%m-%d')
-            end_str = end_date.strftime('%Y-%m-%d')
-            
-            # Get historical data
-            hist = ticker_obj.history(start=start_str, end=end_str)
-            
-            if hist.empty:
-                return None
-            
-            # Return adjusted close prices
-            prices = hist['Adj Close'] if 'Adj Close' in hist.columns else hist['Close']
-            return prices
-            
-        except Exception as e:
-            self.logger.warning(f"Price data retrieval failed for {ticker}: {e}")
-            return None
+    # NOTE: Price data fetching moved to Phase 1 (yfinance.py + cache.py)
+    # All price data must be pre-fetched and passed as parameters
+    # No mid-pipeline API calls allowed in 3.0 architecture
     
     def _calculate_spy_return(self, run_date: pd.Timestamp, window: int, spy_data: pd.Series) -> Optional[float]:
         """Calculate SPY return for a specific window from run date."""

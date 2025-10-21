@@ -1,7 +1,7 @@
 // VP Investments API Client - Axios configuration for backend integration
 
 import axios, { AxiosError } from 'axios';
-import { ApiResponse, ApiError } from '@/types/api';
+import { ApiError } from '@/types/api';
 
 // Create axios instance with base configuration
 export const apiClient = axios.create({

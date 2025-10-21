@@ -66,7 +66,12 @@ class VPInvestmentsFormatter(logging.Formatter):
                     '💡': '[INSIGHT]',
                     '🔍': '[SEARCH]',
                     '📱': '[REDDIT]',
-                    '🌟': '[HIGHLIGHT]'
+                    '🌟': '[HIGHLIGHT]',
+                    '📥': '[FETCH]',
+                    '💾': '[SAVE]',
+                    'ℹ️': '[INFO]',
+                    'ℹ': '[INFO]',
+                    '🔧': '[TOOL]'
                 }
                 for emoji, replacement in unicode_replacements.items():
                     message = message.replace(emoji, replacement)

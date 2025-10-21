@@ -30,32 +30,29 @@ export function DashboardHeader({
   onFileChange,
   onRefresh,
   totalCount,
-  displayedCount,
 }: DashboardHeaderProps) {
   return (
-    <div className="bg-white border-b border-gray-200 shadow-sm">
-      <div className="container mx-auto px-4 py-6">
+    <div className="bg-white dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 shadow-lg rounded-2xl mx-4 mt-4 backdrop-blur-sm [border-image:linear-gradient(to_right,#001F3F,#00AEEF)_1] [border-top:2px_solid]">
+      <div className="container mx-auto px-6 py-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          {/* Left: Title and Stats */}
+          {/* Left: Title and Inline Stats */}
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              VP INVESTMENTS SIGNALS
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              VanPiQ Signals Dashboard
             </h1>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-              <span>
-                Latest Analysis: {formatTimestamp(metadata.timestamp)}
-              </span>
-              <span className="hidden md:inline">•</span>
-              <span>
-                Total Tickers: {totalCount} | Showing: {displayedCount}
-              </span>
+            <div className="flex flex-wrap gap-x-2 text-sm text-gray-600 dark:text-gray-400 font-medium">
+              <span>Latest: {formatTimestamp(metadata.timestamp)}</span>
+              <span>•</span>
+              <span>Tickers: {totalCount}</span>
+              <span>•</span>
+              <span>Source: {metadata.source}</span>
             </div>
           </div>
 
           {/* Right: File Selector and Refresh */}
           <div className="flex items-center gap-3">
             <Select value={selectedFile} onValueChange={onFileChange}>
-              <SelectTrigger className="w-[280px]">
+              <SelectTrigger className="w-[280px] bg-gradient-to-r from-[#001F3F] to-[#00AEEF] text-white border-none hover:opacity-90 transition-opacity font-medium">
                 <SelectValue placeholder="Select dataset" />
               </SelectTrigger>
               <SelectContent>
@@ -72,6 +69,7 @@ export function DashboardHeader({
               size="icon"
               onClick={onRefresh}
               title="Refresh data"
+              className="bg-gradient-to-r from-[#001F3F] to-[#00AEEF] text-white border-none hover:opacity-90 transition-opacity"
             >
               <RefreshCw className="h-4 w-4" />
             </Button>

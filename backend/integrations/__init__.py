@@ -2,29 +2,17 @@
 """
 VP Investments integrations for data sources and signal processing.
 Consolidated structure following domain-based organization.
+
+Note: This module exists for backwards compatibility but direct imports
+from submodules (reddit, yfinance, ai, etc.) are preferred.
 """
 
-# YFinance & Technical Indicators
-from .yfinance import get_technical_calculator, get_financial_calculator, technical_calculator
+# Available integrations:
+# - backend.integrations.reddit (RedditFetcher)
+# - backend.integrations.yfinance (YFinanceFetcher)
+# - backend.integrations.ai (AIAnalyzer)
+# - backend.integrations.news (NewsFetcher)
+# - backend.integrations.cache (CacheManager)
+# - backend.integrations.backtest (BacktestEngine)
 
-# Signal Processing & ML Analytics  
-from .signal_processing import get_signal_classifier, signal_ml_analyzer
-
-# Reddit Analytics
-from .reddit import reddit_analytics
-
-# AI Integration
-from .ai import ai_analyzer
-
-__all__ = [
-    # Factory functions
-    'get_technical_calculator',
-    'get_financial_calculator', 
-    'get_signal_classifier',
-    
-    # Direct instances
-    'technical_calculator',
-    'signal_ml_analyzer',
-    'reddit_analytics',
-    'ai_analyzer'
-]
+__all__ = []  # Direct imports from submodules are preferred

@@ -87,12 +87,12 @@ def track_performance(operation_name: str):
                 end_time = time.time()
                 duration = (end_time - start_time) * 1000  # Convert to milliseconds
                 
-                # Emit performance metrics
-                await emit_metric(f"{operation_name}.duration", duration)
-                await emit_metric(f"{operation_name}.success", 1 if success else 0)
+                # Emit performance metrics (synchronous - no await needed)
+                emit_metric(f"{operation_name}.duration", duration)
+                emit_metric(f"{operation_name}.success", 1 if success else 0)
                 
                 if error:
-                    await emit_metric(f"{operation_name}.error", 1, {"error_type": type(error).__name__})
+                    emit_metric(f"{operation_name}.error", 1, {"error_type": type(error).__name__})
                 
                 # Store in performance history
                 performance_record = {

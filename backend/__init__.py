@@ -12,7 +12,7 @@ __description__ = "Advanced Investment Analysis Platform"
 
 # Core imports for easy access
 from backend.core.config import get_config
-from backend.core.core import VPInvestmentsError
+from backend.exceptions import VPInvestmentsError
 
 __all__ = [
     "__version__",

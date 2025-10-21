@@ -1,73 +1,141 @@
 # VP Investments - Trading Signal Analysis Platform
 
-A comprehensive trading signal platform that combines Reddit sentiment analysis, technical analysis, ML analytics, and AI-powered insights with optimized performance and modern database architecture.
+A comprehensive quantitative trading platform using **143 multi-factor analysis** across 6 domains with robust z-score normalization and weighted scoring. Built on v3.1 modular architecture with production-grade validation and error handling.
 
-## ✨ **Latest Updates - Phase 3 Complete!**
+## ✨ **Latest Updates - v3.1 Architecture Complete!**
 
-**Phase 3 (2025-10-07): Fundamental Data Enhancement**
-- 🎯 **20 fundamental metrics** (up from 16 in Phase 2)
-- 📈 **Analyst consensus integration** - price targets, recommendations, upside %
-- 💹 **Earnings momentum tracking** - surprise history and trends
-- 🏢 **Institutional activity monitoring** - ownership changes, concentration
-- 👔 **Insider sentiment analysis** - trading activity scoring (0-100)
-- ✅ **100% test pass rate** - validated on AAPL, TSLA, NVDA, AMD, F
+**v3.1 (October 2025): Complete Factor Coverage & Production Hardening**
+- 🎯 **143 factors, 100% coverage** - All factors weighted and utilized in scoring
+- 🏗️ **6-phase modular pipeline** - Fetch → Calculate → Normalize → Score → Persist → Post-ops
+- � **6 factor groups** - Technical (35), Fundamental (38), News/Macro (17), Social (13), Risk (18), Institutional (22)
+- 🛡️ **4-layer validation** - Input validation, calculation error handling, normalization checks, score validation
+- ⚙️ **Robust z-score normalization** - MAD-based with extreme value clipping and zero-variance detection
+- ✅ **32/32 tickers validated** - 89.7% avg coverage, -0.32 to +0.71 score range
 
-**Phase 2 (2025-10-07): Financial Score Redesign**
-- 🎯 **30+ indicators now properly utilized** (was ~60%, now ~95%)
-- ⚖️ **Enhanced scoring system** with graduated metrics (not binary)
-- 📊 **11 technical components** with dynamic weight normalization
-- 💰 **16 fundamental metrics** including FCF yield, liquidity ratios
-- ✅ **All tests passed** - validated on AAPL, TSLA, KO, NVDA, F
-
-**Phase 1.4 (2025-10-07): Performance Optimization**
-- ⚡ **50% faster execution** (~150s → ~75s for full pipeline)
-- 🚀 **50% fewer API calls** (70 → 35 through intelligent caching)
-- 🎯 **100% Phase 1 metrics** integrated (momentum_consistency + liquidity scores)
-- 🐛 **Fixed 5 critical bugs** for reliable database saves
+**Key Improvements from v3.0:**
+- ✅ **100% factor coverage** (was 42.7% - only 61/143 factors weighted)
+- ✅ **Modular phase architecture** (was monolithic SignalScorer)
+- ✅ **Production error handling** (graceful degradation, per-factor try-catch)
+- ✅ **Comprehensive validation** (input, calculation, normalization, scoring)
+- ✅ **Extreme value handling** (z-score clipping, zero-variance detection)
 
 ## 🎯 **What It Does**
 
-- **Signal Generation**: Scans Reddit for trading opportunities and validates with technical/fundamental analysis
-- **Multi-Factor Scoring**: Combines Reddit sentiment, financial metrics, technical indicators, and options data
-- **ML Analytics**: Phase 1 metrics including momentum consistency and liquidity scoring
-- **Performance Tracking**: Backtests signals with full history tracking (3d, 7d, 10d, 30d returns)
-- **AI Commentary**: Generates AI-powered analysis and recommendations
-- **Optimized Pipeline**: Intelligent caching eliminates duplicate API calls
+### **Multi-Factor Quantitative Analysis**
+Analyzes stocks through **143 factors** across 6 domains:
+- **Technical (35 factors)**: Price momentum, RSI, MACD, moving averages, Bollinger Bands, volume analysis, ATR
+- **Fundamental (38 factors)**: Valuation ratios, profitability metrics, growth rates, liquidity, leverage, efficiency
+- **News/Macro (17 factors)**: News sentiment, earnings catalysts, market correlation, sector strength, VIX, yields
+- **Social/Alternative (13 factors)**: Reddit mentions/sentiment, social velocity, contrarian signals
+- **Risk/Stability (18 factors)**: Volatility, beta, drawdown, Sharpe/Calmar ratios, liquidity, bid-ask spreads
+- **Institutional/Smart Money (22 factors)**: Analyst ratings, price targets, insider trading, institutional ownership
 
-## 🏗️ **Project Structure**
+### **Weighted Scoring System**
+- **Group Weights**: Technical (20%), Fundamental (25%), News/Macro (15%), Social (10%), Risk (15%), Institutional (15%)
+- **Factor Weights**: Each factor within groups has optimized weight (sum=1.0 per group)
+- **Overall Score**: Weighted sum of normalized z-scores across all 143 factors
+- **Robust Normalization**: MAD-based z-scores with extreme value clipping (±5σ)
+
+## 🏗️ **v3.1 Pipeline Architecture**
+
+### **6-Phase Modular Design**
 
 ```text
-VP Investments/
-├── backend/                 # 🐍 Python Backend Package
-│   ├── api/                 #   FastAPI REST endpoints
-│   ├── core/                #   Core logic (signals, backtest, config)
-│   ├── integrations/        #   External integrations (Reddit, yfinance, AI)
-│   │   ├── reddit.py        #   Reddit scraping & sentiment
-│   │   ├── yfinance.py      #   Financial data retrieval
-│   │   ├── backtest.py      #   Performance tracking
-│   │   └── ai.py            #   AI commentary generation
-│   ├── storage/             #   Database interfaces (Supabase)
-│   ├── utils/               #   Logging & observability
-│   └── pipeline.py          #   ⭐ Main signal generation pipeline
-├── frontend/                # ⚛️ Next.js Frontend Application (In Development)
-│   ├── src/app/             #   Next.js 14+ App Router pages
-│   ├── src/components/      #   React components
-│   └── package.json
-├── docs/                    # 📚 Documentation
-│   ├── BACKEND_UPDATE_3TABLE.md    #   3-table migration guide
-│   ├── ADD_30D_RETURN.md           #   30-day backtest setup
-│   ├── operational_guidelines.md   #   Development guidelines
-│   └── archive/                    #   Historical docs
-├── migrations/              # 🗄️ Database Migrations
-│   ├── step1_create_tables.sql     #   Create 3-table structure
-│   ├── step2_migrate_data.sql      #   Migrate existing data
-│   ├── step3_create_views.sql      #   Helper views
-│   └── step4_verify.sql            #   Verification queries
-├── logs/                    # 📋 Application logs
-├── clear_data.py            # 🧪 Testing utility (clear DB)
-├── tables.py                # 🧪 Testing utility (schema info)
-└── requirements.txt         # 📦 Python dependencies
+┌─────────────────────────────────────────────────────────────────────┐
+│                        V3.1 PIPELINE FLOW                            │
+└─────────────────────────────────────────────────────────────────────┘
+
+PHASE 1: FETCH                    PHASE 2: CALCULATE
+┌──────────────────────┐          ┌──────────────────────┐
+│ Reddit Scraper       │          │ Factor Calculator    │
+│  → Mentions          │─────────▶│  → 143 factors       │
+│  → Sentiment (VADER) │          │  → 6 groups          │
+│  → Post counts       │          │  → 60% avg coverage  │
+└──────────────────────┘          └──────────────────────┘
+                                             │
+┌──────────────────────┐                     │
+│ News Integration     │                     │
+│  → Recent articles   │                     │
+│  → Sentiment         │                     │
+│  → Event flags       │                     │
+└──────────────────────┘                     │
+                                             ▼
+┌──────────────────────┐          PHASE 3: NORMALIZE
+│ YFinance Data (40)   │          ┌──────────────────────┐
+│  → Price history     │          │ Z-Score Transform    │
+│  → Fundamentals      │─────────▶│  → Robust MAD-based  │
+│  → Analyst data      │          │  → Extreme clipping  │
+│  → Insider trades    │          │  → Zero variance OK  │
+│  → Institutional     │          │  → Cross-sectional   │
+└──────────────────────┘          └──────────────────────┘
+                                             │
+                                             ▼
+                                  PHASE 4: SCORE & ASSEMBLE
+                                  ┌──────────────────────┐
+                                  │ Weighted Scoring     │
+                                  │  → Group weights     │
+                                  │  → Factor weights    │
+                                  │  → Overall score     │
+                                  │  → Coverage metrics  │
+                                  └──────────────────────┘
+                                             │
+                                             ▼
+                                  PHASE 5: PERSIST
+                                  ┌──────────────────────┐
+                                  │ Database Storage     │
+                                  │  → Supabase          │
+                                  │  → 3-table schema    │
+                                  │  → Upsert logic      │
+                                  └──────────────────────┘
+                                             │
+                                             ▼
+                                  PHASE 6: POST-OPS
+                                  ┌──────────────────────┐
+                                  │ Enrichment           │
+                                  │  → Backtest returns  │
+                                  │  → AI narratives     │
+                                  │  → Metadata          │
+                                  └──────────────────────┘
 ```
+
+### **Phase Details**
+
+**Phase 1: Fetch** (`backend/phases/phase1_fetch.py`)
+- Sources: Reddit (5 subreddits), News API, YFinance (40 endpoints)
+- Validation: Critical field checks, minimum price history (5 rows)
+- Caching: 24-hour TTL in `public.data_cache`
+- Output: `RawYFinanceData` + Reddit/News data
+- Time: ~9s per ticker (optimized with intelligent caching)
+
+**Phase 2: Calculate** (`backend/phases/phase2_calculate.py`)
+- Calculates all 143 factors from raw data
+- Error Handling: `@safe_calculation` decorator per factor
+- Graceful Degradation: Missing factors return None, don't crash pipeline
+- Output: `GroupFactors` (6 groups × factors per group)
+- Coverage: ~60% avg (90/143 factors populated per ticker)
+
+**Phase 3: Normalize** (`backend/phases/phase3_normalize.py`)
+- Method: Robust z-scores using MAD (Median Absolute Deviation)
+- Extreme Handling: Clip z-scores >10σ to ±5σ
+- Edge Cases: Zero-variance → 0.0, insufficient tickers → 0.0
+- Winsorization: 1% outlier trimming
+- Output: Normalized z-scores for cross-sectional comparison
+
+**Phase 4: Score & Assemble** (`backend/phases/phase4_score_assemble.py`)
+- Weighted Scoring: Group weights × Factor weights
+- Validation: NaN/Inf detection, extreme score warnings, coverage checks
+- Output: Overall score + 6 group scores + coverage metrics
+- Formula: `overall_score = Σ(group_weight × Σ(factor_weight × z_score))`
+
+**Phase 5: Persist** (`backend/phases/phase5_persist.py`)
+- Database: Supabase (PostgreSQL)
+- Tables: `ticker_data`, `runs`, `run_tickers`
+- Upsert Logic: Updates if exists, inserts if new
+
+**Phase 6: Post-Ops** (`backend/phases/phase6_post_ops.py`)
+- Backtesting: 3d, 7d, 10d, 30d returns
+- AI Narratives: GPT-4 generated analysis
+- Metadata: Run statistics, execution times
 
 ## 🚀 **Quick Start**
 
