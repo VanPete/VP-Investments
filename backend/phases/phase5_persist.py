@@ -1,353 +1,1211 @@
 """
-Phase 5: Persist
-================
+Phase 5 Database Persistence Extension
 
-Save signals to database - PURE PERSISTENCE ONLY!
+Adds Phase 5-specific methods to SupabaseInterface for storing and retrieving
+complete pipeline data with all ~150 factors in JSONB format.
 
-This module is responsible for:
-- Creating run records
-- Saving signals to database
-- Error handling and retry logic
-- NO scoring
-- NO calculations
-- NO enhancements
-- JUST database persistence
-
-All logic (risk, commentary, classification) should happen in Phase 3.
-Phase 5 just saves the data.
+Schema Structure (8 tables):
+- signal_runs: Pipeline execution metadata
+- signals: Main signal records with group scores/coverages  
+- signals_technical: ~60 technical factors in JSONB
+- signals_fundamental: ~45 fundamental factors in JSONB
+- signals_news_macro: ~15 news/macro factors in JSONB
+- signals_social_alternative: ~10 social factors in JSONB
+- signals_risk_stability: ~25 risk factors in JSONB
+- signals_institutional_smart_money: ~20 institutional factors in JSONB
 """
 
+import json
 import logging
-from typing import Dict, List, Any
-from datetime import datetime
+from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
 
 
-class Phase5Persister:
+# ==============================================================================
+# PHASE 5 TRANSFORMATION LAYER
+# ==============================================================================
+
+class Phase5Persist:
     """
-    Phase 5: Persist
+    Phase 5 Transformation Layer
     
-    Saves signals to database. This is PURE persistence - no logic!
+    Transforms Phase 4 pipeline data into Phase 5 JSONB storage format.
+    Extracts ~175 factors across 6 groups and calculates coverage statistics.
     """
     
-    def __init__(self):
-        """Initialize Phase 5 persister."""
-        self.logger = logger
-        self._init_database()
-    
-    def _init_database(self):
-        """Initialize Supabase database connection."""
-        try:
-            import os
-            from supabase import create_client, Client
-            
-            supabase_url = os.getenv('SUPABASE_URL')
-            supabase_key = os.getenv('SUPABASE_ANON_KEY')
-            
-            if not supabase_url or not supabase_key:
-                raise ValueError("Supabase credentials not found in environment")
-            
-            self.supabase: Client = create_client(supabase_url, supabase_key)
-            self.logger.info("Supabase connection initialized")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Supabase: {e}")
-            self.supabase = None
-            raise
-    
-    async def save_signals(self, 
-                          signals: List[Dict[str, Any]],
-                          run_metadata: Dict[str, Any] = None) -> Dict[str, Any]:
+    def __init__(self, db=None):
         """
-        Main entry point for Phase 5.
-        
-        Saves signals to database with run record.
+        Initialize Phase5Persist.
         
         Args:
-            signals: List of signals from Phase 4 (with final signal_score)
-            run_metadata: Optional metadata about the pipeline run
-        
-        Returns:
-            Dict with success status and run_id
+            db: SupabaseInterface instance (optional, can be injected later)
         """
-        self.logger.info("=" * 60)
-        self.logger.info("PHASE 5: PERSIST TO DATABASE")
-        self.logger.info("=" * 60)
-        
-        phase5_start = datetime.now()
-        
-        if not signals:
-            self.logger.warning("No signals to save")
-            return {'success': False, 'error': 'No signals provided'}
-        
-        try:
-            # Step 1: Create run record
-            self.logger.info("Step 5.1: Creating run record...")
-            db_id, run_id_string = await self._create_run_record(signals, run_metadata)
-            
-            # Step 2: Save signals to database
-            self.logger.info(f"Step 5.2: Saving {len(signals)} signals to database...")
-            saved_count = await self._save_signals_batch(signals, db_id)
-            
-            phase5_end = datetime.now()
-            execution_time = (phase5_end - phase5_start).total_seconds()
-            
-            self.logger.info("=" * 60)
-            self.logger.info(f"PHASE 5 COMPLETE - {execution_time:.2f}s")
-            self.logger.info(f"  Run ID: {run_id_string}")
-            self.logger.info(f"  Signals saved: {saved_count}/{len(signals)}")
-            self.logger.info("=" * 60)
-            
-            return {
-                'success': True,
-                'run_id': run_id_string,
-                'signals_saved': saved_count,
-                'execution_time': execution_time
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Phase 5 persistence failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+        self.db = db
+        self.logger = logging.getLogger(__name__)
     
-    async def _create_run_record(self, 
-                                 signals: List[Dict[str, Any]],
-                                 run_metadata: Dict[str, Any] = None) -> tuple[int, str]:
+    # --------------------------------------------------------------------------
+    # FACTOR EXTRACTION METHODS
+    # --------------------------------------------------------------------------
+    
+    def extract_technical_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Create a run record in the database.
+        Extract ~60 technical factors from Phase 4 technical_data.
         
         Args:
-            signals: List of signals to be saved
-            run_metadata: Optional metadata about the run
-        
-        Returns:
-            tuple: (db_id: int, run_id: str) - db_id for FK reference, run_id for display
-        """
-        try:
-            # Generate unique run_id
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            run_id = f"run_{timestamp}"
+            phase4_data: Complete Phase 4 ticker data dictionary
             
-            # Prepare run record
-            # Valid run_type values: 'discovery', 'targeted', 'backtest', 'scheduled'
-            run_record = {
-                'run_id': run_id,
-                'run_type': 'discovery',  # Using 'discovery' for general pipeline runs
-                'started_at': datetime.now().isoformat(),
-                'completed_at': datetime.now().isoformat(),
-                'total_signals': len(signals),
-                'status': 'completed',
-                'metadata': run_metadata or {
-                    'signals_count': len(signals),
-                    'pipeline_version': '3.0',
-                    'architecture': '6-phase'
+        Returns:
+            Dictionary with structure:
+            {
+                "rsi_14": {"raw": 65.2, "normalized": 0.75, "percentile": 0.82},
+                "macd": {"raw": 1.2, "normalized": 0.60, "percentile": 0.65},
+                ...
+            }
+        """
+        factors = {}
+        
+        # Get technical_data section
+        technical_data = phase4_data.get('technical_data', {})
+        
+        # RSI Indicators
+        if 'rsi_14' in technical_data:
+            factors['rsi_14'] = {
+                'raw': technical_data['rsi_14'],
+                'normalized': technical_data.get('rsi_14_norm', 0),
+                'percentile': technical_data.get('rsi_14_percentile', 0)
+            }
+        
+        # MACD Indicators
+        if 'macd' in technical_data:
+            factors['macd'] = {
+                'raw': technical_data['macd'],
+                'normalized': technical_data.get('macd_norm', 0),
+                'percentile': technical_data.get('macd_percentile', 0)
+            }
+        
+        if 'macd_signal' in technical_data:
+            factors['macd_signal'] = {
+                'raw': technical_data['macd_signal'],
+                'normalized': technical_data.get('macd_signal_norm', 0),
+                'percentile': technical_data.get('macd_signal_percentile', 0)
+            }
+        
+        if 'macd_histogram' in technical_data:
+            factors['macd_histogram'] = {
+                'raw': technical_data['macd_histogram'],
+                'normalized': technical_data.get('macd_histogram_norm', 0),
+                'percentile': technical_data.get('macd_histogram_percentile', 0)
+            }
+        
+        # Moving Averages
+        for ma_period in [10, 20, 50, 100, 200]:
+            ma_key = f'sma_{ma_period}'
+            if ma_key in technical_data:
+                factors[ma_key] = {
+                    'raw': technical_data[ma_key],
+                    'normalized': technical_data.get(f'{ma_key}_norm', 0),
+                    'percentile': technical_data.get(f'{ma_key}_percentile', 0)
                 }
+            
+            ema_key = f'ema_{ma_period}'
+            if ema_key in technical_data:
+                factors[ema_key] = {
+                    'raw': technical_data[ema_key],
+                    'normalized': technical_data.get(f'{ema_key}_norm', 0),
+                    'percentile': technical_data.get(f'{ema_key}_percentile', 0)
+                }
+        
+        # Bollinger Bands
+        for bb_field in ['bb_upper', 'bb_middle', 'bb_lower', 'bb_width', 'bb_percent']:
+            if bb_field in technical_data:
+                factors[bb_field] = {
+                    'raw': technical_data[bb_field],
+                    'normalized': technical_data.get(f'{bb_field}_norm', 0),
+                    'percentile': technical_data.get(f'{bb_field}_percentile', 0)
+                }
+        
+        # ATR (Average True Range)
+        if 'atr_14' in technical_data:
+            factors['atr_14'] = {
+                'raw': technical_data['atr_14'],
+                'normalized': technical_data.get('atr_14_norm', 0),
+                'percentile': technical_data.get('atr_14_percentile', 0)
             }
-            
-            # Insert run record
-            result = self.supabase.table('runs').insert(run_record).execute()
-            
-            if result.data:
-                db_id = result.data[0]['id']
-                self.logger.info(f"✅ Run record created: {run_id} (DB ID: {db_id})")
-                return db_id, run_id  # Return both: db_id for FK, run_id string for display
-            else:
-                raise ValueError("No run data returned from database")
-                
-        except Exception as e:
-            self.logger.error(f"Failed to create run record: {e}")
-            raise
+        
+        # Stochastic Oscillator
+        if 'stoch_k' in technical_data:
+            factors['stoch_k'] = {
+                'raw': technical_data['stoch_k'],
+                'normalized': technical_data.get('stoch_k_norm', 0),
+                'percentile': technical_data.get('stoch_k_percentile', 0)
+            }
+        
+        if 'stoch_d' in technical_data:
+            factors['stoch_d'] = {
+                'raw': technical_data['stoch_d'],
+                'normalized': technical_data.get('stoch_d_norm', 0),
+                'percentile': technical_data.get('stoch_d_percentile', 0)
+            }
+        
+        # Volume Indicators
+        for vol_field in ['volume', 'volume_sma_20', 'volume_ratio', 'obv', 'vwap']:
+            if vol_field in technical_data:
+                factors[vol_field] = {
+                    'raw': technical_data[vol_field],
+                    'normalized': technical_data.get(f'{vol_field}_norm', 0),
+                    'percentile': technical_data.get(f'{vol_field}_percentile', 0)
+                }
+        
+        # Price Action
+        for price_field in ['close', 'open', 'high', 'low', 'daily_return', 'volatility_20']:
+            if price_field in technical_data:
+                factors[price_field] = {
+                    'raw': technical_data[price_field],
+                    'normalized': technical_data.get(f'{price_field}_norm', 0),
+                    'percentile': technical_data.get(f'{price_field}_percentile', 0)
+                }
+        
+        # Momentum Indicators
+        for mom_field in ['roc_10', 'cci_20', 'williams_r', 'adx_14', 'plus_di', 'minus_di']:
+            if mom_field in technical_data:
+                factors[mom_field] = {
+                    'raw': technical_data[mom_field],
+                    'normalized': technical_data.get(f'{mom_field}_norm', 0),
+                    'percentile': technical_data.get(f'{mom_field}_percentile', 0)
+                }
+        
+        return factors
     
-    async def _save_signals_batch(self, 
-                                  signals: List[Dict[str, Any]],
-                                  run_id: int) -> int:
+    def extract_fundamental_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Save signals to database in batch.
+        Extract ~45 fundamental factors from Phase 4 fundamental_data.
         
         Args:
-            signals: List of signals to save
-            run_id: Run database ID (integer) for FK reference
-        
+            phase4_data: Complete Phase 4 ticker data dictionary
+            
         Returns:
-            Number of signals successfully saved
+            Dictionary with JSONB factor structure
         """
-        saved_count = 0
+        factors = {}
         
-        # Prepare signal records for database
-        signal_records = []
+        fundamental_data = phase4_data.get('fundamental_data', {})
         
-        for rank, signal in enumerate(signals, 1):
-            try:
-                # Extract signal data (all should come from Phase 3/4)
-                record = self._prepare_signal_record(signal, run_id, rank)
-                signal_records.append(record)
+        # Valuation Metrics
+        for metric in ['pe_ratio', 'pb_ratio', 'ps_ratio', 'peg_ratio', 'ev_ebitda', 
+                       'price_to_fcf', 'ev_to_sales', 'ev_to_revenue']:
+            if metric in fundamental_data:
+                factors[metric] = {
+                    'raw': fundamental_data[metric],
+                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
+                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Profitability Metrics
+        for metric in ['roe', 'roa', 'roic', 'gross_margin', 'operating_margin', 
+                       'profit_margin', 'ebitda_margin', 'fcf_margin']:
+            if metric in fundamental_data:
+                factors[metric] = {
+                    'raw': fundamental_data[metric],
+                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
+                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Growth Metrics
+        for metric in ['revenue_growth', 'earnings_growth', 'fcf_growth', 
+                       'book_value_growth', 'eps_growth', 'dividend_growth']:
+            if metric in fundamental_data:
+                factors[metric] = {
+                    'raw': fundamental_data[metric],
+                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
+                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Financial Health
+        for metric in ['current_ratio', 'quick_ratio', 'debt_to_equity', 
+                       'debt_to_assets', 'interest_coverage', 'altman_z_score']:
+            if metric in fundamental_data:
+                factors[metric] = {
+                    'raw': fundamental_data[metric],
+                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
+                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Efficiency Metrics
+        for metric in ['asset_turnover', 'inventory_turnover', 'receivables_turnover',
+                       'days_sales_outstanding', 'cash_conversion_cycle']:
+            if metric in fundamental_data:
+                factors[metric] = {
+                    'raw': fundamental_data[metric],
+                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
+                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Per-Share Metrics
+        for metric in ['eps', 'book_value_per_share', 'fcf_per_share', 
+                       'revenue_per_share', 'dividend_per_share']:
+            if metric in fundamental_data:
+                factors[metric] = {
+                    'raw': fundamental_data[metric],
+                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
+                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+                }
+        
+        return factors
+    
+    def extract_news_macro_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        """
+        Extract ~15 news/macro factors from Phase 4 news_macro_data.
+        
+        Args:
+            phase4_data: Complete Phase 4 ticker data dictionary
+            
+        Returns:
+            Dictionary with JSONB factor structure
+        """
+        factors = {}
+        
+        news_macro_data = phase4_data.get('news_macro_data', {})
+        
+        # News Sentiment
+        for metric in ['news_sentiment_score', 'news_sentiment_count', 
+                       'news_positive_ratio', 'news_negative_ratio', 
+                       'news_buzz_score', 'news_volume_7d', 'news_volume_30d']:
+            if metric in news_macro_data:
+                factors[metric] = {
+                    'raw': news_macro_data[metric],
+                    'normalized': news_macro_data.get(f'{metric}_norm', 0),
+                    'percentile': news_macro_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Macro Indicators
+        for metric in ['sector_correlation', 'market_beta', 'spy_correlation',
+                       'qqq_correlation', 'vix_correlation', 'sector_momentum',
+                       'relative_strength', 'sector_relative_strength']:
+            if metric in news_macro_data:
+                factors[metric] = {
+                    'raw': news_macro_data[metric],
+                    'normalized': news_macro_data.get(f'{metric}_norm', 0),
+                    'percentile': news_macro_data.get(f'{metric}_percentile', 0)
+                }
+        
+        return factors
+    
+    def extract_social_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        """
+        Extract ~10 social/alternative factors from Phase 4 social_data.
+        
+        Args:
+            phase4_data: Complete Phase 4 ticker data dictionary
+            
+        Returns:
+            Dictionary with JSONB factor structure
+        """
+        factors = {}
+        
+        social_data = phase4_data.get('social_data', {})
+        
+        # Social Sentiment
+        for metric in ['twitter_sentiment', 'reddit_sentiment', 'stocktwits_sentiment',
+                       'social_volume', 'social_engagement', 'influencer_mentions',
+                       'reddit_mentions', 'twitter_mentions', 'social_momentum',
+                       'viral_score']:
+            if metric in social_data:
+                factors[metric] = {
+                    'raw': social_data[metric],
+                    'normalized': social_data.get(f'{metric}_norm', 0),
+                    'percentile': social_data.get(f'{metric}_percentile', 0)
+                }
+        
+        return factors
+    
+    def extract_risk_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        """
+        Extract ~25 risk/stability factors from Phase 4 risk_data.
+        
+        Args:
+            phase4_data: Complete Phase 4 ticker data dictionary
+            
+        Returns:
+            Dictionary with JSONB factor structure
+        """
+        factors = {}
+        
+        risk_data = phase4_data.get('risk_data', {})
+        
+        # Volatility Metrics
+        for metric in ['volatility_30d', 'volatility_90d', 'historical_volatility',
+                       'implied_volatility', 'volatility_ratio', 'volatility_skew',
+                       'downside_volatility', 'upside_volatility']:
+            if metric in risk_data:
+                factors[metric] = {
+                    'raw': risk_data[metric],
+                    'normalized': risk_data.get(f'{metric}_norm', 0),
+                    'percentile': risk_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Risk-Adjusted Returns
+        for metric in ['sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 
+                       'information_ratio', 'treynor_ratio']:
+            if metric in risk_data:
+                factors[metric] = {
+                    'raw': risk_data[metric],
+                    'normalized': risk_data.get(f'{metric}_norm', 0),
+                    'percentile': risk_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Drawdown Metrics
+        for metric in ['max_drawdown', 'current_drawdown', 'drawdown_duration',
+                       'avg_drawdown', 'recovery_time']:
+            if metric in risk_data:
+                factors[metric] = {
+                    'raw': risk_data[metric],
+                    'normalized': risk_data.get(f'{metric}_norm', 0),
+                    'percentile': risk_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Value at Risk
+        for metric in ['var_95', 'var_99', 'cvar_95', 'cvar_99']:
+            if metric in risk_data:
+                factors[metric] = {
+                    'raw': risk_data[metric],
+                    'normalized': risk_data.get(f'{metric}_norm', 0),
+                    'percentile': risk_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Stability Metrics
+        for metric in ['price_stability', 'earnings_stability', 'dividend_stability',
+                       'consistency_score']:
+            if metric in risk_data:
+                factors[metric] = {
+                    'raw': risk_data[metric],
+                    'normalized': risk_data.get(f'{metric}_norm', 0),
+                    'percentile': risk_data.get(f'{metric}_percentile', 0)
+                }
+        
+        return factors
+    
+    def extract_institutional_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        """
+        Extract ~20 institutional/smart money factors from Phase 4 institutional_data.
+        
+        Args:
+            phase4_data: Complete Phase 4 ticker data dictionary
+            
+        Returns:
+            Dictionary with JSONB factor structure
+        """
+        factors = {}
+        
+        institutional_data = phase4_data.get('institutional_data', {})
+        
+        # Institutional Ownership
+        for metric in ['institutional_ownership_pct', 'institutional_holders_count',
+                       'institutional_shares_held', 'institutional_position_change',
+                       'top10_ownership_pct', 'insider_ownership_pct']:
+            if metric in institutional_data:
+                factors[metric] = {
+                    'raw': institutional_data[metric],
+                    'normalized': institutional_data.get(f'{metric}_norm', 0),
+                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Smart Money Flow
+        for metric in ['institutional_buying', 'institutional_selling',
+                       'net_institutional_flow', 'smart_money_confidence',
+                       'hedge_fund_ownership', 'mutual_fund_ownership']:
+            if metric in institutional_data:
+                factors[metric] = {
+                    'raw': institutional_data[metric],
+                    'normalized': institutional_data.get(f'{metric}_norm', 0),
+                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Insider Activity
+        for metric in ['insider_buying', 'insider_selling', 'net_insider_trades',
+                       'insider_sentiment', 'ceo_confidence_score']:
+            if metric in institutional_data:
+                factors[metric] = {
+                    'raw': institutional_data[metric],
+                    'normalized': institutional_data.get(f'{metric}_norm', 0),
+                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
+                }
+        
+        # Analyst Coverage
+        for metric in ['analyst_count', 'buy_recommendations', 'hold_recommendations',
+                       'sell_recommendations', 'consensus_rating']:
+            if metric in institutional_data:
+                factors[metric] = {
+                    'raw': institutional_data[metric],
+                    'normalized': institutional_data.get(f'{metric}_norm', 0),
+                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
+                }
+        
+        return factors
+    
+    # --------------------------------------------------------------------------
+    # COVERAGE CALCULATION
+    # --------------------------------------------------------------------------
+    
+    def calculate_coverage(self, factors: Dict[str, Dict[str, float]]) -> float:
+        """
+        Calculate coverage percentage for a factor group.
+        
+        Coverage = (number of non-null factors) / (total expected factors)
+        
+        Args:
+            factors: Dictionary of extracted factors
+            
+        Returns:
+            Coverage percentage (0.0 to 1.0)
+        """
+        if not factors:
+            return 0.0
+        
+        total_factors = len(factors)
+        non_null_factors = sum(
+            1 for factor_data in factors.values()
+            if factor_data.get('raw') is not None
+        )
+        
+        return non_null_factors / total_factors if total_factors > 0 else 0.0
+    
+    # --------------------------------------------------------------------------
+    # MAIN ORCHESTRATION
+    # --------------------------------------------------------------------------
+    
+    async def persist_pipeline_run(
+        self,
+        phase4_results: List[Dict[str, Any]],
+        pipeline_config: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Main orchestration method: Transform Phase 4 data and persist to database.
+        
+        Complete workflow:
+        1. Create signal_run record
+        2. Transform each ticker's Phase 4 data into Phase 5 format
+        3. Extract 6 factor groups (technical, fundamental, news, social, risk, institutional)
+        4. Calculate coverage for each group
+        5. Insert signals batch
+        6. Insert factor details for each signal
+        7. Update signal_run with completion status
+        
+        Args:
+            phase4_results: List of Phase 4 ticker dictionaries from pipeline
+                Each ticker should have structure:
+                {
+                    'ticker': 'AAPL',
+                    'overall_score': 0.95,
+                    'technical_score': 0.92,
+                    'fundamental_score': 0.88,
+                    'news_macro_score': 0.90,
+                    'social_score': 0.85,
+                    'risk_score': 0.93,
+                    'institutional_score': 0.91,
+                    'technical_data': {...},  # Raw + normalized factors
+                    'fundamental_data': {...},
+                    'news_macro_data': {...},
+                    'social_data': {...},
+                    'risk_data': {...},
+                    'institutional_data': {...}
+                }
+            pipeline_config: Optional configuration dict with:
+                - pipeline_version: str (default '2.0')
+                - metadata: Any additional run metadata
                 
-            except Exception as e:
-                self.logger.warning(f"Failed to prepare signal record for {signal.get('ticker')}: {e}")
-                continue
+        Returns:
+            run_id (UUID) of created signal run
+            
+        Raises:
+            ValueError: If database connection not available
+            Exception: If persistence fails
+        """
+        if not self.db:
+            raise ValueError("Database connection required. Inject SupabaseInterface instance.")
         
-        # Batch insert signals
+        start_time = __import__('time').time()
+        
+        # Extract config
+        config = pipeline_config or {}
+        pipeline_version = config.get('pipeline_version', '2.0')
+        
         try:
-            if signal_records:
-                result = self.supabase.table('signals').insert(signal_records).execute()
-                
-                if result.data:
-                    saved_count = len(result.data)
-                    self.logger.info(f"✅ Saved {saved_count} signals to database")
-                else:
-                    self.logger.warning("No data returned from signal insert")
-                    
-        except Exception as e:
-            self.logger.error(f"Batch insert failed: {e}")
-            # Try individual inserts as fallback
-            saved_count = await self._save_signals_individually(signal_records, run_id)
-        
-        return saved_count
-    
-    async def _save_signals_individually(self, 
-                                        signal_records: List[Dict],
-                                        run_id: int) -> int:
-        """
-        Fallback: Save signals one by one if batch insert fails.
-        
-        Args:
-            signal_records: List of prepared signal records
-            run_id: Run database ID (integer) - not used, already in records
-        
-        Returns:
-            Number of signals successfully saved
-        """
-        saved_count = 0
-        
-        for record in signal_records:
-            try:
-                result = self.supabase.table('signals').insert(record).execute()
-                if result.data:
-                    saved_count += 1
-            except Exception as e:
-                ticker = record.get('ticker', 'UNKNOWN')
-                self.logger.warning(f"Failed to save signal for {ticker}: {e}")
-                continue
-        
-        self.logger.info(f"✅ Individually saved {saved_count}/{len(signal_records)} signals")
-        return saved_count
-    
-    def _categorize_market_cap(self, market_cap: int) -> str:
-        """
-        Categorize market cap for database enum.
-        
-        Args:
-            market_cap: Market capitalization in dollars
-            
-        Returns:
-            Category: 'mega', 'large', 'mid', 'small', 'micro', 'nano'
-        """
-        if not market_cap or market_cap <= 0:
-            return 'micro'
-        
-        if market_cap >= 200_000_000_000:  # $200B+
-            return 'mega'
-        elif market_cap >= 10_000_000_000:  # $10B+
-            return 'large'
-        elif market_cap >= 2_000_000_000:   # $2B+
-            return 'mid'
-        elif market_cap >= 300_000_000:     # $300M+
-            return 'small'
-        elif market_cap >= 50_000_000:      # $50M+
-            return 'micro'
-        else:
-            return 'nano'
-    
-    def _prepare_signal_record(self, 
-                               signal: Dict[str, Any],
-                               run_id: int,
-                               rank: int) -> Dict[str, Any]:
-        """
-        Prepare a signal record for database insertion.
-        
-        All data should already be calculated in Phase 3/4.
-        This method just maps fields to database schema.
-        
-        Args:
-            signal: Signal data from Phase 4
-            run_id: Run database ID (integer) for FK reference to runs.id
-            rank: Signal ranking
-        
-        Returns:
-            Dict ready for database insertion
-        """
-        # Extract data (should all exist from Phase 3/4)
-        ticker = signal.get('ticker', '').upper()
-        signal_score = signal.get('signal_score', 0.0)
-        
-        # Extract group scores (3.0 signal groups)
-        technical_score = signal.get('technical_score', 0.0)
-        fundamental_score = signal.get('fundamental_score', 0.0)
-        news_macro_score = signal.get('news_macro_score', 0.0)
-        social_alternative_score = signal.get('social_alternative_score', 0.0)
-        risk_stability_score = signal.get('risk_stability_score', 0.0)
-        institutional_smart_money_score = signal.get('institutional_smart_money_score', 0.0)
-        
-        # Extract group data (3.0 signal groups)
-        technical_data = signal.get('technical_data', {})
-        fundamental_data = signal.get('fundamental_data', {})
-        news_macro_data = signal.get('news_macro_data', {})
-        social_alternative_data = signal.get('social_alternative_data', {})
-        risk_stability_data = signal.get('risk_stability_data', {})
-        institutional_smart_money_data = signal.get('institutional_smart_money_data', {})
-        
-        # Prepare database record - ONLY fields that exist in schema
-        # Schema v3.0 has separate tables for detailed metrics
-        record = {
-            # Core identification
-            'run_id': run_id,
-            'ticker': ticker,
-            'signal_rank': rank,
-            
-            # Scores (from Phase 4) - 3.0 signal groups
-            'signal_score': signal_score,
-            'technical_score': technical_score,
-            'fundamental_score': fundamental_score,
-            'news_macro_score': news_macro_score,
-            'social_alternative_score': social_alternative_score,
-            'risk_stability_score': risk_stability_score,
-            'institutional_smart_money_score': institutional_smart_money_score,
-            'signal_confidence': signal.get('confidence', 0.0),
-            
-            # Company info (from Phase 3 fundamental data)
-            'company': fundamental_data.get('company_name', ticker),
-            'sector': fundamental_data.get('sector'),
-            'industry': fundamental_data.get('industry'),
-            'market_cap': fundamental_data.get('market_cap'),
-            
-            # Price data (from Phase 3 technical data) - only current_price & volume in main table
-            'current_price': technical_data.get('current_price'),
-            'volume': technical_data.get('volume'),
-            
-            # Risk & classification (from Phase 3)
-            'risk_level': signal.get('risk_category', 'moderate').lower(),  # Schema uses lowercase
-            'signal_type': signal.get('signal_type', 'Multi-Factor'),
-            'trade_type': signal.get('trade_type', 'Signal'),
-            'trade_type_confidence': signal.get('trade_type_confidence', 0.5),
-            'market_cap_category': self._categorize_market_cap(fundamental_data.get('market_cap')),
-            
-            # AI-generated content (from Phase 6)
-            'risk_narrative': signal.get('risk_description'),
-            'trade_strategy': signal.get('ai_commentary'),
-            'ai_confidence': signal.get('ai_confidence', 0.0),
-            'ai_model_version': signal.get('ai_model_version', 'gpt-4'),
-            
-            # Metadata
-            'scoring_version': '3.0',
-            'data_sources': ['reddit', 'yfinance'],  # List of data sources used
-            'processing_metadata': {
-                'scoring_weights': signal.get('scoring_weights', {}),
-                'phase': 'Phase 5: Persist',
-                'created_by': 'unified_pipeline_v3'
+            # Step 1: Create signal run
+            run_config = {
+                'total_tickers': len(phase4_results),
+                'successful_tickers': 0,
+                'failed_tickers': 0,
+                'pipeline_version': pipeline_version,
+                'status': 'running'
             }
-        }
+            
+            run_id = await self.db.create_signal_run(run_config)
+            self.logger.info(f"📊 Created signal run: {run_id}")
+            
+            # Step 2-5: Process each ticker
+            signals_to_insert = []
+            factor_details = {}  # Store factor details keyed by ticker
+            
+            for ticker_data in phase4_results:
+                ticker = ticker_data.get('ticker')
+                if not ticker:
+                    self.logger.warning("Skipping ticker data without 'ticker' field")
+                    continue
+                
+                # Extract factor groups
+                technical_factors = self.extract_technical_factors(ticker_data)
+                fundamental_factors = self.extract_fundamental_factors(ticker_data)
+                news_macro_factors = self.extract_news_macro_factors(ticker_data)
+                social_factors = self.extract_social_factors(ticker_data)
+                risk_factors = self.extract_risk_factors(ticker_data)
+                institutional_factors = self.extract_institutional_factors(ticker_data)
+                
+                # Calculate coverage
+                technical_coverage = self.calculate_coverage(technical_factors)
+                fundamental_coverage = self.calculate_coverage(fundamental_factors)
+                news_macro_coverage = self.calculate_coverage(news_macro_factors)
+                social_coverage = self.calculate_coverage(social_factors)
+                risk_coverage = self.calculate_coverage(risk_factors)
+                institutional_coverage = self.calculate_coverage(institutional_factors)
+                
+                # Calculate total coverage (average of group coverages)
+                all_coverages = [
+                    technical_coverage,
+                    fundamental_coverage,
+                    news_macro_coverage,
+                    social_coverage,
+                    risk_coverage,
+                    institutional_coverage
+                ]
+                total_coverage = sum(all_coverages) / len(all_coverages)
+                
+                # Build signal record
+                signal_record = {
+                    'ticker': ticker,
+                    'rank': ticker_data.get('rank'),
+                    'overall_score': ticker_data.get('overall_score'),
+                    'total_coverage': total_coverage,
+                    'technical_score': ticker_data.get('technical_score'),
+                    'technical_coverage': technical_coverage,
+                    'fundamental_score': ticker_data.get('fundamental_score'),
+                    'fundamental_coverage': fundamental_coverage,
+                    'news_macro_score': ticker_data.get('news_macro_score'),
+                    'news_macro_coverage': news_macro_coverage,
+                    'social_alternative_score': ticker_data.get('social_score'),
+                    'social_alternative_coverage': social_coverage,
+                    'risk_stability_score': ticker_data.get('risk_score'),
+                    'risk_stability_coverage': risk_coverage,
+                    'institutional_smart_money_score': ticker_data.get('institutional_score'),
+                    'institutional_smart_money_coverage': institutional_coverage
+                }
+                
+                signals_to_insert.append(signal_record)
+                
+                # Store factor details for later insertion
+                factor_details[ticker] = {
+                    'technical': technical_factors,
+                    'fundamental': fundamental_factors,
+                    'news_macro': news_macro_factors,
+                    'social': social_factors,
+                    'risk': risk_factors,
+                    'institutional': institutional_factors
+                }
+            
+            # Step 6: Insert signals batch
+            if signals_to_insert:
+                signal_ids = await self.db.insert_signals_batch(run_id, signals_to_insert)
+                self.logger.info(f"✅ Inserted {len(signal_ids)} signals")
+                
+                # Step 7: Insert factor details for each signal
+                successful_tickers = 0
+                failed_tickers = 0
+                
+                for i, signal_id in enumerate(signal_ids):
+                    signal = signals_to_insert[i]
+                    ticker = signal['ticker']
+                    
+                    try:
+                        factors = factor_details.get(ticker, {})
+                        
+                        # Insert all 6 factor groups
+                        await self.db.insert_technical_factors(signal_id, factors.get('technical', {}))
+                        await self.db.insert_fundamental_factors(signal_id, factors.get('fundamental', {}))
+                        await self.db.insert_news_macro_factors(signal_id, factors.get('news_macro', {}))
+                        await self.db.insert_social_factors(signal_id, factors.get('social', {}))
+                        await self.db.insert_risk_factors(signal_id, factors.get('risk', {}))
+                        await self.db.insert_institutional_factors(signal_id, factors.get('institutional', {}))
+                        
+                        successful_tickers += 1
+                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to insert factors for {ticker}: {e}")
+                        failed_tickers += 1
+                
+                # Step 8: Update signal_run with completion
+                duration = __import__('time').time() - start_time
+                
+                await self.db.update_signal_run(run_id, {
+                    'status': 'completed' if failed_tickers == 0 else 'partial',
+                    'total_tickers': len(signals_to_insert),
+                    'successful_tickers': successful_tickers,
+                    'failed_tickers': failed_tickers,
+                    'duration_seconds': duration
+                })
+                
+                self.logger.info(
+                    f"✅ Completed signal run {run_id}: "
+                    f"{successful_tickers} successful, {failed_tickers} failed, "
+                    f"{duration:.2f}s"
+                )
+            else:
+                # No signals to insert
+                await self.db.update_signal_run(run_id, {
+                    'status': 'failed',
+                    'error_message': 'No valid ticker data to persist'
+                })
+                self.logger.warning(f"❌ Signal run {run_id} failed: No valid ticker data")
+            
+            return run_id
+            
+        except Exception as e:
+            self.logger.error(f"Failed to persist pipeline run: {e}")
+            
+            # Try to update run status to failed
+            try:
+                if run_id:
+                    await self.db.update_signal_run(run_id, {
+                        'status': 'failed',
+                        'error_message': str(e)
+                    })
+            except:
+                pass
+            
+            raise
+
+
+# ==============================================================================
+# PHASE 5 PERSISTENCE METHODS
+# ==============================================================================
+
+async def create_signal_run(self, run_config: Dict[str, Any]) -> str:
+    """
+    Create new signal run record.
+    
+    Args:
+        run_config: Dictionary with run configuration:
+            - total_tickers: int
+            - successful_tickers: Optional[int]
+            - failed_tickers: Optional[int]
+            - pipeline_version: Optional[str]
+            - status: str ('running', 'completed', 'failed', 'partial')
+            - error_message: Optional[str]
+            
+    Returns:
+        run_id (UUID) of created record
+    """
+    query = """
+    INSERT INTO signal_runs (
+        total_tickers,
+        successful_tickers,
+        failed_tickers,
+        pipeline_version,
+        status,
+        error_message,
+        run_timestamp
+    ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    RETURNING id
+    """
+    
+    params = [
+        run_config.get('total_tickers', 0),
+        run_config.get('successful_tickers', 0),
+        run_config.get('failed_tickers', 0),
+        run_config.get('pipeline_version', '2.0'),
+        run_config.get('status', 'running'),
+        run_config.get('error_message')
+    ]
+    
+    result = await self.execute_query(query, params)
+    run_id = result[0]['id'] if result else None
+    
+    logger.info(f"✅ Created signal run: {run_id}")
+    return run_id
+
+
+async def update_signal_run(self, run_id: str, updates: Dict[str, Any]) -> bool:
+    """
+    Update signal run with completion status and statistics.
+    
+    Args:
+        run_id: Signal run UUID
+        updates: Dictionary with fields to update:
+            - status: 'completed', 'failed', or 'partial'
+            - total_tickers: int
+            - successful_tickers: int
+            - failed_tickers: int
+            - duration_seconds: float
+            - error_message: Optional[str]
+            
+    Returns:
+        True if successful
+    """
+    set_clauses = []
+    params = [run_id]
+    param_count = 2
+    
+    if 'status' in updates:
+        set_clauses.append(f"status = ${param_count}")
+        params.append(updates['status'])
+        param_count += 1
+    
+    if 'total_tickers' in updates:
+        set_clauses.append(f"total_tickers = ${param_count}")
+        params.append(updates['total_tickers'])
+        param_count += 1
+    
+    if 'successful_tickers' in updates:
+        set_clauses.append(f"successful_tickers = ${param_count}")
+        params.append(updates['successful_tickers'])
+        param_count += 1
+    
+    if 'failed_tickers' in updates:
+        set_clauses.append(f"failed_tickers = ${param_count}")
+        params.append(updates['failed_tickers'])
+        param_count += 1
+    
+    if 'duration_seconds' in updates:
+        set_clauses.append(f"duration_seconds = ${param_count}")
+        params.append(updates['duration_seconds'])
+        param_count += 1
+    
+    if 'error_message' in updates:
+        set_clauses.append(f"error_message = ${param_count}")
+        params.append(updates['error_message'])
+        param_count += 1
+    
+    if not set_clauses:
+        return False
+    
+    query = f"""
+    UPDATE signal_runs 
+    SET {', '.join(set_clauses)}
+    WHERE id = $1
+    """
+    
+    affected = await self.execute_non_query(query, params)
+    success = affected > 0
+    
+    if success:
+        logger.info(f"✅ Updated signal run {run_id}: {updates.get('status', 'updated')}")
+    
+    return success
+
+
+async def get_recent_signal_runs(self, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get recent signal runs ordered by timestamp.
+    
+    Args:
+        limit: Maximum number of runs to return
         
-        return record
+    Returns:
+        List of run records with metadata
+    """
+    query = """
+    SELECT 
+        id,
+        run_timestamp,
+        pipeline_version,
+        total_tickers,
+        successful_tickers,
+        failed_tickers,
+        duration_seconds,
+        status,
+        error_message,
+        created_at
+    FROM signal_runs
+    ORDER BY run_timestamp DESC
+    LIMIT $1
+    """
+    
+    return await self.execute_query(query, [limit])
+
+
+async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]]) -> List[str]:
+    """
+    Insert batch of signal records.
+    
+    Args:
+        run_id: Signal run UUID
+        signals: List of signal dictionaries with structure:
+            - ticker: str
+            - rank: int
+            - overall_score: float
+            - technical_score: float
+            - technical_coverage: float
+            - fundamental_score: float
+            - fundamental_coverage: float
+            - news_macro_score: float
+            - news_macro_coverage: float
+            - social_alternative_score: float
+            - social_alternative_coverage: float
+            - risk_stability_score: float
+            - risk_stability_coverage: float
+            - institutional_smart_money_score: float
+            - institutional_smart_money_coverage: float
+            
+    Returns:
+        List of signal IDs created
+    """
+    if not signals:
+        return []
+    
+    # Build bulk insert query
+    query_parts = []
+    params = []
+    param_count = 1
+    
+    for signal in signals:
+        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 17)])
+        query_parts.append(f"({placeholders})")
+        
+        params.extend([
+            run_id,
+            signal['ticker'],
+            signal.get('rank'),
+            signal.get('overall_score'),
+            signal.get('total_coverage', 0),
+            signal.get('technical_score'),
+            signal.get('technical_coverage', 0),
+            signal.get('fundamental_score'),
+            signal.get('fundamental_coverage', 0),
+            signal.get('news_macro_score'),
+            signal.get('news_macro_coverage', 0),
+            signal.get('social_alternative_score'),
+            signal.get('social_alternative_coverage', 0),
+            signal.get('risk_stability_score'),
+            signal.get('risk_stability_coverage', 0),
+            signal.get('institutional_smart_money_score'),
+            signal.get('institutional_smart_money_coverage', 0)
+        ])
+        param_count += 17
+    
+    query = f"""
+    INSERT INTO signals (
+        run_id, ticker, rank, overall_score, total_coverage,
+        technical_score, technical_coverage,
+        fundamental_score, fundamental_coverage,
+        news_macro_score, news_macro_coverage,
+        social_alternative_score, social_alternative_coverage,
+        risk_stability_score, risk_stability_coverage,
+        institutional_smart_money_score, institutional_smart_money_coverage
+    ) VALUES {', '.join(query_parts)}
+    RETURNING id
+    """
+    
+    result = await self.execute_query(query, params)
+    signal_ids = [row['id'] for row in result] if result else []
+    
+    logger.info(f"✅ Inserted {len(signal_ids)} signals for run {run_id}")
+    return signal_ids
+
+
+async def get_signals_by_run_id(self, run_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Get all signals for a specific run.
+    
+    Args:
+        run_id: Signal run UUID
+        limit: Optional limit on number of signals
+        
+    Returns:
+        List of signal records ordered by rank
+    """
+    query = """
+    SELECT 
+        id, run_id, ticker, rank, overall_score,
+        technical_score, technical_coverage,
+        fundamental_score, fundamental_coverage,
+        news_macro_score, news_macro_coverage,
+        social_alternative_score, social_alternative_coverage,
+        risk_stability_score, risk_stability_coverage,
+        institutional_smart_money_score, institutional_smart_money_coverage,
+        created_at
+    FROM signals
+    WHERE run_id = $1
+    ORDER BY rank ASC NULLS LAST
+    """
+    
+    params = [run_id]
+    if limit:
+        query += f" LIMIT {limit}"
+    
+    return await self.execute_query(query, params)
+
+
+async def get_top_signals_phase5(self, run_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Get top N signals by overall_score.
+    
+    Args:
+        run_id: Signal run UUID
+        limit: Number of top signals to return
+        
+    Returns:
+        List of top signal records
+    """
+    query = """
+    SELECT 
+        id, ticker, rank, overall_score,
+        technical_score, fundamental_score,
+        news_macro_score, social_alternative_score,
+        risk_stability_score, institutional_smart_money_score
+    FROM signals
+    WHERE run_id = $1
+    ORDER BY overall_score DESC NULLS LAST
+    LIMIT $2
+    """
+    
+    return await self.execute_query(query, [run_id, limit])
+
+
+async def insert_technical_factors(self, signal_id: str, factors: Dict[str, Dict[str, float]]) -> bool:
+    """
+    Insert technical factors for a signal.
+    
+    Args:
+        signal_id: Signal UUID
+        factors: JSONB structure with factor data:
+            {
+                "rsi_14": {"raw": 65.2, "normalized": 0.75, "percentile": 0.82},
+                "macd": {"raw": 1.2, "normalized": 0.60, "percentile": 0.65},
+                ...
+            }
+            
+    Returns:
+        True if successful
+    """
+    query = """
+    INSERT INTO signals_technical (signal_id, factors)
+    VALUES ($1, $2)
+    """
+    
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    return affected > 0
+
+
+async def insert_fundamental_factors(self, signal_id: str, factors: Dict[str, Dict[str, float]]) -> bool:
+    """Insert fundamental factors for a signal."""
+    query = """
+    INSERT INTO signals_fundamental (signal_id, factors)
+    VALUES ($1, $2)
+    """
+    
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    return affected > 0
+
+
+async def insert_news_macro_factors(self, signal_id: str, factors: Dict[str, Dict[str, float]]) -> bool:
+    """Insert news/macro factors for a signal."""
+    query = """
+    INSERT INTO signals_news_macro (signal_id, factors)
+    VALUES ($1, $2)
+    """
+    
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    return affected > 0
+
+
+async def insert_social_factors(self, signal_id: str, factors: Dict[str, Dict[str, float]]) -> bool:
+    """Insert social/alternative factors for a signal."""
+    query = """
+    INSERT INTO signals_social_alternative (signal_id, factors)
+    VALUES ($1, $2)
+    """
+    
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    return affected > 0
+
+
+async def insert_risk_factors(self, signal_id: str, factors: Dict[str, Dict[str, float]]) -> bool:
+    """Insert risk/stability factors for a signal."""
+    query = """
+    INSERT INTO signals_risk_stability (signal_id, factors)
+    VALUES ($1, $2)
+    """
+    
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    return affected > 0
+
+
+async def insert_institutional_factors(self, signal_id: str, factors: Dict[str, Dict[str, float]]) -> bool:
+    """Insert institutional/smart money factors for a signal."""
+    query = """
+    INSERT INTO signals_institutional_smart_money (signal_id, factors)
+    VALUES ($1, $2)
+    """
+    
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    return affected > 0
+
+
+async def get_signal_with_factors(self, signal_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get complete signal record with all factor details.
+    
+    Args:
+        signal_id: Signal UUID
+        
+    Returns:
+        Dictionary with signal data and all factor groups, or None if not found
+    """
+    query = """
+    SELECT 
+        s.*,
+        st.factors as technical_factors,
+        sf.factors as fundamental_factors,
+        snm.factors as news_macro_factors,
+        ssa.factors as social_factors,
+        srs.factors as risk_factors,
+        sism.factors as institutional_factors
+    FROM signals s
+    LEFT JOIN signals_technical st ON s.id = st.signal_id
+    LEFT JOIN signals_fundamental sf ON s.id = sf.signal_id
+    LEFT JOIN signals_news_macro snm ON s.id = snm.signal_id
+    LEFT JOIN signals_social_alternative ssa ON s.id = ssa.signal_id
+    LEFT JOIN signals_risk_stability srs ON s.id = srs.signal_id
+    LEFT JOIN signals_institutional_smart_money sism ON s.id = sism.signal_id
+    WHERE s.id = $1
+    """
+    
+    result = await self.execute_query(query, [signal_id])
+    return result[0] if result else None
+
+
+async def get_ticker_signal_with_factors(self, run_id: str, ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Get complete signal record for a specific ticker in a run.
+    
+    Args:
+        run_id: Signal run UUID
+        ticker: Stock ticker symbol
+        
+    Returns:
+        Dictionary with signal data and all factor groups, or None if not found
+    """
+    query = """
+    SELECT 
+        s.*,
+        st.factors as technical_factors,
+        sf.factors as fundamental_factors,
+        snm.factors as news_macro_factors,
+        ssa.factors as social_factors,
+        srs.factors as risk_factors,
+        sism.factors as institutional_factors
+    FROM signals s
+    LEFT JOIN signals_technical st ON s.id = st.signal_id
+    LEFT JOIN signals_fundamental sf ON s.id = sf.signal_id
+    LEFT JOIN signals_news_macro snm ON s.id = snm.signal_id
+    LEFT JOIN signals_social_alternative ssa ON s.id = ssa.signal_id
+    LEFT JOIN signals_risk_stability srs ON s.id = srs.signal_id
+    LEFT JOIN signals_institutional_smart_money sism ON s.id = sism.signal_id
+    WHERE s.run_id = $1 AND s.ticker = $2
+    """
+    
+    result = await self.execute_query(query, [run_id, ticker])
+    return result[0] if result else None
+
+
+async def get_latest_run_id(self) -> Optional[str]:
+    """Get the ID of the most recent completed signal run."""
+    query = """
+    SELECT id 
+    FROM signal_runs 
+    WHERE status = 'completed'
+    ORDER BY run_timestamp DESC 
+    LIMIT 1
+    """
+    
+    result = await self.execute_query(query)
+    return result[0]['id'] if result else None
+
+
+async def get_signal_statistics(self, run_id: str) -> Dict[str, Any]:
+    """
+    Get statistical summary of a signal run.
+    
+    Args:
+        run_id: Signal run UUID
+        
+    Returns:
+        Dictionary with statistics:
+            - total_signals: int
+            - avg_score: float
+            - avg_technical_coverage: float
+            - avg_fundamental_coverage: float
+            - top_ticker: str
+            - top_score: float
+    """
+    query = """
+    SELECT 
+        COUNT(*) as total_signals,
+        AVG(overall_score) as avg_score,
+        AVG(technical_coverage) as avg_technical_coverage,
+        AVG(fundamental_coverage) as avg_fundamental_coverage,
+        MAX(overall_score) as top_score
+    FROM signals
+    WHERE run_id = $1
+    """
+    
+    result = await self.execute_query(query, [run_id])
+    
+    if result:
+        stats = dict(result[0])
+        
+        # Get top ticker
+        top_ticker_query = """
+        SELECT ticker 
+        FROM signals 
+        WHERE run_id = $1 
+        ORDER BY overall_score DESC NULLS LAST 
+        LIMIT 1
+        """
+        top_ticker_result = await self.execute_query(top_ticker_query, [run_id])
+        stats['top_ticker'] = top_ticker_result[0]['ticker'] if top_ticker_result else None
+        
+        return stats
+    
+    return {}
+
+
+def add_phase5_methods_to_supabase_interface():
+    """
+    Add Phase 5 methods to SupabaseInterface class.
+    Call this after importing SupabaseInterface.
+    """
+    from backend.storage.database import SupabaseInterface
+    
+    # Add all methods defined in this module
+    SupabaseInterface.create_signal_run = create_signal_run
+    SupabaseInterface.update_signal_run = update_signal_run
+    SupabaseInterface.get_recent_signal_runs = get_recent_signal_runs
+    SupabaseInterface.insert_signals_batch = insert_signals_batch
+    SupabaseInterface.get_signals_by_run_id = get_signals_by_run_id
+    SupabaseInterface.get_top_signals_phase5 = get_top_signals_phase5
+    SupabaseInterface.insert_technical_factors = insert_technical_factors
+    SupabaseInterface.insert_fundamental_factors = insert_fundamental_factors
+    SupabaseInterface.insert_news_macro_factors = insert_news_macro_factors
+    SupabaseInterface.insert_social_factors = insert_social_factors
+    SupabaseInterface.insert_risk_factors = insert_risk_factors
+    SupabaseInterface.insert_institutional_factors = insert_institutional_factors
+    SupabaseInterface.get_signal_with_factors = get_signal_with_factors
+    SupabaseInterface.get_ticker_signal_with_factors = get_ticker_signal_with_factors
+    SupabaseInterface.get_latest_run_id = get_latest_run_id
+    SupabaseInterface.get_signal_statistics = get_signal_statistics
+    
+    logger.info("✅ Phase 5 persistence methods added to SupabaseInterface")
+
+
+# Auto-add methods when module is imported
+add_phase5_methods_to_supabase_interface()

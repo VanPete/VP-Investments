@@ -21,7 +21,7 @@ from .phase1_fetch import Phase1Fetcher
 from .phase2_calculate import Phase2Calculator
 from .phase3_normalize import Phase3Normalizer
 from .phase4_score_assemble import Phase4ScoreAssembler
-from .phase5_persist import Phase5Persister
+from .phase5_persist import add_phase5_methods_to_supabase_interface
 from .phase6_post_ops import Phase6PostOps
 
 __all__ = [
@@ -29,6 +29,6 @@ __all__ = [
     'Phase2Calculator',
     'Phase3Normalizer',
     'Phase4ScoreAssembler',
-    'Phase5Persister',
+    'add_phase5_methods_to_supabase_interface',
     'Phase6PostOps',
 ]
