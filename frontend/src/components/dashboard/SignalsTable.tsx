@@ -72,9 +72,9 @@ export function SignalsTable({
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50 dark:bg-gray-900/50">
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="w-12"></TableHead>
               {columnVisibility.rank && (
-                <TableHead className="w-[60px] font-semibold">
+                <TableHead className="font-semibold">
                   <span className="inline-flex items-center">
                     Rank
                     <MetricTooltip 
@@ -85,10 +85,10 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.ticker && (
-                <TableHead className="w-[100px] font-semibold">Ticker</TableHead>
+                <TableHead className="font-semibold">Ticker</TableHead>
               )}
               {columnVisibility.overallScore && (
-                <TableHead className="w-[120px] text-right font-semibold">
+                <TableHead className="text-right font-semibold">
                   <span className="inline-flex items-center justify-end">
                     Overall Score
                     <MetricTooltip 
@@ -99,7 +99,7 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.coverage && (
-                <TableHead className="w-[100px] text-right font-semibold">
+                <TableHead className="text-right font-semibold">
                   <span className="inline-flex items-center justify-end">
                     Coverage
                     <MetricTooltip 

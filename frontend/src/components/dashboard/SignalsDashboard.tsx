@@ -82,16 +82,36 @@ export function SignalsDashboard({
     // Coverage filter
     filtered = filtered.filter((r) => r.total_coverage >= filters.minCoverage);
 
-    // Group filter (show only if group score is significant)
-    if (filters.selectedGroup && filters.selectedGroup !== 'all') {
+    // Group filter
+    if (filters.selectedGroup) {
       filtered = filtered.filter((r) => {
         const groupScore = r.group_scores[filters.selectedGroup as keyof typeof r.group_scores];
         return groupScore !== undefined && groupScore !== 0;
       });
     }
 
+    // Factor filter - filters by the group that contains the selected factor
+    if (filters.selectedFactor && factorToGroup) {
+      // Find which group this factor belongs to
+      let factorGroup: string | null = null;
+      for (const [group, factors] of Object.entries(factorToGroup)) {
+        if (factors && filters.selectedFactor && filters.selectedFactor in factors) {
+          factorGroup = group;
+          break;
+        }
+      }
+
+      if (factorGroup) {
+        const targetGroup = factorGroup;
+        filtered = filtered.filter((r) => {
+          const groupScore = r.group_scores[targetGroup as keyof typeof r.group_scores];
+          return groupScore !== undefined && groupScore !== 0;
+        });
+      }
+    }
+
     return filtered;
-  }, [results, filters]);
+  }, [results, filters, factorToGroup]);
 
   // Display only top 10 or all
   const displayedRankings = useMemo(() => {
