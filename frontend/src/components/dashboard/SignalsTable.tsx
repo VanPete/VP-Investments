@@ -18,9 +18,9 @@ import {
   formatScore,
   formatCoverage,
   getScoreColorClass,
-  getCoverageQuality,
 } from '@/lib/utils';
 import { GROUP_DISPLAY_NAMES } from '@/types/pipeline';
+import { CoverageBadge } from './CoverageBadge';
 
 interface SignalsTableProps {
   rankings: SignalRanking[];
@@ -72,7 +72,7 @@ export function SignalsTable({
               <Fragment key={ranking.ticker}>
                 {/* Main Row */}
                 <TableRow
-                  className="hover:bg-gray-50 dark:hover:bg-gray-900/30 cursor-pointer"
+                  className="hover:bg-gradient-to-r hover:from-[#001F3F]/5 hover:to-[#00AEEF]/5 dark:hover:from-[#001F3F]/10 dark:hover:to-[#00AEEF]/10 cursor-pointer transition-colors duration-200"
                   onClick={() => toggleRow(ranking.ticker)}
                 >
                   <TableCell>
@@ -91,17 +91,12 @@ export function SignalsTable({
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.overall_score)}`}>
+                    <span className={`text-lg font-bold ${getScoreColorClass(ranking.overall_score)}`}>
                       {formatScore(ranking.overall_score)}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Badge
-                      variant="outline"
-                      className={getCoverageQuality(ranking.total_coverage).colorClass}
-                    >
-                      {formatCoverage(ranking.total_coverage)}
-                    </Badge>
+                    <CoverageBadge coverage={ranking.total_coverage} size="md" />
                   </TableCell>
                   <TableCell className="text-right">
                     <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.technical)}`}>
@@ -157,14 +152,21 @@ export function SignalsTable({
                                       : 'N/A'}
                                   </Badge>
                                 </div>
-                                <div className="space-y-1">
-                                  <div className="flex justify-between">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center">
                                     <span className="text-xs text-gray-500 dark:text-gray-400">Score:</span>
                                     <span className={`text-sm font-semibold ${getScoreColorClass(ranking.group_scores[groupKey])}`}>
                                       {formatScore(ranking.group_scores[groupKey])}
                                     </span>
                                   </div>
-                                  <div className="flex justify-between">
+                                  {/* Score Progress Bar with VanPiQ Gradient */}
+                                  <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-[#001F3F] to-[#00AEEF] rounded-full transition-all duration-300"
+                                      style={{ width: `${Math.min(100, Math.max(0, ((ranking.group_scores[groupKey] + 5) / 10) * 100))}%` }}
+                                    />
+                                  </div>
+                                  <div className="flex justify-between items-center mt-1">
                                     <span className="text-xs text-gray-500 dark:text-gray-400">Coverage:</span>
                                     <span className="text-sm font-semibold dark:text-gray-200">
                                       {formatCoverage(ranking.group_coverages[groupKey])}

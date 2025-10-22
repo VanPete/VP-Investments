@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
@@ -16,21 +15,7 @@ export function Navigation() {
   return (
     <nav className="border-b border-gray-200 bg-white dark:bg-gray-950 dark:border-gray-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link 
-            href="/" 
-            className="flex items-center pl-3 group"
-          >
-            <Image 
-              src="/vanpiq-logo.svg" 
-              alt="VanPIQ" 
-              width={100} 
-              height={34}
-              className="h-[34px] w-[100px] transition-all duration-300 group-hover:drop-shadow-[0_0_8px_rgba(0,174,239,0.5)]"
-            />
-          </Link>
-
+        <div className="flex items-center justify-center h-12">
           {/* Navigation Links */}
           <div className="flex items-center space-x-6">
             {navItems.map((item) => {

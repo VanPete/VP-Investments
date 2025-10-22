@@ -33,11 +33,11 @@ export function formatCoverage(coverage: number | undefined): string {
  * Get color class based on score value
  */
 export function getScoreColorClass(score: number | undefined): string {
-  if (score === undefined || score === null) return 'text-gray-400';
+  if (score === undefined || score === null) return 'text-gray-400 dark:text-gray-500';
   if (score >= 0.75) return 'text-green-600 dark:text-green-400';
-  if (score >= 0.50) return 'text-green-500';
-  if (score >= 0) return 'text-gray-600';
-  if (score >= -0.50) return 'text-orange-500';
+  if (score >= 0.50) return 'text-green-500 dark:text-green-400';
+  if (score >= 0) return 'text-gray-700 dark:text-gray-300';
+  if (score >= -0.50) return 'text-orange-600 dark:text-orange-400';
   return 'text-red-600 dark:text-red-400';
 }
 

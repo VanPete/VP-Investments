@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { SignalsTable } from './SignalsTable';
 import { FilterPanel } from './FilterPanel';
 import { DashboardHeader } from './DashboardHeader';
+import { QuickStats } from './QuickStats';
+import { FilterChips } from './FilterChips';
 
 interface SignalsDashboardProps {
   initialResults: PipelineResults | null;
@@ -129,6 +131,9 @@ export function SignalsDashboard({
         displayedCount={displayedRankings.length}
       />
 
+      {/* Quick Stats Cards */}
+      {results && <QuickStats results={results} />}
+
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6 space-y-6">
         {/* Filters */}
@@ -137,6 +142,17 @@ export function SignalsDashboard({
           onFiltersChange={setFilters}
           weightsConfig={weightsConfig}
           factorToGroup={factorToGroup}
+        />
+
+        {/* Active Filter Chips */}
+        <FilterChips 
+          filters={filters} 
+          onRemoveFilter={(key) => {
+            setFilters(prev => ({
+              ...prev,
+              [key]: key === 'minCoverage' ? 0 : key === 'searchQuery' ? '' : null
+            }));
+          }}
         />
 
         {/* Signals Table */}
