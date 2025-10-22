@@ -751,13 +751,304 @@ python safe_clear_data.py
 
 ---
 
-## 🎨 Frontend Development (Future)
-- **Separate structure** to be created when backend is complete
-- **Independent from backend** - will import backend as dependency
-- **Uses `commentary` field** for simplified rendering
-- **Queries `signals_norm` view** for performance
-- **New file creation allowed** in frontend directory structure
-- **Different development rules** will apply
+## 🎨 Frontend Development
+
+### Current Status: ✅ Phase 1 & 2 Complete - Production Deployed
+
+**Project:** VanPIQ Signals Dashboard  
+**Tech Stack:** Next.js 15.5.4, React 19, TypeScript, Tailwind CSS 4, shadcn/ui  
+**Repository:** https://github.com/VanPete/VP-Investments  
+**Deployment:** Vercel (automatic on push to main)  
+**Last Commit:** f4b69b5 (Frontend polish: QuickStats, filters, spacing)  
+**Build Status:** ✅ Passing (2.5s, 198 KB bundle, 0 errors)
+
+### Design System (VanPIQ Branding)
+- **Gradient:** `#001F3F` → `#00AEEF` (dark blue to bright cyan)
+- **Typography:** Inter font family
+- **Spacing:** rounded-2xl cards, shadow-lg elevation
+- **Components:** Gradient hover states, backdrop-blur-sm effects
+- **Philosophy:** "VanPiQ: Precision Intelligence" - calm, confident, data-driven
+
+### Architecture & Data Flow
+- **Backend Pipeline:** Python → Reddit/News discovery → Factor scoring → JSON output
+- **Data Format:** JSON files with rankings, group scores, factor breakdowns
+- **Current Data:** 29 tickers, Reddit: 28, News: 9, Total Universe: 36
+- **Frontend:** Static site generation, reads JSON, renders dashboard
+- **State Management:** React hooks + localStorage persistence
+
+### Component Architecture
+
+#### Layout Components
+1. **Navigation** (`frontend/src/components/Navigation.tsx`)
+   - Purpose: Site-wide navigation bar
+   - Features: Centered links (Dashboard, Methodology), gradient underline on active
+   - Height: h-12
+   - Status: ✅ Complete
+
+2. **DashboardHeader** (`frontend/src/components/dashboard/DashboardHeader.tsx`)
+   - Purpose: Dashboard header with branding and controls
+   - Layout: VanPIQ logo (120x40px, hover glow) → Title + discovery badge → Stats → Controls
+   - Discovery Stats: Hover tooltip on ticker count shows Reddit/News breakdown
+   - Controls: File selector dropdown + refresh button (gradient)
+   - Status: ✅ Complete
+
+#### Dashboard Components
+3. **SignalsDashboard** (`frontend/src/components/dashboard/SignalsDashboard.tsx`)
+   - Purpose: Main orchestrator component, manages all state
+   - State:
+     * usePersistedFilters: search, selectedGroup, selectedFactor, minCoverage, scoreRange
+     * usePersistedColumnVisibility: 10 boolean flags for column visibility
+   - Filter Logic:
+     * **Group Filter:** Checks `if (filters.selectedGroup)`, filters by non-zero group scores
+     * **Factor Filter:** Finds parent group for selected factor, filters by that group's scores
+     * **Search:** Case-insensitive ticker matching
+     * **Coverage:** `>= filters.minCoverage`
+     * **Score Range:** min/max boundaries
+   - Component Composition:
+     * DashboardHeader
+     * QuickStats (if results exist)
+     * FilterPanel
+     * FilterChips + ColumnVisibilityToggle (side-by-side flex)
+     * SignalsTable
+   - Status: ✅ Complete, all filters working
+
+4. **QuickStats** (`frontend/src/components/dashboard/QuickStats.tsx`)
+   - Purpose: Display 3 key metrics above table
+   - Layout: 3-card grid (lg:grid-cols-3)
+     * Card 1: Average Score (TrendingUp icon, 0.171 across 29 tickers)
+     * Card 2: Top Performer (Target icon, gradient bg, SHOP 0.956, 92.3% coverage) - CENTER
+     * Card 3: High Coverage (CheckCircle2 icon, 23/29 tickers >90%)
+   - Removed: Discovery Sources card (4th card), Badge/Rss imports, unused variables
+   - Status: ✅ Complete, streamlined
+
+5. **FilterPanel** (`frontend/src/components/dashboard/FilterPanel.tsx`)
+   - Purpose: Search and filter controls
+   - Features:
+     * Search input (debounced)
+     * Group dropdown (Technical, Fundamental, News/Macro, Social, Risk, Institutional)
+     * Factor dropdown (grouped by parent category)
+     * Coverage slider (0-100%)
+     * Score range sliders (min/max 0.0-1.0)
+   - Status: ✅ Complete
+
+6. **SignalsTable** (`frontend/src/components/dashboard/SignalsTable.tsx`)
+   - Purpose: Main data table with expandable rows
+   - Features:
+     * Column visibility: Conditional rendering based on columnVisibility prop
+     * Search highlighting: HighlightedText on ticker symbols
+     * Interactive tooltips: MetricTooltip on all headers
+     * Coverage badges: CoverageBadge with quality-tier tooltips
+     * Expandable rows: ChevronDown/Right, detailed factor scores
+     * Gradient progress bars: VanPIQ gradient on score bars
+   - Columns: Rank, Ticker*, Overall Score*, Coverage, Technical, Fundamental, News/Macro, Social, Risk, Institutional (* = required)
+   - Spacing: Equal auto-sizing (removed fixed widths except expand button w-12)
+   - Status: ✅ Complete, equal spacing
+
+#### Reusable Components
+7. **FilterChips** (`frontend/src/components/dashboard/FilterChips.tsx`)
+   - Purpose: Show active filters as dismissible badges
+   - Features: Detects 4 filter types, gradient styling, X button with hover effect
+   - Status: ✅ Complete
+
+8. **CoverageBadge** (`frontend/src/components/dashboard/CoverageBadge.tsx`)
+   - Purpose: Color-coded coverage quality indicators
+   - Quality Tiers:
+     * Excellent (≥90%): Green, CheckCircle2, "High" label
+     * Good (70-89%): Yellow, AlertCircle
+     * Limited (<70%): Red, XCircle
+   - Tooltips: Optional, explain each tier's reliability
+   - Status: ✅ Complete
+
+9. **MetricTooltip** (`frontend/src/components/dashboard/MetricTooltip.tsx`)
+   - Purpose: Reusable tooltip for metric explanations
+   - Predefined: Rank, Overall Score, Coverage, Technical, Fundamental, News/Macro, Social, Risk, Institutional
+   - Styling: HelpCircle icon, border-[#00AEEF]/30, 200ms delay
+   - Status: ✅ Complete
+
+10. **HighlightedText** (`frontend/src/components/dashboard/HighlightedText.tsx`)
+    - Purpose: Highlight search terms with VanPIQ gradient
+    - Highlight: `<mark>` with gradient bg from-[#001F3F]/20 to-[#00AEEF]/20
+    - Features: Case-insensitive, regex escaping
+    - Status: ✅ Complete
+
+11. **ColumnVisibilityToggle** (`frontend/src/components/dashboard/ColumnVisibilityToggle.tsx`)
+    - Purpose: Dropdown to show/hide table columns
+    - Features:
+      * 10 columns (Ticker/Overall Score required, 8 optional)
+      * Presets: "Show All", "Essential Only"
+      * Counter: "Columns (X/10)"
+      * Persistence via usePersistedColumnVisibility
+    - Status: ✅ Complete
+
+#### Hooks
+12. **usePersistedState** (`frontend/src/hooks/usePersistedState.ts`)
+    - Purpose: localStorage persistence
+    - Exports:
+      * useLocalStorage<T>: Generic localStorage hook
+      * usePersistedFilters: FilterState persistence
+      * usePersistedColumnVisibility: ColumnVisibility persistence
+      * usePersistedSort: For future use
+      * usePersistedExpandedRow: For future use
+      * clearAllPersistedData: Reset all preferences
+    - Storage Keys: vanpiq_filters, vanpiq_column_visibility, vanpiq_sort, vanpiq_expanded_row
+    - Status: ✅ Complete
+
+### Feature Implementation Status
+
+#### ✅ Completed - Phase 1 (7/10 features)
+- [x] Discovery Source Badges (hover tooltip on ticker count)
+- [x] Enhanced Number Contrast (text-lg font-bold Overall Score)
+- [x] Coverage Badge Color Coding (green/yellow/red quality tiers)
+- [x] Quick Stats Cards (3 cards: Average, Top Performer, High Coverage)
+- [x] Filter Chips (dismissible badges with remove handlers)
+- [x] Gradient Accents on Score Bars (VanPIQ gradient in expanded rows)
+- [x] Header Restructuring (logo above title, discovery stats as tooltip)
+
+#### ⏳ Pending - Phase 1 (3/10 features)
+- [ ] Sorting Indicators (chevron icons on column headers)
+- [ ] Discovery Source Column (Reddit/News badge per ticker)
+- [ ] Loading States & Export Functionality (skeleton loaders, CSV/Excel buttons)
+
+#### ✅ Completed - Phase 2 (4/5 features)
+- [x] Interactive Tooltips (MetricTooltip on all headers + coverage badges)
+- [x] Persistent User Preferences (filters + column visibility via localStorage)
+- [x] Search Highlighting (HighlightedText with VanPIQ gradient)
+- [x] Column Visibility Toggle (ColumnVisibilityToggle with presets)
+- [x] Keyboard Shortcuts (skipped per user request)
+
+#### ⏳ Pending - Phase 3 (3/3 features)
+- [ ] Historical Data Comparison
+- [ ] Signal Strength Heatmap
+- [ ] Alert System & Watchlist
+
+### Recent Fixes (Oct 22, 2024)
+1. **QuickStats Layout:** Removed 4th card (Discovery Sources), changed to 3-card grid, reordered with Top Performer centered
+2. **Group Filter:** Fixed broken filter logic (was checking `!== 'all'` instead of `if (selectedGroup)`)
+3. **Factor Filter:** Implemented from scratch (was completely missing), finds parent group and filters by group scores
+4. **Table Spacing:** Removed fixed width classes (w-[60px], w-[100px], w-[120px]) for equal column distribution
+
+### Git Commits
+- `fe9dbaf`: Phase 1 UI Polish (QuickStats, FilterChips, CoverageBadge, branding)
+- `3f1ad79`: Phase 2 UX Enhancements (tooltips, persistence, search highlighting, column toggle)
+- `f4b69b5`: Final polish (3-card QuickStats, fixed filters, equal spacing)
+
+### Development Guidelines
+- **Component Pattern:** Functional components with TypeScript, shadcn/ui primitives
+- **State Management:** React hooks (useState, useMemo) + localStorage for persistence
+- **Styling:** Tailwind utility classes, VanPIQ gradient throughout
+- **Responsive:** Mobile-first with lg: breakpoints for desktop
+- **Type Safety:** Strict TypeScript, proper prop interfaces
+- **Conditional Rendering:** Based on data availability and user preferences
+
+### Data Types & Interfaces
+
+```typescript
+// Core data types
+interface SignalRanking {
+  ticker: string;
+  overall_score: number;
+  coverage: number;
+  group_scores: {
+    technical: number;
+    fundamental: number;
+    news_macro: number;
+    social: number;
+    risk: number;
+    institutional: number;
+  };
+  factor_scores: Record<string, number>; // 50+ individual factors
+}
+
+interface FilterState {
+  searchQuery: string;
+  selectedGroup: string;
+  selectedFactor: string;
+  minCoverage: number;
+  scoreRange: [number, number];
+}
+
+interface ColumnVisibility {
+  rank: boolean;
+  ticker: boolean;        // Required, always true
+  overallScore: boolean;  // Required, always true
+  coverage: boolean;
+  technical: boolean;
+  fundamental: boolean;
+  newsMacro: boolean;
+  social: boolean;
+  risk: boolean;
+  institutional: boolean;
+}
+```
+
+### localStorage Schema
+- **vanpiq_filters**: FilterState object (search, group, factor, coverage, score range)
+- **vanpiq_column_visibility**: ColumnVisibility object (10 boolean flags)
+- **vanpiq_sort**: (future) Sort state
+- **vanpiq_expanded_row**: (future) Expanded row persistence
+
+### Known Issues & Technical Debt
+1. **Factor Scores Missing:** Data only includes group_scores, not individual factor_scores per ticker
+   - Workaround: Factor filter finds parent group and filters by group score
+   - Backend TODO: Add factor_scores to JSON output
+2. **Sorting Not Implemented:** No sort state or chevron indicators yet
+3. **Discovery Column Missing:** Individual ticker discovery source badges not added
+4. **Loading States:** No skeleton loaders or loading indicators
+5. **Export Feature:** No CSV/Excel export functionality
+
+### Future Enhancements (Phase 3+)
+- Historical data comparison charts
+- Signal strength heatmap visualization
+- Alert system for score changes
+- Watchlist with custom notifications
+- Advanced filtering (multi-select groups, factor combinations)
+- Performance optimizations (virtualized table for large datasets)
+
+### Testing & Validation
+- **Build:** `cd frontend && npm run build` (2.5s, 198 KB bundle)
+- **Dev Server:** `npm run dev` (Turbopack)
+- **Type Check:** `npx tsc --noEmit`
+- **Lint:** ESLint integrated in build
+- **Manual Testing:** All filters, tooltips, persistence tested in browser
+
+### Deployment
+- **Platform:** Vercel
+- **Trigger:** Automatic on push to main branch
+- **Build Command:** `npm run build`
+- **Output:** Static site generation
+- **Environment:** Production environment variables set in Vercel dashboard
+
+### Development Commands
+```bash
+# Frontend development
+cd frontend
+npm install              # Install dependencies
+npm run dev              # Start dev server (Turbopack)
+npm run build            # Build for production
+npm run start            # Serve production build
+
+# Git workflow
+git status --short       # Check changes
+git add .                # Stage changes
+git commit -m "message"  # Commit with message
+git push origin main     # Deploy to Vercel
+```
+
+### File Locations
+- **Components:** `frontend/src/components/dashboard/*.tsx`
+- **Hooks:** `frontend/src/hooks/*.ts`
+- **Types:** `frontend/src/types/*.ts`
+- **Styles:** `frontend/src/app/globals.css`
+- **Config:** `frontend/tailwind.config.ts`, `frontend/tsconfig.json`
+
+### Dependencies
+- Next.js 15.5.4
+- React 19 (with react-dom)
+- TypeScript 5.x
+- Tailwind CSS 4
+- shadcn/ui components (Card, Button, Select, Dropdown, Tooltip, Badge, Table, Slider, etc.)
+- Lucide React (icons)
+- class-variance-authority + clsx (utility styling)
 
 ---
 

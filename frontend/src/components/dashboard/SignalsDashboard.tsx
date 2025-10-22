@@ -13,9 +13,7 @@ import { SignalsTable } from './SignalsTable';
 import { FilterPanel } from './FilterPanel';
 import { DashboardHeader } from './DashboardHeader';
 import { QuickStats } from './QuickStats';
-import { FilterChips } from './FilterChips';
-import { ColumnVisibilityToggle } from './ColumnVisibilityToggle';
-import { usePersistedFilters, usePersistedColumnVisibility } from '@/hooks/usePersistedState';
+import { usePersistedColumnVisibility } from '@/hooks/usePersistedState';
 
 interface SignalsDashboardProps {
   initialResults: PipelineResults | null;
@@ -36,14 +34,11 @@ export function SignalsDashboard({
   );
   const [showAll, setShowAll] = useState(false);
   
-  // Use persisted filters with localStorage
-  const [filters, setFilters] = usePersistedFilters({
-    selectedGroup: null,
-    selectedFactor: null,
+  // Simple filter state (no localStorage)
+  const [filters, setFilters] = useState({
     minScore: -5,
     maxScore: 5,
     minCoverage: 0,
-    searchQuery: '',
   });
 
   // Use persisted column visibility
@@ -66,14 +61,6 @@ export function SignalsDashboard({
 
     let filtered = [...results.rankings];
 
-    // Search filter
-    if (filters.searchQuery) {
-      const query = filters.searchQuery.toLowerCase();
-      filtered = filtered.filter((r) =>
-        r.ticker.toLowerCase().includes(query)
-      );
-    }
-
     // Score filter
     filtered = filtered.filter(
       (r) => r.overall_score >= filters.minScore && r.overall_score <= filters.maxScore
@@ -82,36 +69,8 @@ export function SignalsDashboard({
     // Coverage filter
     filtered = filtered.filter((r) => r.total_coverage >= filters.minCoverage);
 
-    // Group filter
-    if (filters.selectedGroup) {
-      filtered = filtered.filter((r) => {
-        const groupScore = r.group_scores[filters.selectedGroup as keyof typeof r.group_scores];
-        return groupScore !== undefined && groupScore !== 0;
-      });
-    }
-
-    // Factor filter - filters by the group that contains the selected factor
-    if (filters.selectedFactor && factorToGroup) {
-      // Find which group this factor belongs to
-      let factorGroup: string | null = null;
-      for (const [group, factors] of Object.entries(factorToGroup)) {
-        if (factors && filters.selectedFactor && filters.selectedFactor in factors) {
-          factorGroup = group;
-          break;
-        }
-      }
-
-      if (factorGroup) {
-        const targetGroup = factorGroup;
-        filtered = filtered.filter((r) => {
-          const groupScore = r.group_scores[targetGroup as keyof typeof r.group_scores];
-          return groupScore !== undefined && groupScore !== 0;
-        });
-      }
-    }
-
     return filtered;
-  }, [results, filters, factorToGroup]);
+  }, [results, filters]);
 
   // Display only top 10 or all
   const displayedRankings = useMemo(() => {
@@ -177,34 +136,15 @@ export function SignalsDashboard({
         <FilterPanel
           filters={filters}
           onFiltersChange={setFilters}
-          weightsConfig={weightsConfig}
-          factorToGroup={factorToGroup}
         />
-
-        {/* Active Filter Chips and Column Visibility */}
-        <div className="flex items-center justify-between gap-4">
-          <FilterChips 
-            filters={filters} 
-            onRemoveFilter={(key) => {
-              setFilters(prev => ({
-                ...prev,
-                [key]: key === 'minCoverage' ? 0 : key === 'searchQuery' ? '' : null
-              }));
-            }}
-          />
-          <ColumnVisibilityToggle
-            visibility={columnVisibility}
-            onVisibilityChange={setColumnVisibility}
-          />
-        </div>
 
         {/* Signals Table */}
         <SignalsTable
           rankings={displayedRankings}
           weightsConfig={weightsConfig}
           factorToGroup={factorToGroup}
-          searchQuery={filters.searchQuery}
           columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
         />
 
         {/* Show All Button */}

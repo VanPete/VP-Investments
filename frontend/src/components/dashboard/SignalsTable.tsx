@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, Fragment } from 'react';
-import type { SignalRanking, WeightsConfig, FactorToGroup, GroupKey } from '@/types/pipeline';
+import { useState, Fragment, useMemo, useEffect } from 'react';
+import type { SignalRanking, WeightsConfig, FactorToGroup, GroupKey, SortDirection } from '@/types/pipeline';
 import {
   Table,
   TableBody,
@@ -13,7 +13,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import {
   formatScore,
   formatCoverage,
@@ -22,21 +22,20 @@ import {
 import { GROUP_DISPLAY_NAMES } from '@/types/pipeline';
 import { CoverageBadge } from './CoverageBadge';
 import { MetricTooltip, METRIC_TOOLTIPS } from './MetricTooltip';
-import { HighlightedText } from './HighlightedText';
+import { ColumnVisibilityToggle } from './ColumnVisibilityToggle';
 import type { ColumnVisibility } from '@/hooks/usePersistedState';
 
 interface SignalsTableProps {
   rankings: SignalRanking[];
   weightsConfig: WeightsConfig | null;
   factorToGroup: FactorToGroup | null;
-  searchQuery?: string;
   columnVisibility?: ColumnVisibility;
+  onColumnVisibilityChange?: (visibility: ColumnVisibility) => void;
 }
 
 export function SignalsTable({
   rankings,
   weightsConfig,
-  searchQuery = '',
   columnVisibility = {
     rank: true,
     ticker: true,
@@ -49,11 +48,124 @@ export function SignalsTable({
     risk: true,
     institutional: true,
   },
+  onColumnVisibilityChange,
 }: SignalsTableProps) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<string>('overallScore');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   const toggleRow = (ticker: string) => {
     setExpandedRow(expandedRow === ticker ? null : ticker);
+  };
+
+  // Handle column visibility changes - clear sort if hidden column is sorted
+  useEffect(() => {
+    if (sortColumn && columnVisibility) {
+      const columnKey = sortColumn as keyof ColumnVisibility;
+      if (columnVisibility[columnKey] === false) {
+        setSortColumn('overallScore');
+        setSortDirection('desc');
+      }
+    }
+  }, [columnVisibility, sortColumn]);
+
+  // Handle column header click for sorting
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Cycle through: asc -> desc -> null (original)
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else if (sortDirection === 'desc') {
+        setSortDirection(null);
+        setSortColumn('overallScore');
+      }
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Sort rankings based on current sort config
+  const sortedRankings = useMemo(() => {
+    if (!sortDirection || !sortColumn) {
+      return rankings;
+    }
+
+    const sorted = [...rankings].sort((a, b) => {
+      let aValue: number | string;
+      let bValue: number | string;
+
+      switch (sortColumn) {
+        case 'rank':
+          aValue = a.rank;
+          bValue = b.rank;
+          break;
+        case 'ticker':
+          aValue = a.ticker;
+          bValue = b.ticker;
+          break;
+        case 'overallScore':
+          aValue = a.overall_score;
+          bValue = b.overall_score;
+          break;
+        case 'coverage':
+          aValue = a.total_coverage;
+          bValue = b.total_coverage;
+          break;
+        case 'technical':
+          aValue = a.group_scores.technical || 0;
+          bValue = b.group_scores.technical || 0;
+          break;
+        case 'fundamental':
+          aValue = a.group_scores.fundamental || 0;
+          bValue = b.group_scores.fundamental || 0;
+          break;
+        case 'newsMacro':
+          aValue = a.group_scores.news_macro || 0;
+          bValue = b.group_scores.news_macro || 0;
+          break;
+        case 'social':
+          aValue = a.group_scores.social_alternative || 0;
+          bValue = b.group_scores.social_alternative || 0;
+          break;
+        case 'risk':
+          aValue = a.group_scores.risk_stability || 0;
+          bValue = b.group_scores.risk_stability || 0;
+          break;
+        case 'institutional':
+          aValue = a.group_scores.institutional_smart_money || 0;
+          bValue = b.group_scores.institutional_smart_money || 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+
+      return sortDirection === 'asc' 
+        ? (aValue as number) - (bValue as number)
+        : (bValue as number) - (aValue as number);
+    });
+
+    return sorted;
+  }, [rankings, sortColumn, sortDirection]);
+
+  // Render sort icon
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortColumn !== column) {
+      return <ChevronsUpDown className="ml-1 h-4 w-4 opacity-50" />;
+    }
+    if (sortDirection === 'asc') {
+      return <ChevronUp className="ml-1 h-4 w-4" />;
+    }
+    if (sortDirection === 'desc') {
+      return <ChevronDown className="ml-1 h-4 w-4" />;
+    }
+    return <ChevronsUpDown className="ml-1 h-4 w-4 opacity-50" />;
   };
 
   if (rankings.length === 0) {
@@ -68,15 +180,29 @@ export function SignalsTable({
 
   return (
     <Card className="shadow-lg rounded-2xl border-gray-200 dark:border-gray-800">
+      {/* Column Visibility Toggle - Top Right */}
+      <div className="flex justify-end p-4 border-b border-gray-200 dark:border-gray-800">
+        {onColumnVisibilityChange && (
+          <ColumnVisibilityToggle
+            visibility={columnVisibility}
+            onVisibilityChange={onColumnVisibilityChange}
+          />
+        )}
+      </div>
+
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50 dark:bg-gray-900/50">
               <TableHead className="w-12"></TableHead>
               {columnVisibility.rank && (
-                <TableHead className="font-semibold">
+                <TableHead 
+                  className="font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('rank')}
+                >
                   <span className="inline-flex items-center">
                     Rank
+                    <SortIcon column="rank" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.rank.title}
                       description={METRIC_TOOLTIPS.rank.description}
@@ -85,12 +211,24 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.ticker && (
-                <TableHead className="font-semibold">Ticker</TableHead>
+                <TableHead 
+                  className="font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('ticker')}
+                >
+                  <span className="inline-flex items-center">
+                    Ticker
+                    <SortIcon column="ticker" />
+                  </span>
+                </TableHead>
               )}
               {columnVisibility.overallScore && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('overallScore')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Overall Score
+                    <SortIcon column="overallScore" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.overallScore.title}
                       description={METRIC_TOOLTIPS.overallScore.description}
@@ -99,9 +237,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.coverage && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('coverage')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Coverage
+                    <SortIcon column="coverage" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.coverage.title}
                       description={METRIC_TOOLTIPS.coverage.description}
@@ -110,9 +252,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.technical && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('technical')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Technical
+                    <SortIcon column="technical" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.technical.title}
                       description={METRIC_TOOLTIPS.technical.description}
@@ -121,9 +267,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.fundamental && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('fundamental')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Fundamental
+                    <SortIcon column="fundamental" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.fundamental.title}
                       description={METRIC_TOOLTIPS.fundamental.description}
@@ -132,9 +282,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.newsMacro && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('newsMacro')}
+                >
                   <span className="inline-flex items-center justify-end">
                     News/Macro
+                    <SortIcon column="newsMacro" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.newsMacro.title}
                       description={METRIC_TOOLTIPS.newsMacro.description}
@@ -143,9 +297,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.social && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('social')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Social
+                    <SortIcon column="social" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.social.title}
                       description={METRIC_TOOLTIPS.social.description}
@@ -154,9 +312,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.risk && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('risk')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Risk
+                    <SortIcon column="risk" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.risk.title}
                       description={METRIC_TOOLTIPS.risk.description}
@@ -165,9 +327,13 @@ export function SignalsTable({
                 </TableHead>
               )}
               {columnVisibility.institutional && (
-                <TableHead className="text-right font-semibold">
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('institutional')}
+                >
                   <span className="inline-flex items-center justify-end">
                     Institutional
+                    <SortIcon column="institutional" />
                     <MetricTooltip 
                       title={METRIC_TOOLTIPS.institutional.title}
                       description={METRIC_TOOLTIPS.institutional.description}
@@ -178,7 +344,7 @@ export function SignalsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rankings.map((ranking) => (
+            {sortedRankings.map((ranking) => (
               <Fragment key={ranking.ticker}>
                 {/* Main Row */}
                 <TableRow
@@ -200,7 +366,7 @@ export function SignalsTable({
                   {columnVisibility.ticker && (
                     <TableCell>
                       <span className="font-mono font-medium text-gray-900 dark:text-gray-100 tracking-wide">
-                        <HighlightedText text={ranking.ticker} searchQuery={searchQuery} />
+                        {ranking.ticker}
                       </span>
                     </TableCell>
                   )}

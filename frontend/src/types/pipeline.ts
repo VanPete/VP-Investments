@@ -192,21 +192,19 @@ export interface FileOption {
  * Filter state for dashboard
  */
 export interface FilterState {
-  selectedGroup: string | null;
-  selectedFactor: string | null;
   minScore: number;
   maxScore: number;
   minCoverage: number;
-  searchQuery: string;
 }
 
 /**
- * Sort configuration
+ * Sort configuration for table columns
  */
+export type SortDirection = 'asc' | 'desc' | null;
+
 export interface SortConfig {
-  field: keyof SignalRanking | 'group_score';
-  direction: 'asc' | 'desc';
-  groupKey?: keyof GroupScores;
+  column: string;
+  direction: SortDirection;
 }
 
 /**

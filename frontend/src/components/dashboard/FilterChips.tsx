@@ -3,7 +3,6 @@
 import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
 import type { FilterState } from '@/types/pipeline';
-import { GROUP_DISPLAY_NAMES } from '@/types/pipeline';
 
 interface FilterChipsProps {
   filters: FilterState;
@@ -14,22 +13,8 @@ export function FilterChips({ filters, onRemoveFilter }: FilterChipsProps) {
   const activeFilters: Array<{ key: keyof FilterState; label: string }> = [];
 
   // Check which filters are active
-  if (filters.selectedGroup) {
-    const groupName = GROUP_DISPLAY_NAMES[filters.selectedGroup as keyof typeof GROUP_DISPLAY_NAMES] || filters.selectedGroup;
-    activeFilters.push({ key: 'selectedGroup', label: `Group: ${groupName}` });
-  }
-
-  if (filters.selectedFactor) {
-    const factorName = filters.selectedFactor.replace(/_/g, ' ');
-    activeFilters.push({ key: 'selectedFactor', label: `Factor: ${factorName}` });
-  }
-
   if (filters.minCoverage > 0) {
     activeFilters.push({ key: 'minCoverage', label: `Min Coverage: ${(filters.minCoverage * 100).toFixed(0)}%` });
-  }
-
-  if (filters.searchQuery && filters.searchQuery.trim() !== '') {
-    activeFilters.push({ key: 'searchQuery', label: `Search: ${filters.searchQuery}` });
   }
 
   // Don't render if no active filters
