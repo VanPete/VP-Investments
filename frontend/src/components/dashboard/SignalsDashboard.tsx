@@ -6,7 +6,6 @@ import type {
   WeightsConfig,
   FactorToGroup,
   FileOption,
-  FilterState,
 } from '@/types/pipeline';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +14,8 @@ import { FilterPanel } from './FilterPanel';
 import { DashboardHeader } from './DashboardHeader';
 import { QuickStats } from './QuickStats';
 import { FilterChips } from './FilterChips';
+import { ColumnVisibilityToggle } from './ColumnVisibilityToggle';
+import { usePersistedFilters, usePersistedColumnVisibility } from '@/hooks/usePersistedState';
 
 interface SignalsDashboardProps {
   initialResults: PipelineResults | null;
@@ -34,13 +35,29 @@ export function SignalsDashboard({
     availableFiles[0]?.filename || ''
   );
   const [showAll, setShowAll] = useState(false);
-  const [filters, setFilters] = useState<FilterState>({
+  
+  // Use persisted filters with localStorage
+  const [filters, setFilters] = usePersistedFilters({
     selectedGroup: null,
     selectedFactor: null,
     minScore: -5,
     maxScore: 5,
     minCoverage: 0,
     searchQuery: '',
+  });
+
+  // Use persisted column visibility
+  const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility({
+    rank: true,
+    ticker: true,
+    overallScore: true,
+    coverage: true,
+    technical: true,
+    fundamental: true,
+    newsMacro: true,
+    social: true,
+    risk: true,
+    institutional: true,
   });
 
   // Apply filters to rankings
@@ -144,22 +161,30 @@ export function SignalsDashboard({
           factorToGroup={factorToGroup}
         />
 
-        {/* Active Filter Chips */}
-        <FilterChips 
-          filters={filters} 
-          onRemoveFilter={(key) => {
-            setFilters(prev => ({
-              ...prev,
-              [key]: key === 'minCoverage' ? 0 : key === 'searchQuery' ? '' : null
-            }));
-          }}
-        />
+        {/* Active Filter Chips and Column Visibility */}
+        <div className="flex items-center justify-between gap-4">
+          <FilterChips 
+            filters={filters} 
+            onRemoveFilter={(key) => {
+              setFilters(prev => ({
+                ...prev,
+                [key]: key === 'minCoverage' ? 0 : key === 'searchQuery' ? '' : null
+              }));
+            }}
+          />
+          <ColumnVisibilityToggle
+            visibility={columnVisibility}
+            onVisibilityChange={setColumnVisibility}
+          />
+        </div>
 
         {/* Signals Table */}
         <SignalsTable
           rankings={displayedRankings}
           weightsConfig={weightsConfig}
           factorToGroup={factorToGroup}
+          searchQuery={filters.searchQuery}
+          columnVisibility={columnVisibility}
         />
 
         {/* Show All Button */}

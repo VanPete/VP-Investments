@@ -21,16 +21,34 @@ import {
 } from '@/lib/utils';
 import { GROUP_DISPLAY_NAMES } from '@/types/pipeline';
 import { CoverageBadge } from './CoverageBadge';
+import { MetricTooltip, METRIC_TOOLTIPS } from './MetricTooltip';
+import { HighlightedText } from './HighlightedText';
+import type { ColumnVisibility } from '@/hooks/usePersistedState';
 
 interface SignalsTableProps {
   rankings: SignalRanking[];
   weightsConfig: WeightsConfig | null;
   factorToGroup: FactorToGroup | null;
+  searchQuery?: string;
+  columnVisibility?: ColumnVisibility;
 }
 
 export function SignalsTable({
   rankings,
   weightsConfig,
+  searchQuery = '',
+  columnVisibility = {
+    rank: true,
+    ticker: true,
+    overallScore: true,
+    coverage: true,
+    technical: true,
+    fundamental: true,
+    newsMacro: true,
+    social: true,
+    risk: true,
+    institutional: true,
+  },
 }: SignalsTableProps) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
@@ -55,16 +73,108 @@ export function SignalsTable({
           <TableHeader>
             <TableRow className="bg-gray-50 dark:bg-gray-900/50">
               <TableHead className="w-[50px]"></TableHead>
-              <TableHead className="w-[60px] font-semibold">Rank</TableHead>
-              <TableHead className="w-[100px] font-semibold">Ticker</TableHead>
-              <TableHead className="w-[120px] text-right font-semibold">Overall Score</TableHead>
-              <TableHead className="w-[100px] text-right font-semibold">Coverage</TableHead>
-              <TableHead className="text-right font-semibold">Technical</TableHead>
-              <TableHead className="text-right font-semibold">Fundamental</TableHead>
-              <TableHead className="text-right font-semibold">News/Macro</TableHead>
-              <TableHead className="text-right font-semibold">Social</TableHead>
-              <TableHead className="text-right font-semibold">Risk</TableHead>
-              <TableHead className="text-right font-semibold">Institutional</TableHead>
+              {columnVisibility.rank && (
+                <TableHead className="w-[60px] font-semibold">
+                  <span className="inline-flex items-center">
+                    Rank
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.rank.title}
+                      description={METRIC_TOOLTIPS.rank.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.ticker && (
+                <TableHead className="w-[100px] font-semibold">Ticker</TableHead>
+              )}
+              {columnVisibility.overallScore && (
+                <TableHead className="w-[120px] text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Overall Score
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.overallScore.title}
+                      description={METRIC_TOOLTIPS.overallScore.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.coverage && (
+                <TableHead className="w-[100px] text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Coverage
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.coverage.title}
+                      description={METRIC_TOOLTIPS.coverage.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.technical && (
+                <TableHead className="text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Technical
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.technical.title}
+                      description={METRIC_TOOLTIPS.technical.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.fundamental && (
+                <TableHead className="text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Fundamental
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.fundamental.title}
+                      description={METRIC_TOOLTIPS.fundamental.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.newsMacro && (
+                <TableHead className="text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    News/Macro
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.newsMacro.title}
+                      description={METRIC_TOOLTIPS.newsMacro.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.social && (
+                <TableHead className="text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Social
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.social.title}
+                      description={METRIC_TOOLTIPS.social.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.risk && (
+                <TableHead className="text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Risk
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.risk.title}
+                      description={METRIC_TOOLTIPS.risk.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.institutional && (
+                <TableHead className="text-right font-semibold">
+                  <span className="inline-flex items-center justify-end">
+                    Institutional
+                    <MetricTooltip 
+                      title={METRIC_TOOLTIPS.institutional.title}
+                      description={METRIC_TOOLTIPS.institutional.description}
+                    />
+                  </span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -84,50 +194,70 @@ export function SignalsTable({
                       )}
                     </Button>
                   </TableCell>
-                  <TableCell className="font-semibold text-gray-900 dark:text-gray-100">{ranking.rank}</TableCell>
-                  <TableCell>
-                    <span className="font-mono font-medium text-gray-900 dark:text-gray-100 tracking-wide">
-                      {ranking.ticker}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`text-lg font-bold ${getScoreColorClass(ranking.overall_score)}`}>
-                      {formatScore(ranking.overall_score)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <CoverageBadge coverage={ranking.total_coverage} size="md" />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.technical)}`}>
-                      {formatScore(ranking.group_scores.technical)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.fundamental)}`}>
-                      {formatScore(ranking.group_scores.fundamental)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.news_macro)}`}>
-                      {formatScore(ranking.group_scores.news_macro)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.social_alternative)}`}>
-                      {formatScore(ranking.group_scores.social_alternative)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.risk_stability)}`}>
-                      {formatScore(ranking.group_scores.risk_stability)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.institutional_smart_money)}`}>
-                      {formatScore(ranking.group_scores.institutional_smart_money)}
-                    </span>
-                  </TableCell>
+                  {columnVisibility.rank && (
+                    <TableCell className="font-semibold text-gray-900 dark:text-gray-100">{ranking.rank}</TableCell>
+                  )}
+                  {columnVisibility.ticker && (
+                    <TableCell>
+                      <span className="font-mono font-medium text-gray-900 dark:text-gray-100 tracking-wide">
+                        <HighlightedText text={ranking.ticker} searchQuery={searchQuery} />
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.overallScore && (
+                    <TableCell className="text-right">
+                      <span className={`text-lg font-bold ${getScoreColorClass(ranking.overall_score)}`}>
+                        {formatScore(ranking.overall_score)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.coverage && (
+                    <TableCell className="text-right">
+                      <CoverageBadge coverage={ranking.total_coverage} size="md" />
+                    </TableCell>
+                  )}
+                  {columnVisibility.technical && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.technical)}`}>
+                        {formatScore(ranking.group_scores.technical)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.fundamental && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.fundamental)}`}>
+                        {formatScore(ranking.group_scores.fundamental)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.newsMacro && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.news_macro)}`}>
+                        {formatScore(ranking.group_scores.news_macro)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.social && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.social_alternative)}`}>
+                        {formatScore(ranking.group_scores.social_alternative)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.risk && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.risk_stability)}`}>
+                        {formatScore(ranking.group_scores.risk_stability)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.institutional && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.institutional_smart_money)}`}>
+                        {formatScore(ranking.group_scores.institutional_smart_money)}
+                      </span>
+                    </TableCell>
+                  )}
                 </TableRow>
 
                 {/* Expanded Row */}
