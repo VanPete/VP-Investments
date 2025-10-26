@@ -41,9 +41,7 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
     const { data, error } = await supabase
       .from('signal_runs')
       .select('id, run_timestamp, total_tickers, status')
-      .eq('status', 'completed')
-      .order('run_timestamp', { ascending: false })
-      .limit(20);
+      .order('run_timestamp', { ascending: false });  // Get ALL runs, no limit
 
     if (!error && data) {
       setRuns(data);
@@ -87,14 +85,14 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
       const riskCov = Object.keys(riskFactors).length;
       const instCov = Object.keys(instFactors).length;
 
-      // Define max factors per group (from Phase 5 schema)
+      // Define max factors per group (from config/factor_to_group.yaml - actual counts)
       const MAX_FACTORS = {
-        technical: 60,
-        fundamental: 45,
-        news_macro: 15,
-        social_alternative: 10,
-        risk_stability: 25,
-        institutional_smart_money: 20,
+        technical: 41,           // 41 technical indicators
+        fundamental: 45,         // 45 fundamental metrics
+        news_macro: 18,          // 18 news/macro factors
+        social_alternative: 10,  // 10 social sentiment factors
+        risk_stability: 23,      // 23 risk/stability factors
+        institutional_smart_money: 21, // 21 institutional factors
       };
 
       // Convert counts to 0-1 scale (percentage coverage)
