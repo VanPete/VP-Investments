@@ -98,4 +98,9 @@ export interface ColumnVisibility {
   social: boolean;
   risk: boolean;
   institutional: boolean;
+  // Backtest columns (Phase 6)
+  baseline?: boolean;
+  return1d?: boolean;
+  return7d?: boolean;
+  vsSpy?: boolean;
 }

@@ -45,6 +45,25 @@ export interface SignalRanking {
   total_coverage: number;
   group_scores: GroupScores;
   group_coverages: GroupCoverages;
+  // Backtest performance tracking (Phase 6)
+  backtest_baseline_price?: number;
+  backtest_baseline_date?: string;
+  return_1d?: number;
+  return_3d?: number;
+  return_7d?: number;
+  return_10d?: number;
+  return_14d?: number;
+  return_30d?: number;
+  return_90d?: number;
+  spy_return_1d?: number;
+  spy_return_3d?: number;
+  spy_return_7d?: number;
+  spy_return_10d?: number;
+  spy_return_14d?: number;
+  spy_return_30d?: number;
+  spy_return_90d?: number;
+  backtest_status?: string;
+  backtest_last_update?: string;
 }
 
 /**

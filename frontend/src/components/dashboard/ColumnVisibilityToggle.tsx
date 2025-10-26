@@ -22,6 +22,11 @@ export interface ColumnVisibility {
   social: boolean;
   risk: boolean;
   institutional: boolean;
+  // Backtest columns (Phase 6)
+  baseline?: boolean;
+  return1d?: boolean;
+  return7d?: boolean;
+  vsSpy?: boolean;
 }
 
 interface ColumnVisibilityToggleProps {
@@ -44,6 +49,11 @@ export function ColumnVisibilityToggle({
     { key: 'social' as keyof ColumnVisibility, label: 'Social', required: false },
     { key: 'risk' as keyof ColumnVisibility, label: 'Risk', required: false },
     { key: 'institutional' as keyof ColumnVisibility, label: 'Institutional', required: false },
+    // Backtest columns (Phase 6)
+    { key: 'baseline' as keyof ColumnVisibility, label: 'Baseline Price', required: false },
+    { key: 'return1d' as keyof ColumnVisibility, label: '1D Return', required: false },
+    { key: 'return7d' as keyof ColumnVisibility, label: '7D Return', required: false },
+    { key: 'vsSpy' as keyof ColumnVisibility, label: 'vs SPY', required: false },
   ];
 
   const visibleCount = Object.values(visibility).filter(Boolean).length;

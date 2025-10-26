@@ -2,46 +2,32 @@
 
 import { useState, useMemo } from 'react';
 import type {
-  PipelineResults,
   WeightsConfig,
   FactorToGroup,
-  FileOption,
 } from '@/types/pipeline';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SignalsTable } from './SignalsTable';
-import { FilterPanel } from './FilterPanel';
 import { DashboardHeader } from './DashboardHeader';
 import { QuickStats } from './QuickStats';
 import { usePersistedColumnVisibility } from '@/hooks/usePersistedState';
+import { useSupabaseSignals } from '@/hooks/useSupabaseSignals';
 
 interface SignalsDashboardProps {
-  initialResults: PipelineResults | null;
-  availableFiles: FileOption[];
   weightsConfig: WeightsConfig | null;
   factorToGroup: FactorToGroup | null;
 }
 
 export function SignalsDashboard({
-  initialResults,
-  availableFiles,
   weightsConfig,
   factorToGroup,
 }: SignalsDashboardProps) {
-  const [results, setResults] = useState<PipelineResults | null>(initialResults);
-  const [selectedFile, setSelectedFile] = useState<string>(
-    availableFiles[0]?.filename || ''
-  );
-  const [showAll, setShowAll] = useState(false);
+  // Fetch signals from Supabase
+  const { signals, loading, error, refetch } = useSupabaseSignals();
   
-  // Simple filter state (no localStorage)
-  const [filters, setFilters] = useState({
-    minScore: -5,
-    maxScore: 5,
-    minCoverage: 0,
-  });
+  const [showAll, setShowAll] = useState(false);
 
-  // Use persisted column visibility
+  // Use persisted column visibility - now with backtest columns
   const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility({
     rank: true,
     ticker: true,
@@ -53,24 +39,18 @@ export function SignalsDashboard({
     social: true,
     risk: true,
     institutional: true,
+    // Backtest columns (Phase 6) - hidden by default
+    baseline: false,
+    return1d: false,
+    return7d: false,
+    vsSpy: false,
   });
 
-  // Apply filters to rankings
+  // Apply filters to rankings (simplified - no manual filters, just show all)
   const filteredRankings = useMemo(() => {
-    if (!results) return [];
-
-    let filtered = [...results.rankings];
-
-    // Score filter
-    filtered = filtered.filter(
-      (r) => r.overall_score >= filters.minScore && r.overall_score <= filters.maxScore
-    );
-
-    // Coverage filter
-    filtered = filtered.filter((r) => r.total_coverage >= filters.minCoverage);
-
-    return filtered;
-  }, [results, filters]);
+    if (!signals) return [];
+    return [...signals];
+  }, [signals]);
 
   // Display only top 10 or all
   const displayedRankings = useMemo(() => {
@@ -78,66 +58,77 @@ export function SignalsDashboard({
     return filteredRankings.slice(0, 10);
   }, [filteredRankings, showAll]);
 
-  const handleFileChange = async (filename: string) => {
-    setSelectedFile(filename);
-    
-    try {
-      // Fetch the JSON file from the results directory
-      const response = await fetch(`/results/${filename}`);
-      if (!response.ok) {
-        throw new Error('Failed to load results file');
-      }
-      
-      const newResults = await response.json();
-      setResults(newResults);
-      
-      // Reset to top 10 view when switching files
-      setShowAll(false);
-    } catch (error) {
-      console.error('Error loading results:', error);
-      // Optionally show error toast
-    }
-  };
-
   const handleRefresh = () => {
-    // Reload the page to get latest data
-    window.location.reload();
+    refetch();
   };
 
-  if (!results) {
+  // Loading state
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card className="p-6">
-          <p className="text-gray-600">No pipeline results found. Please run the pipeline first.</p>
+          <div className="flex items-center space-x-3">
+            <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
+            <p className="text-gray-600">Loading signals from database...</p>
+          </div>
         </Card>
       </div>
     );
   }
 
+  // Error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="p-6">
+          <p className="text-red-600">Error loading signals: {error}</p>
+          <Button onClick={handleRefresh} className="mt-4">
+            Retry
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // No data state
+  if (!signals || signals.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="p-6">
+          <p className="text-gray-600">No signals found. Please run the pipeline first.</p>
+        </Card>
+      </div>
+    );
+  }
+
+  // Create mock metadata for QuickStats and Header
+  const mockResults = {
+    metadata: {
+      timestamp: new Date().toISOString(),
+      total_tickers: signals.length,
+      source: 'supabase',
+    },
+    rankings: signals,
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <DashboardHeader
-        metadata={results.metadata}
-        availableFiles={availableFiles}
-        selectedFile={selectedFile}
-        onFileChange={handleFileChange}
+        metadata={mockResults.metadata}
+        availableFiles={[]} // No file selector with Supabase
+        selectedFile=""
+        onFileChange={() => {}} // No-op
         onRefresh={handleRefresh}
-        totalCount={results.rankings.length}
+        totalCount={signals.length}
         displayedCount={displayedRankings.length}
       />
 
       {/* Quick Stats Cards */}
-      {results && <QuickStats results={results} />}
+      <QuickStats results={mockResults} />
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Filters */}
-        <FilterPanel
-          filters={filters}
-          onFiltersChange={setFilters}
-        />
-
         {/* Signals Table */}
         <SignalsTable
           rankings={displayedRankings}
