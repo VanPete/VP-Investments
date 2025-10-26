@@ -92,10 +92,10 @@ class PerformanceUpdater:
             performance_records = result.data if result.data else []
             
             if not performance_records:
-                self.logger.info("✅ No performance records need updates")
+                self.logger.info("[OK] No performance records need updates")
                 return {'processed': 0, 'updated': 0, 'failed': 0}
             
-            self.logger.info(f"⏳ Updating {len(performance_records)} performance records...")
+            self.logger.info(f"[UPDATING] {len(performance_records)} performance records...")
             
             stats = {'processed': 0, 'updated': 0, 'failed': 0}
             

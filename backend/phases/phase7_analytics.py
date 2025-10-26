@@ -113,9 +113,12 @@ class AnalyticsEngine:
             self.logger.info("=" * 100)
             self.logger.info(f"[SUCCESS] Phase 7 analytics complete")
             self.logger.info(f"  Total signals: {metrics['total_signals']}")
-            self.logger.info(f"  Avg score: {metrics.get('avg_overall_score', 0):.1f}")
-            self.logger.info(f"  Win rate (7d): {metrics.get('win_rate_7d', 0):.1f}%")
-            self.logger.info(f"  Sharpe (30d): {metrics.get('sharpe_ratio_30d', 0):.2f}")
+            avg_score = metrics.get('avg_overall_score', 0) or 0
+            win_rate_7d = metrics.get('win_rate_7d', 0) or 0
+            sharpe_30d = metrics.get('sharpe_ratio_30d', 0) or 0
+            self.logger.info(f"  Avg score: {avg_score:.1f}")
+            self.logger.info(f"  Win rate (7d): {win_rate_7d:.1f}%")
+            self.logger.info(f"  Sharpe (30d): {sharpe_30d:.2f}")
             self.logger.info("=" * 100)
             
             return metrics
@@ -578,11 +581,15 @@ class PerformanceAnalytics:
                 'calculation_timestamp': datetime.now().isoformat()
             }
             
+            sharpe = metrics['sharpe_ratio'] or 0
+            win_rate = metrics['win_rate_pct'] or 0
+            max_dd = metrics['max_drawdown_pct'] or 0
+            
             self.logger.info(
-                f"✅ Analytics complete: "
-                f"Sharpe {metrics['sharpe_ratio']:.2f}, "
-                f"Win Rate {metrics['win_rate_pct']:.1f}%, "
-                f"Max DD {metrics['max_drawdown_pct']:.1f}%"
+                f"[OK] Analytics complete: "
+                f"Sharpe {sharpe:.2f}, "
+                f"Win Rate {win_rate:.1f}%, "
+                f"Max DD {max_dd:.1f}%"
             )
             
             return metrics

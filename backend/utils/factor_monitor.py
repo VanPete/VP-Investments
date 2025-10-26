@@ -200,7 +200,7 @@ class FactorMonitor:
                 if stats.errors:
                     error_counts = Counter(stats.errors)
                     for error, count in error_counts.most_common(3):
-                        logger.warning(f"  → {error}: {count} occurrences")
+                        logger.warning(f"  -> {error}: {count} occurrences")
         
         # Group-level summary
         logger.info("\n" + "-" * 80)
