@@ -1,29 +1,32 @@
 # VP Investments - Complete Phase Summary
 
-**Version:** 3.1  
-**Last Updated:** October 25, 2025  
-**Status:** Phases 1-6 Complete, 7-10 In Development
+**Version:** 3.2 (Sector Performance Tracking)  
+**Last Updated:** October 26, 2025  
+**Status:** Phases 1-6 Complete (Dual-Benchmark System), 7-10 In Development
 
 ---
 
 ## 🎯 **10-Phase Pipeline Architecture**
 
-VP Investments uses a **modular 10-phase pipeline** for comprehensive quantitative trading signal generation. Each phase is self-contained, testable, and production-ready.
+VP Investments uses a **modular 10-phase pipeline** for comprehensive quantitative trading signal generation with dual-benchmark performance tracking. Each phase is self-contained, testable, and production-ready.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                     VP INVESTMENTS - 10-PHASE PIPELINE                      │
+│                  VP INVESTMENTS - 10-PHASE PIPELINE v3.2                    │
+│                        DUAL-BENCHMARK PERFORMANCE SYSTEM                    │
 └────────────────────────────────────────────────────────────────────────────┘
 
 PHASE 1: FETCH          PHASE 2: CALCULATE      PHASE 3: NORMALIZE
 ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│ Data Sources    │───▶│ 143 Factors      │───▶│ Z-Score          │
+│ Data Sources    │───▶│ 158 Factors      │───▶│ Z-Score          │
 │ • YFinance (40) │    │ • Technical (35) │    │ • MAD-based      │
 │ • Reddit (5)    │    │ • Fundamental(38)│    │ • Winsorization  │
 │ • News API      │    │ • News/Macro(17) │    │ • Clipping       │
-│                 │    │ • Social (13)    │    │                  │
-│ Time: ~9s       │    │ • Risk (18)      │    │ Time: <1s        │
-│ Cache: 24hr     │    │ • Instit. (22)   │    │ Cross-sectional  │
+│ • Sector ETFs   │    │ • Social (13)    │    │                  │
+│   (11 sectors)  │    │ • Risk (18)      │    │ Time: <1s        │
+│                 │    │ • Instit. (22)   │    │ Cross-sectional  │
+│ Time: ~9s       │    │ • Sector (15)    │    │                  │
+│ Cache: 24hr     │    │                  │    │                  │
 └─────────────────┘    └──────────────────┘    └──────────────────┘
         │                       │                        │
         └───────────────────────┴────────────────────────┘
@@ -47,22 +50,24 @@ PHASE 1: FETCH          PHASE 2: CALCULATE      PHASE 3: NORMALIZE
                     │ Database Storage     │
                     │ • Signals table      │
                     │ • Signal metrics     │
-                    │ • Upsert logic       │
+                    │ • Performance base   │
+                    │ • Sector/ETF info    │
                     │                      │
                     │ DB: Supabase         │
                     │ Time: <1s            │
                     └──────────────────────┘
                                 │
                                 ▼
-                        PHASE 6: BACKTEST
+                    PHASE 6: PERFORMANCE (v3.2)
                     ┌──────────────────────┐
-                    │ Performance Tracking │
-                    │ • Baseline prices    │
-                    │ • Return intervals   │
+                    │ Dual-Benchmark Track │
                     │ • SPY comparison     │
+                    │ • Sector ETF compare │
+                    │ • 7 intervals        │
+                    │ • 14 auto alphas     │
                     │                      │
                     │ Status: ✅ COMPLETE  │
-                    │ Time: Daily update   │
+                    │ Batch: 200 rec/run   │
                     └──────────────────────┘
                                 │
                                 ▼

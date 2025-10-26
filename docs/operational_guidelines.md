@@ -1,8 +1,9 @@
 # VP Investments - Operational Guidelines
 *Development Framework for 10-Phase Modular Architecture*
 
-**Last Updated:** 2025-10-25  
-**Status:** ✅ Phases 1-6 Complete (60%) - Production Ready with Enhancement Pipeline
+**Last Updated:** 2025-10-26  
+**Version:** v3.2 (Sector Performance Tracking)  
+**Status:** ✅ Phases 1-6 Complete (60%) - Production Ready with Dual-Benchmark System
 
 ---
 
@@ -11,12 +12,12 @@
 ### **Current Status: 6/10 Phases Complete (60%)**
 
 ```
-Phase 1: Fetch        ✅ COMPLETE - Data sources (YFinance, Reddit, News)
-Phase 2: Calculate    ✅ COMPLETE - 143 factors across 6 groups  
+Phase 1: Fetch        ✅ COMPLETE - Data sources (YFinance, Reddit, News, Sector ETFs)
+Phase 2: Calculate    ✅ COMPLETE - 158 factors across 6 groups (+15 sector-relative)
 Phase 3: Normalize    ✅ COMPLETE - MAD-based z-scores
 Phase 4: Score        ✅ COMPLETE - Weighted multi-factor scoring
-Phase 5: Persist      ✅ COMPLETE - Database storage (signals, metrics, performance)
-Phase 6: Backtest     ✅ COMPLETE - Performance tracking (19 columns, 7 intervals)
+Phase 5: Persist      ✅ COMPLETE - Database storage (signals, metrics, performance baselines)
+Phase 6: Performance  ✅ COMPLETE - Dual-benchmark tracking (SPY + Sector ETF, 46 columns)
 Phase 7: ML           📋 PLANNED  - Machine learning (Q4 2025)
 Phase 8: AI           📋 PLANNED  - AI enhancement (Q4 2025)
 Phase 9: Reports      📋 PLANNED  - Reporting & alerts (Q1 2026)
@@ -29,8 +30,8 @@ Phase 10: Polish      📋 PLANNED  - Production ready (Q1 2026)
 
 ## ✅ Completed Phases (1-6)
 
-### **Phase 1: Data Fetch** ✅ COMPLETE
-**Purpose:** Gather raw market data from multiple sources  
+### **Phase 1: Data Fetch** ✅ COMPLETE (v3.2)
+**Purpose:** Gather raw market data from multiple sources + sector ETF data  
 **Location:** `backend/phases/phase1_fetch.py`
 
 **Features:**
@@ -38,19 +39,31 @@ Phase 10: Polish      📋 PLANNED  - Production ready (Q1 2026)
 - Reddit sentiment (wallstreetbets, stocks, investing)
 - News API integration (company-specific news)
 - Earnings calendar data
-- Historical price data with validation
+- **Sector ETF fetching (v3.2):** 11 GICS sectors → SPDR Select Sector ETFs
+- Historical price data with validation (2-year lookback for sector ETFs)
+
+**Sector ETF Mapping:**
+```
+Technology → XLK          Communication → XLC
+Healthcare → XLV          Utilities → XLU
+Financials → XLF          Real Estate → XLRE
+Consumer Disc → XLY       Materials → XLB
+Industrials → XLI         Energy → XLE
+Consumer Staples → XLP
+```
 
 **Database Impact:**
 - Raw data cached for 15 minutes
+- Sector ETF data passed to Phase 5 for performance baselines
 - No direct database writes (data passed to Phase 2)
 
 ---
 
-### **Phase 2: Factor Calculation** ✅ COMPLETE
-**Purpose:** Calculate 143 quantitative factors across 6 domains  
+### **Phase 2: Factor Calculation** ✅ COMPLETE (v3.2)
+**Purpose:** Calculate 158 quantitative factors across 6 domains  
 **Location:** `backend/phases/phase2_calculate.py`
 
-**Factor Groups (143 total):**
+**Factor Groups (158 total, +15 from v3.1):**
 1. **Technical (35 factors):** RSI, MACD, Bollinger Bands, momentum, volume analysis
 2. **Fundamental (38 factors):** P/E, EPS growth, margins, ROE, debt ratios, liquidity
 3. **News/Macro (17 factors):** Sentiment scores, article counts, earnings catalysts
@@ -119,51 +132,64 @@ z_score_clipped = clip(z_score, -3, +3)
 
 ---
 
-### **Phase 5: Database Persistence** ✅ COMPLETE
-**Purpose:** Store signals, metrics, and performance data  
+### **Phase 5: Database Persistence** ✅ COMPLETE (v3.2)
+**Purpose:** Store signals, metrics, and performance baselines  
 **Location:** `backend/phases/phase5_persist.py`
 
 **Database Tables:**
 1. **signals** - Main signal data (ticker, score, components, metadata)
-2. **signal_metrics** - Detailed factor values (143 raw + 143 normalized)
-3. **signal_performance** - Tracking table for backtesting
+2. **signal_metrics** - Detailed factor values (158 raw + 158 normalized)
+3. **performance** - Dual-benchmark tracking table (v3.2)
 
 **Features:**
 - Transaction-based writes (rollback on failure)
 - Duplicate detection (same ticker + timeframe)
+- **Performance baselines (v3.2):** Stores sector + sector_etf for each signal
 - Constraint validation (score ranges, data types)
 - Error logging and recovery
 
 **Database Columns:**
 - `signals`: 25+ columns (ticker, score, components, timestamps)
-- `signal_metrics`: 290+ columns (143 raw + 143 normalized factors)
-- `signal_performance`: 50+ columns (returns, benchmarks, metadata)
+- `signal_metrics`: 320+ columns (158 raw + 158 normalized factors)
+- `performance`: 46 columns (baseline, returns, spy, alpha, sector, sector_returns, sector_alpha, metadata)
 
 ---
 
-### **Phase 6: Backtest Performance Tracking** ✅ COMPLETE
-**Purpose:** Calculate historical performance for signal validation  
-**Location:** `backend/phases/phase6_backtest.py`
+### **Phase 6: Performance Tracking** ✅ COMPLETE (v3.2)
+**Purpose:** Dual-benchmark performance tracking with database-generated alpha  
+**Location:** `backend/phases/phase6_performance.py`
 
-**Performance Metrics:**
-- **Baseline:** Next trading day's open price (signal creation + 1 day)
-- **Returns:** 7 intervals (1d, 3d, 7d, 10d, 14d, 30d, 90d)
-- **SPY Benchmark:** Same 7 intervals for comparison
-- **Age-Based Calculation:** `eligible = signal_age >= interval + 1`
+**Performance Metrics (v3.2):**
+- **Baseline:** Signal creation price (current_price at signal generation)
+- **Return Intervals:** 7 timeframes (1d, 3d, 7d, 10d, 14d, 30d, 90d)
+- **SPY Benchmark:** Market comparison for all 7 intervals
+- **Sector Benchmark:** Peer group comparison (11 sector ETFs)
+- **Database-Generated Alpha:** PostgreSQL auto-calculates 14 alpha columns
+  - `alpha_Xd = return_Xd - spy_return_Xd` (market alpha)
+  - `sector_alpha_Xd = return_Xd - sector_return_Xd` (sector alpha)
 
 **Features:**
-- Avoids lookahead bias (baseline = next day open)
-- Incremental updates (calculates only eligible intervals)
+- Dual-benchmark system (SPY + Sector ETF)
+- Incremental updates (only eligible intervals)
 - Error handling (delisted tickers, missing data)
-- SPY benchmark tracking (relative performance)
+- Batch processing (200 records/run)
+- **GENERATED columns:** All alpha metrics auto-calculated by database
 
-**Database Impact (19 new columns):**
-- `backtest_baseline_price`, `backtest_baseline_date`
-- `return_1d`, `return_3d`, `return_7d`, `return_10d`, `return_14d`, `return_30d`, `return_90d`
-- `spy_return_1d`, `spy_return_3d`, `spy_return_7d`, `spy_return_10d`, `spy_return_14d`, `spy_return_30d`, `spy_return_90d`
-- `backtest_status`, `backtest_last_update`, `backtest_error`
+**Database Impact (46-column schema):**
+- **Baseline (2):** `baseline_price`, `baseline_date`
+- **Returns (7):** `return_1d`, `return_3d`, `return_7d`, `return_10d`, `return_14d`, `return_30d`, `return_90d`
+- **SPY Returns (7):** `spy_return_1d`, `spy_return_3d`, ..., `spy_return_90d`
+- **Alpha (7):** `alpha_1d`, `alpha_3d`, ..., `alpha_90d` [GENERATED]
+- **Sector Info (2):** `sector`, `sector_etf`
+- **Sector Returns (7):** `sector_return_1d`, ..., `sector_return_90d`
+- **Sector Alpha (7):** `sector_alpha_1d`, ..., `sector_alpha_90d` [GENERATED]
+- **Metadata (7):** `status`, `intervals_completed`, `last_update`, `created_at`, `updated_at`, `signal_id`, `id`
 
-**Migration:** `migrations/migration_003_add_backtest_columns.py`
+**Migrations:** 
+- 006: Add sector performance columns (16 columns)
+- 007: Add missing alpha intervals (alpha_3d, 10d, 14d)
+- 008: Make alpha_3d, 10d, 14d GENERATED
+- 009: Make all sector_alpha columns GENERATED
 
 ---
 

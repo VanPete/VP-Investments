@@ -261,6 +261,11 @@ class Phase1Fetcher:
         else:
             self.logger.warning("   [WARNING] YFinance fetcher not initialized")
         
+        # STEP 5: Fetch sector ETF data for sector-relative performance tracking
+        self.logger.info(f"\n[SECTOR] Step 1.5: Fetching sector ETF data...")
+        sector_etf_data = await self._fetch_sector_etf_data(raw_cache_by_ticker)
+        self.logger.info(f"   [SUCCESS] Fetched {len(sector_etf_data)} sector ETFs")
+        
         # VALIDATION: Validate fetched data before returning
         validated_cache = self._validate_fetched_data(raw_cache_by_ticker)
         
@@ -273,6 +278,7 @@ class Phase1Fetcher:
         self.logger.info(f"   News: {len(news_tickers)} tickers discovered from news")
         self.logger.info(f"   News Sentiment: {len(news_data)} tickers with sentiment data")
         self.logger.info(f"   YFinance: {len(validated_cache)} tickers with comprehensive data")
+        self.logger.info(f"   Sector ETFs: {len(sector_etf_data)} ETFs fetched")
         self.logger.info("=" * 80)
         
         return {
@@ -280,17 +286,18 @@ class Phase1Fetcher:
             'news_data': news_data,
             'raw_cache_by_ticker': validated_cache,  # NEW: RawYFinanceData objects (validated)
             'market_data': market_data,  # NEW: Market-wide data (SPY, VIX, Treasuries)
+            'sector_etf_data': sector_etf_data,  # NEW v3.2: Sector ETF historical data
             'discovered_tickers': discovered_tickers,
             'news_discovered_tickers': list(news_tickers.keys()) if news_tickers else [],
             'all_tickers': all_tickers,
             'metadata': {
-                'phase': 'Phase 1: Fetch & Cache v3.1',
+                'phase': 'Phase 1: Fetch & Cache v3.2',
                 'execution_time': execution_time,
                 'tickers_count': len(all_tickers),
                 'tickers_discovered': len(discovered_tickers),
                 'subreddits': subreddits,
                 'timestamp': phase1_end.isoformat(),
-                'yfinance_version': '3.1_comprehensive'
+                'yfinance_version': '3.2_sector_performance'
             }
         }
     
@@ -363,6 +370,57 @@ class Phase1Fetcher:
         self.logger.info(f"[VALIDATION] {len(validated)}/{len(raw_cache)} tickers passed validation")
         
         return validated
+    
+    async def _fetch_sector_etf_data(self, raw_cache_by_ticker: Dict) -> Dict[str, Any]:
+        """
+        Fetch historical data for sector ETFs based on ticker sectors.
+        
+        Args:
+            raw_cache_by_ticker: Dictionary of ticker -> YFinanceData
+            
+        Returns:
+            Dictionary of ETF ticker -> historical price data (DataFrame)
+        """
+        from backend.utils.sector_etfs import get_sector_etf
+        
+        # Extract unique sectors from tickers
+        sectors = set()
+        for ticker_data in raw_cache_by_ticker.values():
+            if ticker_data and ticker_data.info and hasattr(ticker_data.info, 'sector') and ticker_data.info.sector:
+                sectors.add(ticker_data.info.sector)
+        
+        self.logger.info(f"   Discovered {len(sectors)} unique sectors: {sorted(sectors)}")
+        
+        # Map sectors to ETFs
+        sector_etfs = {}
+        for sector in sectors:
+            etf = get_sector_etf(sector)
+            if etf and etf != 'SPY':  # Skip SPY, already fetched in market_data
+                sector_etfs[sector] = etf
+        
+        # Get unique ETF tickers
+        unique_etfs = set(sector_etfs.values())
+        self.logger.info(f"   Mapped to {len(unique_etfs)} unique sector ETFs: {sorted(unique_etfs)}")
+        
+        # Fetch historical data for each sector ETF
+        etf_data = {}
+        if self.yfinance_fetcher and unique_etfs:
+            for etf in sorted(unique_etfs):
+                try:
+                    # Fetch 2 years of history to match SPY
+                    import yfinance as yf
+                    ticker_obj = yf.Ticker(etf)
+                    history = ticker_obj.history(period='2y')
+                    
+                    if history is not None and not history.empty:
+                        etf_data[etf] = history
+                        self.logger.info(f"      {etf}: {len(history)} days")
+                    else:
+                        self.logger.warning(f"      {etf}: No data available")
+                except Exception as e:
+                    self.logger.error(f"      {etf}: Failed to fetch - {e}")
+        
+        return etf_data
     
     def _validate_ticker(self, ticker: str, context: str = "") -> bool:
         """

@@ -355,6 +355,7 @@ class Phase5Persist:
                     'ticker': ticker,
                     'rank': ticker_data.get('rank'),
                     'overall_score': ticker_data.get('overall_score'),
+                    'total_coverage': ticker_data.get('total_coverage'),
                     'technical_score': ticker_data.get('technical_score'),
                     'fundamental_score': ticker_data.get('fundamental_score'),
                     'news_macro_score': ticker_data.get('news_macro_score'),
@@ -1021,6 +1022,103 @@ class Phase5PersistOptimized(Phase5Persist):
         self.logger.info("[OPTIMIZED] Phase5PersistOptimized initialized with bulk INSERT capability")
     
     # --------------------------------------------------------------------------
+    # PERFORMANCE BASELINE CREATION (NEW - Hybrid Approach)
+    # --------------------------------------------------------------------------
+    
+    async def _insert_performance_baselines(
+        self, 
+        signal_ids: List[str], 
+        phase4_results: List[Dict[str, Any]],
+        phase1_cache: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        Create performance baseline records for all signals.
+        
+        Uses signal creation time and current price as baseline.
+        Phase 6 will progressively fill interval returns.
+        
+        Args:
+            signal_ids: List of signal UUIDs
+            phase4_results: Phase 4 results with ticker data
+            phase1_cache: Optional Phase 1 cache with current prices
+            
+        Returns:
+            Number of performance records created
+        """
+        if not signal_ids or not phase4_results:
+            return 0
+        
+        from datetime import datetime, timezone
+        from backend.utils.sector_etfs import get_sector_etf
+        
+        try:
+            # Build bulk INSERT for performance table
+            values_parts = []
+            params = []
+            param_idx = 1
+            
+            for signal_id, ticker_data in zip(signal_ids, phase4_results):
+                ticker = ticker_data.get('ticker')
+                
+                # Get baseline price from Phase 1 cache (current price at signal creation)
+                baseline_price = None
+                sector = None
+                sector_etf = None
+                
+                if phase1_cache and ticker in phase1_cache:
+                    raw_data = phase1_cache[ticker]
+                    # RawYFinanceData dataclass - get current price from fast_info or info
+                    if hasattr(raw_data, 'fast_info') and raw_data.fast_info:
+                        baseline_price = raw_data.fast_info.get('lastPrice') or raw_data.fast_info.get('regularMarketPrice')
+                    if not baseline_price and hasattr(raw_data, 'info') and raw_data.info:
+                        baseline_price = raw_data.info.get('currentPrice') or raw_data.info.get('regularMarketPrice')
+                    
+                    # Extract sector information (v3.2)
+                    if hasattr(raw_data, 'info') and raw_data.info:
+                        sector = getattr(raw_data.info, 'sector', None)
+                        if sector:
+                            sector_etf = get_sector_etf(sector)
+                
+                if baseline_price and baseline_price > 0:
+                    baseline_date = datetime.now(timezone.utc)
+                    
+                    # Prepare JSON array for intervals_completed
+                    intervals_completed = '[]'  # Empty array - no intervals done yet
+                    
+                    values_parts.append(
+                        f"(${param_idx}, ${param_idx + 1}, ${param_idx + 2}, ${param_idx + 3}, ${param_idx + 4}, ${param_idx + 5}, ${param_idx + 6})"
+                    )
+                    params.extend([
+                        signal_id,
+                        baseline_price,
+                        baseline_date,
+                        'pending',
+                        intervals_completed,
+                        sector,  # v3.2: Sector tracking
+                        sector_etf  # v3.2: Sector ETF for comparison
+                    ])
+                    param_idx += 7
+            
+            if not values_parts:
+                self.logger.warning("No valid baseline prices to insert into performance table")
+                return 0
+            
+            # Execute bulk INSERT
+            query = f"""
+            INSERT INTO performance (signal_id, baseline_price, baseline_date, status, intervals_completed, sector, sector_etf)
+            VALUES {', '.join(values_parts)}
+            """
+            
+            affected = await self.db.execute_non_query(query, params)
+            self.logger.info(f"[PERFORMANCE] Created {affected} performance baseline records")
+            return affected
+            
+        except Exception as e:
+            self.logger.error(f"Error creating performance baselines: {e}")
+            # Don't fail the entire pipeline run if performance tracking fails
+            return 0
+    
+    # --------------------------------------------------------------------------
     # BULK INSERT METHODS (Optimized)
     # --------------------------------------------------------------------------
     
@@ -1209,7 +1307,8 @@ class Phase5PersistOptimized(Phase5Persist):
     async def persist_pipeline_run(
         self,
         phase4_results: List[Dict[str, Any]],
-        pipeline_config: Optional[Dict[str, Any]] = None
+        pipeline_config: Optional[Dict[str, Any]] = None,
+        phase1_cache: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Persist complete pipeline run with optimized bulk INSERT operations.
@@ -1220,6 +1319,7 @@ class Phase5PersistOptimized(Phase5Persist):
         Args:
             phase4_results: List of Phase 4 ticker results
             pipeline_config: Optional pipeline configuration (unused in optimized version)
+            phase1_cache: Optional Phase 1 cache with current prices for performance baselines
             
         Returns:
             Signal run UUID
@@ -1269,19 +1369,16 @@ class Phase5PersistOptimized(Phase5Persist):
                 risk_factors = self.extract_risk_factors(ticker_data)
                 institutional_factors = self.extract_institutional_factors(ticker_data)
                 
-                # Calculate coverages
-                technical_coverage = self.calculate_coverage(technical_factors)
-                fundamental_coverage = self.calculate_coverage(fundamental_factors)
-                news_macro_coverage = self.calculate_coverage(news_macro_factors)
-                social_coverage = self.calculate_coverage(social_factors)
-                risk_coverage = self.calculate_coverage(risk_factors)
-                institutional_coverage = self.calculate_coverage(institutional_factors)
+                # Get coverages from Phase 4 (already correctly calculated against YAML config)
+                technical_coverage = ticker_data.get('technical_coverage', 0.0)
+                fundamental_coverage = ticker_data.get('fundamental_coverage', 0.0)
+                news_macro_coverage = ticker_data.get('news_macro_coverage', 0.0)
+                social_coverage = ticker_data.get('social_coverage', 0.0)
+                risk_coverage = ticker_data.get('risk_coverage', 0.0)
+                institutional_coverage = ticker_data.get('institutional_coverage', 0.0)
                 
-                # Calculate total coverage
-                total_coverage = (
-                    (technical_coverage + fundamental_coverage + news_macro_coverage +
-                     social_coverage + risk_coverage + institutional_coverage) / 6.0
-                )
+                # Get total coverage from Phase 4
+                total_coverage = ticker_data.get('total_coverage', 0.0)
                 
                 # Build signal record
                 signal_record = {
@@ -1293,7 +1390,7 @@ class Phase5PersistOptimized(Phase5Persist):
                     'technical_coverage': technical_coverage,
                     'fundamental_score': ticker_data.get('fundamental_score'),
                     'fundamental_coverage': fundamental_coverage,
-                    'news_macro_score': ticker_data.get('news_score'),
+                    'news_macro_score': ticker_data.get('news_macro_score'),
                     'news_macro_coverage': news_macro_coverage,
                     'social_alternative_score': ticker_data.get('social_score'),
                     'social_alternative_coverage': social_coverage,
@@ -1319,7 +1416,10 @@ class Phase5PersistOptimized(Phase5Persist):
             # Step 6: Insert signals batch (same as parent)
             if signals_to_insert:
                 signal_ids = await self.db.insert_signals_batch(run_id, signals_to_insert)
-                self.logger.info(f"✅ [OPTIMIZED] Inserted {len(signal_ids)} signals")
+                self.logger.info(f"[OPTIMIZED] Inserted {len(signal_ids)} signals")
+                
+                # Step 6.5: Create performance baseline records (NEW - Hybrid Approach)
+                await self._insert_performance_baselines(signal_ids, phase4_results, phase1_cache)
                 
                 # Step 7: OPTIMIZED - Bulk insert all factors in parallel
                 # Prepare ordered factor lists

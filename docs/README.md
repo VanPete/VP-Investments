@@ -1,63 +1,74 @@
 # VP Investments - Trading Signal Analysis Platform
 
-A comprehensive quantitative trading platform using **143 multi-factor analysis** across 6 domains with robust z-score normalization and weighted scoring. Built on v3.1 modular architecture with production-grade validation and error handling.
+A comprehensive quantitative trading platform using **158 multi-factor analysis** across 6 domains with robust z-score normalization and weighted scoring. Built on v3.2 modular architecture with dual-benchmark performance tracking and database-generated alpha metrics.
 
-## ✨ **Latest Updates - v3.1 Architecture Complete!**
+## ✨ **Latest Updates - v3.2 Sector Performance Tracking!**
 
-**v3.1 (October 2025): 10-Phase Modular Pipeline - 6/10 Complete (60%)**
-- 🎯 **143 factors, 100% coverage** - All factors weighted and utilized in scoring
-- 🏗️ **10-phase architecture** - Fetch → Calculate → Normalize → Score → Persist → Backtest → ML → AI → Reports → Polish
-- 📊 **6 phases complete** - Phases 1-6 production ready (Fetch through Backtest)
-- 🔬 **4 phases planned** - ML, AI, Reports, Polish (Q4 2025 - Q1 2026)
-- 📈 **Performance tracking** - 7 return intervals (1d-90d) with SPY benchmark
+**v3.2 (October 2025): Dual-Benchmark Performance System - 6/11 Complete (55%)**
+- 🎯 **158 factors, 100% coverage** - All factors weighted and utilized in scoring (+15 factors from v3.1)
+- 🏗️ **11-phase architecture** - Fetch → Calculate → Normalize → Score → Persist → Performance → Analytics → ML → AI → Reports → Polish
+- 📊 **6 phases complete** - Phases 1-6 production ready (Fetch through Performance)
+- 🔬 **5 phases planned** - Analytics, ML, AI, Reports, Polish (Q4 2025 - Q1 2026)
+- 📈 **Dual-benchmark tracking** - Compare vs SPY (market) AND sector ETF (peer group)
+- 🤖 **Database-generated metrics** - PostgreSQL auto-calculates all 14 alpha columns (7 market + 7 sector)
 - 🛡️ **4-layer validation** - Input validation, calculation error handling, normalization checks, score validation
 - ⚙️ **Robust z-score normalization** - MAD-based with extreme value clipping and zero-variance detection
 - ✅ **32/32 tickers validated** - 89.7% avg coverage, -0.32 to +0.71 score range
 
-**Key Improvements from v3.0:**
-- ✅ **100% factor coverage** (was 42.7% - only 61/143 factors weighted)
-- ✅ **10-phase modular architecture** (was monolithic SignalScorer, now 6 complete + 4 planned)
-- ✅ **Performance tracking** (Phase 6: 19 backtest columns, 7 return intervals, SPY benchmark)
-- ✅ **Production error handling** (graceful degradation, per-factor try-catch)
-- ✅ **Comprehensive validation** (input, calculation, normalization, scoring)
-- ✅ **Extreme value handling** (z-score clipping, zero-variance detection)
+**Key Improvements from v3.1:**
+- ✅ **Dual-benchmark system** (market alpha vs SPY + sector alpha vs sector ETF)
+- ✅ **11 sector ETF mappings** (GICS sectors to SPDR Select Sector ETFs)
+- ✅ **46-column performance table** (baseline + returns + spy + alpha + sector + metadata)
+- ✅ **Database-generated alpha** (PostgreSQL GENERATED columns for consistency)
+- ✅ **7 return intervals** (1d, 3d, 7d, 10d, 14d, 30d, 90d - complete coverage)
+- ✅ **Phase 6 batch processing** (200 records/run for production scale)
 
 ## 🎯 **What It Does**
 
 ### **Multi-Factor Quantitative Analysis**
-Analyzes stocks through **143 factors** across 6 domains:
+Analyzes stocks through **158 factors** across 6 domains:
 - **Technical (35 factors)**: Price momentum, RSI, MACD, moving averages, Bollinger Bands, volume analysis, ATR
 - **Fundamental (38 factors)**: Valuation ratios, profitability metrics, growth rates, liquidity, leverage, efficiency
 - **News/Macro (17 factors)**: News sentiment, earnings catalysts, market correlation, sector strength, VIX, yields
 - **Social/Alternative (13 factors)**: Reddit mentions/sentiment, social velocity, contrarian signals
 - **Risk/Stability (18 factors)**: Volatility, beta, drawdown, Sharpe/Calmar ratios, liquidity, bid-ask spreads
 - **Institutional/Smart Money (22 factors)**: Analyst ratings, price targets, insider trading, institutional ownership
+- **Sector-Relative (15 factors)**: Peer group comparisons, sector ETF correlations, relative strength metrics
 
 ### **Weighted Scoring System**
 - **Group Weights**: Technical (20%), Fundamental (25%), News/Macro (15%), Social (10%), Risk (15%), Institutional (15%)
 - **Factor Weights**: Each factor within groups has optimized weight (sum=1.0 per group)
-- **Overall Score**: Weighted sum of normalized z-scores across all 143 factors
+- **Overall Score**: Weighted sum of normalized z-scores across all 158 factors
 - **Robust Normalization**: MAD-based z-scores with extreme value clipping (±5σ)
 
-## 🏗️ **v3.1 Pipeline Architecture**
+### **Dual-Benchmark Performance Tracking (v3.2)**
+- **Market Alpha**: Stock return vs SPY (broad market benchmark)
+- **Sector Alpha**: Stock return vs sector ETF (peer group comparison)
+- **11 Sector ETFs**: GICS sector mapping to SPDR Select Sector ETFs
+- **7 Intervals**: 1d, 3d, 7d, 10d, 14d, 30d, 90d return tracking
+- **Database-Generated**: All 14 alpha columns auto-calculated by PostgreSQL
 
-### **10-Phase Modular Design**
+## 🏗️ **v3.2 Pipeline Architecture**
+
+### **11-Phase Modular Design**
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     VP INVESTMENTS - 10-PHASE PIPELINE               │
+│                     VP INVESTMENTS - 11-PHASE PIPELINE               │
+│                           v3.2 SECTOR TRACKING                        │
 └─────────────────────────────────────────────────────────────────────┘
 
 PHASE 1: FETCH              PHASE 2: CALCULATE         PHASE 3: NORMALIZE
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│ Data Sources     │──────▶│ 143 Factors      │──────▶│ Z-Score          │
+│ Data Sources     │──────▶│ 158 Factors      │──────▶│ Z-Score          │
 │ • YFinance (40)  │       │ • Technical (35) │       │ • MAD-based      │
 │ • Reddit (5)     │       │ • Fundamental(38)│       │ • Winsorization  │
 │ • News API       │       │ • News/Macro(17) │       │ • Clipping       │
-│                  │       │ • Social (13)    │       │                  │
-│ ✅ COMPLETE      │       │ • Risk (18)      │       │ ✅ COMPLETE      │
-└──────────────────┘       │ • Instit. (22)   │       └──────────────────┘
-                           │                  │
+│ • Sector ETFs    │       │ • Social (13)    │       │                  │
+│   (11 sectors)   │       │ • Risk (18)      │       │ ✅ COMPLETE      │
+│                  │       │ • Instit. (22)   │       └──────────────────┘
+│ ✅ COMPLETE      │       │ • Sector (15)    │
+└──────────────────┘       │                  │
                            │ ✅ COMPLETE      │
                            └──────────────────┘
                                     │
@@ -78,19 +89,20 @@ PHASE 1: FETCH              PHASE 2: CALCULATE         PHASE 3: NORMALIZE
                          ┌──────────────────────┐
                          │ Database Storage     │
                          │ • Signals table      │
-                         │ • Signal metrics     │
-                         │ • Upsert logic       │
+                         │ • Performance base   │
+                         │ • Sector/ETF info    │
                          │                      │
                          │ ✅ COMPLETE          │
                          └──────────────────────┘
                                     │
                                     ▼
-                           PHASE 6: BACKTEST
+                       PHASE 6: PERFORMANCE (v3.2)
                          ┌──────────────────────┐
-                         │ Performance Tracking │
-                         │ • Baseline prices    │
-                         │ • Return intervals   │
+                         │ Dual-Benchmark Track │
                          │ • SPY comparison     │
+                         │ • Sector ETF compare │
+                         │ • 7 intervals        │
+                         │ • 14 auto alphas     │
                          │                      │
                          │ ✅ COMPLETE          │
                          └──────────────────────┘
@@ -98,42 +110,47 @@ PHASE 1: FETCH              PHASE 2: CALCULATE         PHASE 3: NORMALIZE
         ┌───────────────────────────┼───────────────────────────┐
         │                           │                           │
         ▼                           ▼                           ▼
-  PHASE 7: ML              PHASE 8: AI               PHASE 9: REPORTS
-┌──────────────┐         ┌──────────────┐         ┌──────────────────┐
-│ Machine      │         │ AI           │         │ Reporting &      │
-│ Learning     │         │ Enhancement  │         │ Alerts           │
-│              │         │              │         │                  │
-│ 📋 PLANNED   │         │ 📋 PLANNED   │         │ 📋 PLANNED       │
-└──────────────┘         └──────────────┘         └──────────────────┘
+  PHASE 7: ANALYTICS      PHASE 8: ML                PHASE 9: AI
+┌──────────────┐         ┌──────────────┐         ┌──────────────┐
+│ Performance  │         │ Machine      │         │ AI           │
+│ Analytics    │         │ Learning     │         │ Enhancement  │
+│              │         │              │         │              │
+│ 📋 PLANNED   │         │ 📋 PLANNED   │         │ 📋 PLANNED   │
+└──────────────┘         └──────────────┘         └──────────────┘
         │                           │                           │
         └───────────────────────────┼───────────────────────────┘
-                                    ▼
-                           PHASE 10: POLISH
-                         ┌──────────────────────┐
-                         │ Production Ready     │
-                         │ • Monitoring         │
-                         │ • Documentation      │
-                         │ • Deployment         │
-                         │                      │
-                         │ 📋 PLANNED           │
-                         └──────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    │                               │
+                    ▼                               ▼
+              PHASE 10: REPORTS            PHASE 11: POLISH
+            ┌──────────────────┐         ┌──────────────────┐
+            │ Reporting &      │         │ Production Ready │
+            │ Alerts           │         │ • Monitoring     │
+            │                  │         │ • Documentation  │
+            │ 📋 PLANNED       │         │ • Deployment     │
+            └──────────────────┘         │                  │
+                                         │ 📋 PLANNED       │
+                                         └──────────────────┘
 ```
 
 ### **Phase Details**
 
-**Phase 1: Fetch** (`backend/phases/phase1_fetch.py`) ✅ Complete
+**Phase 1: Fetch** (`backend/phases/phase1_fetch.py`) ✅ Complete (v3.2)
 - Sources: Reddit (5 subreddits), News API, YFinance (40 endpoints)
+- Sources: Reddit (5 subreddits), News API, YFinance (40 endpoints), Sector ETFs (11)
+- Sector ETF Mapping: GICS sectors → SPDR Select Sector ETFs (XLK, XLV, XLF, etc.)
 - Validation: Critical field checks, minimum price history (5 rows)
 - Caching: 24-hour TTL in `public.data_cache`
-- Output: `RawYFinanceData` + Reddit/News data
+- Output: `RawYFinanceData` + Reddit/News data + Sector ETF historical data
 - Time: ~9s per ticker (optimized with intelligent caching)
 
 **Phase 2: Calculate** (`backend/phases/phase2_calculate.py`) ✅ Complete
-- Calculates all 143 factors from raw data
+- Calculates all 158 factors from raw data (143 original + 15 sector-relative)
 - Error Handling: `@safe_calculation` decorator per factor
 - Graceful Degradation: Missing factors return None, don't crash pipeline
 - Output: `GroupFactors` (6 groups × factors per group)
-- Coverage: ~60% avg (90/143 factors populated per ticker)
+- Coverage: ~60% avg (95/158 factors populated per ticker)
 
 **Phase 3: Normalize** (`backend/phases/phase3_normalize.py`) ✅ Complete
 - Method: Robust z-scores using MAD (Median Absolute Deviation)
@@ -148,31 +165,43 @@ PHASE 1: FETCH              PHASE 2: CALCULATE         PHASE 3: NORMALIZE
 - Output: Overall score + 6 group scores + coverage metrics
 - Formula: `overall_score = Σ(group_weight × Σ(factor_weight × z_score))`
 
-**Phase 5: Persist** (`backend/phases/phase5_persist.py`) ✅ Complete
+**Phase 5: Persist** (`backend/phases/phase5_persist.py`) ✅ Complete (v3.2)
 - Database: Supabase (PostgreSQL)
-- Tables: `signals`, `signal_metrics`, `signal_performance`
+- Tables: `signals`, `signal_metrics`, `performance`
+- Performance Baselines: Stores sector + sector_etf for each signal
 - Upsert Logic: Updates if exists, inserts if new
 
-**Phase 6: Backtest** (`backend/phases/phase6_backtest.py`) ✅ Complete
-- Performance Tracking: 1d, 3d, 7d, 10d, 14d, 30d, 90d returns
-- Baseline Prices: Next trading day's open (realistic entry point)
-- SPY Comparison: Calculate alpha vs benchmark
-- Status: pending → baseline_set → in_progress → completed
-- Migration: 003 applied (19 performance columns added)
+**Phase 6: Performance** (`backend/phases/phase6_performance.py`) ✅ Complete (v3.2)
+- **Dual-Benchmark Tracking**: SPY (market) + Sector ETF (peer group)
+- **Return Intervals**: 1d, 3d, 7d, 10d, 14d, 30d, 90d (7 intervals)
+- **Database-Generated Alpha**: PostgreSQL auto-calculates 14 alpha columns
+  - `alpha_Xd = return_Xd - spy_return_Xd` (market alpha)
+  - `sector_alpha_Xd = return_Xd - sector_return_Xd` (sector alpha)
+- **46-Column Schema**: baseline(2) + returns(7) + spy(7) + alpha(7) + sector_info(2) + sector_returns(7) + sector_alpha(7) + metadata(7)
+- **Batch Processing**: 200 records/run for production scale
+- **Status**: pending → in_progress → completed
+- **Migrations**: 006 (sector columns), 007 (alpha intervals), 008-009 (GENERATED columns)
 
-**Phase 7: ML** 📋 Planned (Q4 2025)
+**Phase 7: Analytics** 📋 Planned (Q4 2025)
+- Performance analytics and signal validation
+- Win rate analysis, drawdown metrics, Sharpe ratio
+- Sector rotation analysis, best/worst performers
+- Signal quality scoring, correlation analysis
+- Technologies: Pandas, NumPy, SciPy
+
+**Phase 8: ML** 📋 Planned (Q4 2025)
 - Pattern detection, predictive models, feature importance analysis
 - Technologies: scikit-learn, XGBoost, TensorFlow
 
-**Phase 8: AI** 📋 Planned (Q4 2025)
+**Phase 9: AI** 📋 Planned (Q4 2025)
 - GPT-4 narratives, advanced sentiment, trade insights
 - Technologies: OpenAI GPT-4, LangChain
 
-**Phase 9: Reports** 📋 Planned (Q1 2026)
+**Phase 10: Reports** 📋 Planned (Q1 2026)
 - Daily summaries, email/SMS alerts, performance reports
 - Technologies: SendGrid, Twilio, Chart.js
 
-**Phase 10: Polish** 📋 Planned (Q1 2026)
+**Phase 11: Polish** 📋 Planned (Q1 2026)
 - Production deployment, monitoring, documentation, CI/CD
 - Technologies: Docker, GitHub Actions, Sentry
 

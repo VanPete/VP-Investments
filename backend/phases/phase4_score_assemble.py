@@ -69,6 +69,9 @@ class ScoreResult:
     risk_stability: GroupScore
     institutional_smart_money: GroupScore
     
+    # Coverage
+    total_coverage: float     # Overall factor coverage (0.0-1.0)
+    
     # Metadata
     scored_at: str           # ISO timestamp
     
@@ -77,6 +80,7 @@ class ScoreResult:
         return {
             'ticker': self.ticker,
             'overall_score': self.overall_score,
+            'total_coverage': self.total_coverage,
             'technical': self.technical.to_dict(),
             'fundamental': self.fundamental.to_dict(),
             'news_macro': self.news_macro.to_dict(),
@@ -297,6 +301,7 @@ class Phase4ScoreAssembler:
         return ScoreResult(
             ticker=ticker,
             overall_score=overall_score,
+            total_coverage=total_coverage,
             technical=technical_score,
             fundamental=fundamental_score,
             news_macro=news_macro_score,
