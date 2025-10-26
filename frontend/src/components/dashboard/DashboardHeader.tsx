@@ -14,6 +14,7 @@ import { RefreshCw } from 'lucide-react';
 import { formatTimestamp } from '@/lib/utils';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 interface DashboardHeaderProps {
   metadata: PipelineMetadata;
@@ -133,6 +134,8 @@ export function DashboardHeader({
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
+
+            <ThemeToggle />
           </div>
         </div>
       </div>

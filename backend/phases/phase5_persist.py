@@ -1443,26 +1443,24 @@ class Phase5PersistOptimized(Phase5Persist):
         start_time = time.time()
         
         try:
-            # Step 1: Generate run_id and create signal_run record
-            run_id = str(uuid.uuid4())
-            
-            # Create signal_run record in database
+            # Step 1: Create signal_run record and get the auto-generated ID
             try:
-                await self.db.pool.execute(
+                result = await self.db.pool.fetchrow(
                     """
-                    INSERT INTO signal_runs (run_id, pipeline_version, total_tickers, created_at, status)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO signal_runs (pipeline_version, total_tickers, run_timestamp, status)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id
                     """,
-                    run_id,
                     "3.1-optimized",
                     len(phase4_results),
                     datetime.now(timezone.utc),
                     "running"
                 )
+                run_id = result['id']
                 self.logger.info(f"[OPTIMIZED] Created signal_run record: {run_id}")
             except Exception as e:
-                self.logger.warning(f"Could not create signal_run (table may not exist): {e}")
-                # Continue anyway - run_id is still valid for signals table
+                self.logger.error(f"Failed to create signal_run: {e}")
+                raise  # Don't continue if we can't create the run record
             
             self.logger.info(f"[OPTIMIZED] Started bulk INSERT persistence (run_id: {run_id})")
             

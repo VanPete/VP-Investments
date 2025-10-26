@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import type {
   WeightsConfig,
   FactorToGroup,
-  FileOption,
 } from '@/types/pipeline';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,33 +30,17 @@ export function SignalsDashboard({
   
   const [showAll, setShowAll] = useState(false);
   const [activeTab, setActiveTab] = useState('signals');
-  const [jsonFiles, setJsonFiles] = useState<FileOption[]>([]);
 
-  // Fetch JSON files from public/results folder as fallback
-  useEffect(() => {
-    fetch('/api/results')
-      .then(res => res.json())
-      .then(data => setJsonFiles(data))
-      .catch(err => console.error('Failed to load JSON files:', err));
-  }, []);
-
-  // Combine Supabase runs and JSON files
+  // Convert Supabase runs to FileOption format
   const allAvailableFiles = useMemo(() => {
-    const supabaseFiles: FileOption[] = runs.map((r: { run_timestamp: string; id: string }) => ({
+    return runs.map((r: { run_timestamp: string; id: string }) => ({
       filename: r.id,
       timestamp: r.run_timestamp,
-      label: `${new Date(r.run_timestamp).toLocaleString()} (DB)`,
-    }));
-    
-    const jsonFilesWithLabel: FileOption[] = jsonFiles.map(f => ({
-      ...f,
-      label: `${f.label} (JSON)`,
-    }));
-    
-    return [...supabaseFiles, ...jsonFilesWithLabel].sort((a, b) => 
+      label: `${new Date(r.run_timestamp).toLocaleString()}`,
+    })).sort((a, b) => 
       b.timestamp.localeCompare(a.timestamp)
     );
-  }, [runs, jsonFiles]);
+  }, [runs]);
 
   // Use persisted column visibility - now with backtest columns
   const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility({
