@@ -13,7 +13,8 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, TrendingUp } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, TrendingUp, Search, X } from 'lucide-react';
 import {
   formatScore,
   formatCoverage,
@@ -53,6 +54,7 @@ export function SignalsTable({
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<string>('overallScore');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const toggleRow = (ticker: string) => {
     setExpandedRow(expandedRow === ticker ? null : ticker);
@@ -178,6 +180,15 @@ export function SignalsTable({
     return sorted;
   }, [rankings, sortColumn, sortDirection]);
 
+  // Filter rankings based on search query
+  const filteredRankings = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return sortedRankings;
+    }
+    const query = searchQuery.toLowerCase();
+    return sortedRankings.filter(r => r.ticker.toLowerCase().includes(query));
+  }, [sortedRankings, searchQuery]);
+
   // Render sort icon
   const SortIcon = ({ column }: { column: string }) => {
     if (sortColumn !== column) {
@@ -204,14 +215,46 @@ export function SignalsTable({
 
   return (
     <Card className="shadow-lg rounded-2xl border-gray-200 dark:border-gray-800">
-      {/* Column Visibility Toggle - Top Right */}
-      <div className="flex justify-end p-4 border-b border-gray-200 dark:border-gray-800">
-        {onColumnVisibilityChange && (
-          <ColumnVisibilityToggle
-            visibility={columnVisibility}
-            onVisibilityChange={onColumnVisibilityChange}
+      {/* Search and Column Visibility Toggle */}
+      <div className="flex items-center justify-between gap-4 p-4 border-b border-gray-200 dark:border-gray-800">
+        {/* Search Box */}
+        <div className="flex-1 max-w-sm relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            type="text"
+            placeholder="Search by ticker..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-9"
           />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+              onClick={() => setSearchQuery('')}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* Results Counter */}
+        {searchQuery && (
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Showing {filteredRankings.length} of {rankings.length} signals
+          </div>
         )}
+
+        {/* Column Visibility Toggle */}
+        <div className="flex-shrink-0">
+          {onColumnVisibilityChange && (
+            <ColumnVisibilityToggle
+              visibility={columnVisibility}
+              onVisibilityChange={onColumnVisibilityChange}
+            />
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -434,7 +477,7 @@ export function SignalsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedRankings.map((ranking) => (
+            {filteredRankings.map((ranking) => (
               <Fragment key={ranking.ticker}>
                 {/* Main Row */}
                 <TableRow

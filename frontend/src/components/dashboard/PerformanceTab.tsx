@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import type { SignalRanking } from '@/types/pipeline';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown, Activity, Target } from 'lucide-react';
 
 interface PerformanceTabProps {
@@ -101,11 +102,71 @@ export function PerformanceTab({ signals, loading }: PerformanceTabProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center space-x-3">
-          <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
-          <p className="text-gray-600">Loading performance data...</p>
+      <div className="space-y-6">
+        {/* Skeleton for Performance Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-3">
+                <Skeleton className="h-4 w-32" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-baseline justify-between">
+                  <Skeleton className="h-8 w-24" />
+                  <Skeleton className="h-5 w-5 rounded-full" />
+                </div>
+                <Skeleton className="h-3 w-20" />
+                <div className="pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-5 w-12" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
+
+        {/* Skeleton for Top/Worst Performers */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[...Array(2)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-6 w-40" />
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3">
+                  {[...Array(5)].map((_, j) => (
+                    <div key={j} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="space-y-2 flex-1">
+                        <Skeleton className="h-4 w-16" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                      <Skeleton className="h-6 w-20" />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Skeleton for Portfolio Summary */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i}>
+                  <Skeleton className="h-4 w-24 mb-2" />
+                  <Skeleton className="h-8 w-16" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -120,156 +181,107 @@ export function PerformanceTab({ signals, loading }: PerformanceTabProps) {
     );
   }
 
-  const formatPercent = (value: number) => `${(value * 100).toFixed(2)}%`;
-  const formatWinRate = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const formatPercent = (value: number | null) => value !== null ? `${(value * 100).toFixed(2)}%` : 'N/A';
+  const formatWinRate = (value: number | null) => value !== null ? `${(value * 100).toFixed(1)}%` : 'N/A';
+
+  const PerformanceCard = ({ 
+    title, 
+    avgReturn, 
+    avgSpy, 
+    winRate, 
+    count 
+  }: { 
+    title: string; 
+    avgReturn: number | null; 
+    avgSpy: number | null; 
+    winRate: number | null;
+    count: number;
+  }) => {
+    const hasData = avgReturn !== null;
+    const isPositive = hasData && avgReturn > 0;
+
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!hasData ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-gray-400" />
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Pending ({count} signals)
+                </span>
+              </div>
+              <p className="text-xs text-gray-400">
+                {title.includes('7') ? 'Wait 7 days' : title.includes('30') ? 'Wait 30 days' : title.includes('90') ? 'Wait 90 days' : 'Calculating...'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className={`text-2xl font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatPercent(avgReturn)}
+                </span>
+                {isPositive ? (
+                  <TrendingUp className="h-5 w-5 text-green-600" />
+                ) : (
+                  <TrendingDown className="h-5 w-5 text-red-600" />
+                )}
+              </div>
+              <div className="text-xs text-gray-500">
+                SPY: {formatPercent(avgSpy)}
+              </div>
+              <div className="pt-2 border-t">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Win Rate</span>
+                  <Badge variant={(winRate ?? 0) > 0.5 ? 'default' : 'secondary'}>
+                    {formatWinRate(winRate)}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-6">
       {/* Portfolio Performance Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* 1D Performance */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              1 Day Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold">
-                  <span className={stats.avgReturns.d1 > 0 ? 'text-green-600' : 'text-red-600'}>
-                    {formatPercent(stats.avgReturns.d1)}
-                  </span>
-                </span>
-                {stats.avgReturns.d1 > 0 ? (
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                ) : (
-                  <TrendingDown className="h-5 w-5 text-red-600" />
-                )}
-              </div>
-              <div className="text-xs text-gray-500">
-                SPY: {formatPercent(stats.avgSpyReturns.d1)}
-              </div>
-              <div className="pt-2 border-t">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">Win Rate</span>
-                  <Badge variant={stats.winRates.d1 > 0.5 ? 'default' : 'secondary'}>
-                    {formatWinRate(stats.winRates.d1)}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 7D Performance */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              7 Day Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold">
-                  <span className={stats.avgReturns.d7 > 0 ? 'text-green-600' : 'text-red-600'}>
-                    {formatPercent(stats.avgReturns.d7)}
-                  </span>
-                </span>
-                {stats.avgReturns.d7 > 0 ? (
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                ) : (
-                  <TrendingDown className="h-5 w-5 text-red-600" />
-                )}
-              </div>
-              <div className="text-xs text-gray-500">
-                SPY: {formatPercent(stats.avgSpyReturns.d7)}
-              </div>
-              <div className="pt-2 border-t">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">Win Rate</span>
-                  <Badge variant={stats.winRates.d7 > 0.5 ? 'default' : 'secondary'}>
-                    {formatWinRate(stats.winRates.d7)}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 30D Performance */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              30 Day Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold">
-                  <span className={stats.avgReturns.d30 > 0 ? 'text-green-600' : 'text-red-600'}>
-                    {formatPercent(stats.avgReturns.d30)}
-                  </span>
-                </span>
-                {stats.avgReturns.d30 > 0 ? (
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                ) : (
-                  <TrendingDown className="h-5 w-5 text-red-600" />
-                )}
-              </div>
-              <div className="text-xs text-gray-500">
-                SPY: {formatPercent(stats.avgSpyReturns.d30)}
-              </div>
-              <div className="pt-2 border-t">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">Win Rate</span>
-                  <Badge variant={stats.winRates.d30 > 0.5 ? 'default' : 'secondary'}>
-                    {formatWinRate(stats.winRates.d30)}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 90D Performance */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-              90 Day Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold">
-                  <span className={stats.avgReturns.d90 > 0 ? 'text-green-600' : 'text-red-600'}>
-                    {formatPercent(stats.avgReturns.d90)}
-                  </span>
-                </span>
-                {stats.avgReturns.d90 > 0 ? (
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                ) : (
-                  <TrendingDown className="h-5 w-5 text-red-600" />
-                )}
-              </div>
-              <div className="text-xs text-gray-500">
-                SPY: {formatPercent(stats.avgSpyReturns.d90)}
-              </div>
-              <div className="pt-2 border-t">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">Win Rate</span>
-                  <Badge variant={stats.winRates.d90 > 0.5 ? 'default' : 'secondary'}>
-                    {formatWinRate(stats.winRates.d90)}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <PerformanceCard 
+          title="1 Day Performance"
+          avgReturn={stats.avgReturns.d1}
+          avgSpy={stats.avgSpyReturns.d1}
+          winRate={stats.winRates.d1}
+          count={stats.counts.d1}
+        />
+        <PerformanceCard 
+          title="7 Day Performance"
+          avgReturn={stats.avgReturns.d7}
+          avgSpy={stats.avgSpyReturns.d7}
+          winRate={stats.winRates.d7}
+          count={stats.counts.d7}
+        />
+        <PerformanceCard 
+          title="30 Day Performance"
+          avgReturn={stats.avgReturns.d30}
+          avgSpy={stats.avgSpyReturns.d30}
+          winRate={stats.winRates.d30}
+          count={stats.counts.d30}
+        />
+        <PerformanceCard 
+          title="90 Day Performance"
+          avgReturn={stats.avgReturns.d90}
+          avgSpy={stats.avgSpyReturns.d90}
+          winRate={stats.winRates.d90}
+          count={stats.counts.d90}
+        />
       </div>
 
       {/* Top/Worst Performers */}
@@ -371,17 +383,17 @@ export function PerformanceTab({ signals, loading }: PerformanceTabProps) {
               <div className="text-2xl font-bold">{stats.totalBacktested}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Overall Win Rate (7D)</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Overall Win Rate ({stats.performanceMetric === 'return_7d' ? '7D' : '1D'})</div>
               <div className="text-2xl font-bold">
-                <span className={stats.winRates.d7 > 0.5 ? 'text-green-600' : 'text-red-600'}>
-                  {formatWinRate(stats.winRates.d7)}
+                <span className={((stats.performanceMetric === 'return_7d' ? stats.winRates.d7 : stats.winRates.d1) ?? 0) > 0.5 ? 'text-green-600' : 'text-red-600'}>
+                  {formatWinRate(stats.performanceMetric === 'return_7d' ? stats.winRates.d7 : stats.winRates.d1)}
                 </span>
               </div>
             </div>
             <div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Beating SPY (7D)</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Beating SPY ({stats.performanceMetric === 'return_7d' ? '7D' : '1D'})</div>
               <div className="text-2xl font-bold text-blue-600">
-                {Math.round(stats.winRates.d7 * stats.totalBacktested)}/{stats.totalBacktested}
+                {Math.round(((stats.performanceMetric === 'return_7d' ? stats.winRates.d7 : stats.winRates.d1) ?? 0) * stats.totalBacktested)}/{stats.totalBacktested}
               </div>
             </div>
           </div>
