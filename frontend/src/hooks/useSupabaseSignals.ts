@@ -79,6 +79,7 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
       const riskFactors = risk.data?.find(r => r.signal_id === signalId)?.factors || {};
       const instFactors = institutional.data?.find(i => i.signal_id === signalId)?.factors || {};
 
+      // Count factors per group
       const techCov = Object.keys(techFactors).length;
       const fundCov = Object.keys(fundFactors).length;
       const newsCov = Object.keys(newsFactors).length;
@@ -86,14 +87,30 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
       const riskCov = Object.keys(riskFactors).length;
       const instCov = Object.keys(instFactors).length;
 
+      // Define max factors per group (from Phase 5 schema)
+      const MAX_FACTORS = {
+        technical: 60,
+        fundamental: 45,
+        news_macro: 15,
+        social_alternative: 10,
+        risk_stability: 25,
+        institutional_smart_money: 20,
+      };
+
+      // Convert counts to 0-1 scale (percentage coverage)
       coverageMap[signalId] = {
-        technical: techCov,
-        fundamental: fundCov,
-        news_macro: newsCov,
-        social_alternative: socialCov,
-        risk_stability: riskCov,
-        institutional_smart_money: instCov,
-        total: techCov + fundCov + newsCov + socialCov + riskCov + instCov,
+        technical: Math.min(techCov / MAX_FACTORS.technical, 1),
+        fundamental: Math.min(fundCov / MAX_FACTORS.fundamental, 1),
+        news_macro: Math.min(newsCov / MAX_FACTORS.news_macro, 1),
+        social_alternative: Math.min(socialCov / MAX_FACTORS.social_alternative, 1),
+        risk_stability: Math.min(riskCov / MAX_FACTORS.risk_stability, 1),
+        institutional_smart_money: Math.min(instCov / MAX_FACTORS.institutional_smart_money, 1),
+        total: Math.min(
+          (techCov + fundCov + newsCov + socialCov + riskCov + instCov) / 
+          (MAX_FACTORS.technical + MAX_FACTORS.fundamental + MAX_FACTORS.news_macro + 
+           MAX_FACTORS.social_alternative + MAX_FACTORS.risk_stability + MAX_FACTORS.institutional_smart_money),
+          1
+        ),
       };
     });
 
