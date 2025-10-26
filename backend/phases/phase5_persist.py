@@ -15,6 +15,7 @@ Schema Structure (8 tables):
 - signals_institutional_smart_money: ~20 institutional factors in JSONB
 """
 
+import asyncio
 import json
 import logging
 import math
