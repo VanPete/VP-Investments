@@ -14,6 +14,8 @@ import { Columns3 } from 'lucide-react';
 export interface ColumnVisibility {
   rank: boolean;
   ticker: boolean;
+  companyName: boolean;
+  currentPrice: boolean;
   overallScore: boolean;
   coverage: boolean;
   technical: boolean;
@@ -22,8 +24,7 @@ export interface ColumnVisibility {
   social: boolean;
   risk: boolean;
   institutional: boolean;
-  // Backtest columns (Phase 6)
-  baseline?: boolean;
+  // Performance columns
   return1d?: boolean;
   return7d?: boolean;
   return30d?: boolean;
@@ -43,6 +44,8 @@ export function ColumnVisibilityToggle({
   const columns = [
     { key: 'rank' as keyof ColumnVisibility, label: 'Rank', required: false },
     { key: 'ticker' as keyof ColumnVisibility, label: 'Ticker', required: true },
+    { key: 'companyName' as keyof ColumnVisibility, label: 'Company Name', required: false },
+    { key: 'currentPrice' as keyof ColumnVisibility, label: 'Current Price', required: false },
     { key: 'overallScore' as keyof ColumnVisibility, label: 'Overall Score', required: true },
     { key: 'coverage' as keyof ColumnVisibility, label: 'Coverage', required: false },
     { key: 'technical' as keyof ColumnVisibility, label: 'Technical', required: false },
@@ -51,8 +54,7 @@ export function ColumnVisibilityToggle({
     { key: 'social' as keyof ColumnVisibility, label: 'Social', required: false },
     { key: 'risk' as keyof ColumnVisibility, label: 'Risk', required: false },
     { key: 'institutional' as keyof ColumnVisibility, label: 'Institutional', required: false },
-    // Backtest columns (Phase 6)
-    { key: 'baseline' as keyof ColumnVisibility, label: 'Baseline Price', required: false },
+    // Performance columns
     { key: 'return1d' as keyof ColumnVisibility, label: '1D Return', required: false },
     { key: 'return7d' as keyof ColumnVisibility, label: '7D Return', required: false },
     { key: 'return30d' as keyof ColumnVisibility, label: '30D Return', required: false },

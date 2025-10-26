@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown, Activity, Target } from 'lucide-react';
+import { PerformanceCountdown } from './PerformanceCountdown';
 
 interface PerformanceTabProps {
   signals: SignalRanking[];
@@ -174,8 +175,19 @@ export function PerformanceTab({ signals, loading }: PerformanceTabProps) {
   if (!stats) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Card className="p-6">
-          <p className="text-gray-600">No backtest data available. Please run the pipeline first.</p>
+        <Card className="p-8 max-w-md">
+          <div className="text-center space-y-3">
+            <Activity className="h-12 w-12 text-gray-400 mx-auto" />
+            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+              No Performance Data Available
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Performance tracking will begin once signals have been generated and time has elapsed for returns calculation.
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-500">
+              Check back after running the pipeline and waiting for the tracking period.
+            </p>
+          </div>
         </Card>
       </div>
     );
@@ -252,6 +264,11 @@ export function PerformanceTab({ signals, loading }: PerformanceTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Countdown Timer - Show when some data is missing */}
+      {signals && signals.length > 0 && signals[0].backtest_baseline_date && (
+        <PerformanceCountdown signalCreatedAt={signals[0].backtest_baseline_date} />
+      )}
+      
       {/* Portfolio Performance Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <PerformanceCard 

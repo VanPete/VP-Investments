@@ -350,6 +350,27 @@ class Phase5Persist:
                 risk_factors = self.extract_risk_factors(ticker_data)
                 institutional_factors = self.extract_institutional_factors(ticker_data)
                 
+                # Extract company name and current price from raw data if available
+                company_name = None
+                current_price = None
+                
+                # Try to get from ticker_data (if Phase 1 raw data is preserved)
+                raw_data = ticker_data.get('raw_data')  # If Phase 4 passes it through
+                if raw_data:
+                    # Get company name from info
+                    info = raw_data.get('info', {})
+                    company_name = info.get('longName') or info.get('shortName')
+                    
+                    # Get current price from fast_info or history
+                    fast_info = raw_data.get('fast_info', {})
+                    current_price = fast_info.get('lastPrice')
+                    
+                    if not current_price:
+                        # Fallback to latest history close price
+                        history = raw_data.get('history')
+                        if history is not None and not history.empty:
+                            current_price = history['Close'].iloc[-1] if 'Close' in history.columns else None
+                
                 # Build signal record
                 signal_record = {
                     'ticker': ticker,
@@ -361,7 +382,9 @@ class Phase5Persist:
                     'news_macro_score': ticker_data.get('news_macro_score'),
                     'social_alternative_score': ticker_data.get('social_score'),
                     'risk_stability_score': ticker_data.get('risk_score'),
-                    'institutional_smart_money_score': ticker_data.get('institutional_score')
+                    'institutional_smart_money_score': ticker_data.get('institutional_score'),
+                    'company_name': company_name,
+                    'current_price': current_price
                 }
                 
                 signals_to_insert.append(signal_record)
@@ -632,7 +655,7 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
     param_count = 1
     
     for signal in signals:
-        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 17)])
+        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 19)])
         query_parts.append(f"({placeholders})")
         
         params.extend([
@@ -652,9 +675,11 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             signal.get('news_macro_coverage'),
             signal.get('social_alternative_coverage'),
             signal.get('risk_stability_coverage'),
-            signal.get('institutional_smart_money_coverage')
+            signal.get('institutional_smart_money_coverage'),
+            signal.get('company_name'),
+            signal.get('current_price')
         ])
-        param_count += 17
+        param_count += 19
     
     query = f"""
     INSERT INTO signals (
@@ -671,7 +696,9 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
         news_macro_coverage,
         social_alternative_coverage,
         risk_stability_coverage,
-        institutional_smart_money_coverage
+        institutional_smart_money_coverage,
+        company_name,
+        current_price
     ) VALUES {', '.join(query_parts)}
     RETURNING id
     """

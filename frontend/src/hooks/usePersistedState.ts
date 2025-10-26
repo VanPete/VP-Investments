@@ -90,6 +90,8 @@ export interface SortState {
 export interface ColumnVisibility {
   rank: boolean;
   ticker: boolean;
+  companyName: boolean;
+  currentPrice: boolean;
   overallScore: boolean;
   coverage: boolean;
   technical: boolean;
@@ -98,8 +100,7 @@ export interface ColumnVisibility {
   social: boolean;
   risk: boolean;
   institutional: boolean;
-  // Backtest columns (Phase 6)
-  baseline?: boolean;
+  // Performance columns (formerly backtest)
   return1d?: boolean;
   return7d?: boolean;
   return30d?: boolean;

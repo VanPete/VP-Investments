@@ -41,6 +41,8 @@ export interface GroupCoverages {
 export interface SignalRanking {
   rank: number;
   ticker: string;
+  company_name?: string;
+  current_price?: number;
   overall_score: number;
   total_coverage: number;
   group_scores: GroupScores;

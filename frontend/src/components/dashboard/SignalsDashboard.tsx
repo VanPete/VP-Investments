@@ -42,10 +42,12 @@ export function SignalsDashboard({
     );
   }, [runs]);
 
-  // Use persisted column visibility - now with backtest columns
+  // Use persisted column visibility - now with performance columns
   const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility({
-    rank: true,
+    rank: true,  // Show rank column as first column
     ticker: true,
+    companyName: true,  // Show company names by default
+    currentPrice: true,  // Show current price by default
     overallScore: true,
     coverage: true,
     technical: true,
@@ -54,8 +56,7 @@ export function SignalsDashboard({
     social: true,
     risk: true,
     institutional: true,
-    // Backtest columns (Phase 6) - hidden by default
-    baseline: false,
+    // Performance columns - hidden by default
     return1d: false,
     return7d: false,
     return30d: false,

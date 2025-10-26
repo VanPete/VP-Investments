@@ -122,25 +122,25 @@ export function FactorLibrary({ factorToGroup, weightsConfig }: FactorLibraryPro
         </div>
 
         {/* Results Count */}
-        <div className="mb-4 text-sm text-gray-600">
+        <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
           Showing {filteredFactors.length} of {allFactors.length} factors
         </div>
 
         {/* Factor List */}
         <div className="space-y-3">
           {filteredFactors.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
               No factors match your search criteria
             </div>
           ) : (
             filteredFactors.map((factor) => (
               <div
                 key={`${factor.group}-${factor.factor}`}
-                className="p-4 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+                className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-800/50"
               >
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-medium text-gray-900">
+                    <span className="font-mono font-medium text-gray-900 dark:text-gray-100">
                       {factor.factor}
                     </span>
                     <Badge variant="outline" className="text-xs">
@@ -151,7 +151,7 @@ export function FactorLibrary({ factorToGroup, weightsConfig }: FactorLibraryPro
                     Weight: {(factor.weight * 100).toFixed(2)}%
                   </Badge>
                 </div>
-                <p className="text-sm text-gray-700">{factor.description}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{factor.description}</p>
               </div>
             ))
           )}
