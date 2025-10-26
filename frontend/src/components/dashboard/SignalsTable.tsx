@@ -40,6 +40,8 @@ export function SignalsTable({
   columnVisibility = {
     rank: true,
     ticker: true,
+    companyName: true,
+    currentPrice: true,
     overallScore: true,
     coverage: true,
     technical: true,
@@ -408,17 +410,6 @@ export function SignalsTable({
                   </span>
                 </TableHead>
               )}
-              {columnVisibility.baseline && (
-                <TableHead 
-                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => handleSort('baseline')}
-                >
-                  <span className="inline-flex items-center justify-end">
-                    Baseline
-                    <SortIcon column="baseline" />
-                  </span>
-                </TableHead>
-              )}
               {columnVisibility.return1d && (
                 <TableHead 
                   className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -555,22 +546,6 @@ export function SignalsTable({
                       <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.institutional_smart_money)}`}>
                         {formatScore(ranking.group_scores.institutional_smart_money)}
                       </span>
-                    </TableCell>
-                  )}
-                  {columnVisibility.baseline && (
-                    <TableCell className="text-right">
-                      {ranking.backtest_baseline_price && ranking.backtest_baseline_date ? (
-                        <div className="text-sm">
-                          <div className="font-semibold text-gray-900 dark:text-gray-100">
-                            ${ranking.backtest_baseline_price.toFixed(2)}
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {new Date(ranking.backtest_baseline_date).toLocaleDateString()}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
                     </TableCell>
                   )}
                   {columnVisibility.return1d && (
