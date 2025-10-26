@@ -22,8 +22,8 @@ export function SignalsDashboard({
   weightsConfig,
   factorToGroup,
 }: SignalsDashboardProps) {
-  // Fetch signals from Supabase
-  const { signals, loading, error, refetch } = useSupabaseSignals();
+  // Fetch signals from Supabase with run selection
+  const { signals, loading, error, refetch, runs, selectedRunId, setSelectedRunId } = useSupabaseSignals();
   
   const [showAll, setShowAll] = useState(false);
 
@@ -102,10 +102,11 @@ export function SignalsDashboard({
   }
 
   // Create mock metadata for QuickStats and Header
+  const selectedRun = runs.find((r: { id: string }) => r.id === selectedRunId);
   const mockResults = {
     metadata: {
-      timestamp: new Date().toISOString(),
-      total_tickers: signals.length,
+      timestamp: selectedRun?.run_timestamp || new Date().toISOString(),
+      total_tickers: selectedRun?.total_tickers || signals.length,
       source: 'supabase',
     },
     rankings: signals,
@@ -116,9 +117,12 @@ export function SignalsDashboard({
       {/* Header */}
       <DashboardHeader
         metadata={mockResults.metadata}
-        availableFiles={[]} // No file selector with Supabase
-        selectedFile=""
-        onFileChange={() => {}} // No-op
+        availableFiles={runs.map((r: { run_timestamp: string; id: string }) => ({
+          label: new Date(r.run_timestamp).toLocaleString(),
+          value: r.id,
+        }))}
+        selectedFile={selectedRunId || ''}
+        onFileChange={(runId: string) => setSelectedRunId(runId)}
         onRefresh={handleRefresh}
         totalCount={signals.length}
         displayedCount={displayedRankings.length}

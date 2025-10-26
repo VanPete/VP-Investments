@@ -136,6 +136,22 @@ export function SignalsTable({
           aValue = a.group_scores.institutional_smart_money || 0;
           bValue = b.group_scores.institutional_smart_money || 0;
           break;
+        case 'baseline':
+          aValue = a.backtest_baseline_price || 0;
+          bValue = b.backtest_baseline_price || 0;
+          break;
+        case 'return1d':
+          aValue = a.return_1d || 0;
+          bValue = b.return_1d || 0;
+          break;
+        case 'return7d':
+          aValue = a.return_7d || 0;
+          bValue = b.return_7d || 0;
+          break;
+        case 'vsSpy':
+          aValue = (a.return_7d || 0) - (a.spy_return_7d || 0);
+          bValue = (b.return_7d || 0) - (b.spy_return_7d || 0);
+          break;
         default:
           return 0;
       }
@@ -341,6 +357,50 @@ export function SignalsTable({
                   </span>
                 </TableHead>
               )}
+              {columnVisibility.baseline && (
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('baseline')}
+                >
+                  <span className="inline-flex items-center justify-end">
+                    Baseline
+                    <SortIcon column="baseline" />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.return1d && (
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('return1d')}
+                >
+                  <span className="inline-flex items-center justify-end">
+                    1D Return
+                    <SortIcon column="return1d" />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.return7d && (
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('return7d')}
+                >
+                  <span className="inline-flex items-center justify-end">
+                    7D Return
+                    <SortIcon column="return7d" />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.vsSpy && (
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('vsSpy')}
+                >
+                  <span className="inline-flex items-center justify-end">
+                    vs SPY (7D)
+                    <SortIcon column="vsSpy" />
+                  </span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -421,6 +481,34 @@ export function SignalsTable({
                     <TableCell className="text-right">
                       <span className={`font-semibold ${getScoreColorClass(ranking.group_scores.institutional_smart_money)}`}>
                         {formatScore(ranking.group_scores.institutional_smart_money)}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.baseline && (
+                    <TableCell className="text-right">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {ranking.backtest_baseline_price ? `$${ranking.backtest_baseline_price.toFixed(2)}` : '-'}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.return1d && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${ranking.return_1d && ranking.return_1d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_1d && ranking.return_1d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {ranking.return_1d !== null && ranking.return_1d !== undefined ? `${(ranking.return_1d * 100).toFixed(2)}%` : '-'}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.return7d && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${ranking.return_7d && ranking.return_7d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_7d && ranking.return_7d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {ranking.return_7d !== null && ranking.return_7d !== undefined ? `${(ranking.return_7d * 100).toFixed(2)}%` : '-'}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.vsSpy && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${ranking.return_7d && ranking.spy_return_7d && (ranking.return_7d - ranking.spy_return_7d) > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_7d && ranking.spy_return_7d && (ranking.return_7d - ranking.spy_return_7d) < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {ranking.return_7d !== null && ranking.spy_return_7d !== null && ranking.return_7d !== undefined && ranking.spy_return_7d !== undefined ? `${((ranking.return_7d - ranking.spy_return_7d) * 100).toFixed(2)}%` : '-'}
                       </span>
                     </TableCell>
                   )}
