@@ -36,11 +36,11 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   return (
     <div className="bg-card border-b border-border shadow-lg rounded-2xl mx-4 mt-4 backdrop-blur-sm [border-image:linear-gradient(to_right,#001F3F,#00AEEF)_1] [border-top:2px_solid]">
-      <div className="container mx-auto px-6 py-4">
-        {/* Top Row: Title Left, Logo Center, Selectors Right */}
-        <div className="flex items-center justify-between gap-4 mb-3">
-          {/* Left: Title */}
-          <div className="flex items-center gap-3 flex-1">
+      <div className="container mx-auto px-6 py-6">
+        {/* Top Row: Title Left, Logo Center (Fill), Controls Right */}
+        <div className="flex items-center justify-between gap-8 mb-3">
+          {/* Left: Title + Badge */}
+          <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-foreground whitespace-nowrap">
               VanPiQ Signals Dashboard
             </h1>
@@ -88,19 +88,19 @@ export function DashboardHeader({
             )}
           </div>
 
-          {/* Center: Large Logo */}
+          {/* Center: Large Logo (Fills remaining space) */}
           <div className="flex items-center justify-center flex-1">
             <Image 
               src="/vanpiq-logo.svg" 
               alt="VanPIQ" 
-              width={180} 
-              height={60}
-              className="h-[60px] w-auto transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(0,174,239,0.6)]"
+              width={240} 
+              height={80}
+              className="h-20 w-auto max-w-full transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(0,174,239,0.6)]"
             />
           </div>
 
           {/* Right: File Selector and Buttons */}
-          <div className="flex items-center gap-3 flex-1 justify-end">
+          <div className="flex items-center gap-3">
             <Select value={selectedFile} onValueChange={onFileChange}>
               <SelectTrigger className="w-[280px] bg-gradient-to-r from-[#001F3F] to-[#00AEEF] text-white border-none hover:opacity-90 transition-opacity font-medium">
                 <SelectValue placeholder="Select dataset" />

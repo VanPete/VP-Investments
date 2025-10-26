@@ -143,8 +143,10 @@ export function SignalsDashboard({
         displayedCount={displayedRankings.length}
       />
 
-      {/* Quick Stats Cards */}
-      <QuickStats results={mockResults} />
+      {/* Quick Stats Cards - Added mt-6 for gap */}
+      <div className="mt-6">
+        <QuickStats results={mockResults} />
+      </div>
 
       {/* Main Content with Tabs */}
       <div className="px-4 py-6">

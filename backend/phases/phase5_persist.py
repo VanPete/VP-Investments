@@ -1407,6 +1407,29 @@ class Phase5PersistOptimized(Phase5Persist):
                 # Get total coverage from Phase 4
                 total_coverage = ticker_data.get('total_coverage', 0.0)
                 
+                # Extract company name and current price from phase1_cache
+                company_name = None
+                current_price = None
+                
+                if phase1_cache and ticker in phase1_cache:
+                    ticker_raw_data = phase1_cache[ticker]  # This is a RawYFinanceData object
+                    
+                    # Get company name from info (direct attribute access)
+                    if ticker_raw_data.info:
+                        company_name = ticker_raw_data.info.get('longName') or ticker_raw_data.info.get('shortName')
+                    
+                    # Get current price from fast_info or history (direct attribute access)
+                    if ticker_raw_data.fast_info:
+                        current_price = ticker_raw_data.fast_info.get('lastPrice')
+                    
+                    if not current_price:
+                        # Fallback to latest history close price
+                        if hasattr(ticker_raw_data, 'history') and not ticker_raw_data.history.empty:
+                            try:
+                                current_price = ticker_raw_data.history['Close'].iloc[-1] if 'Close' in ticker_raw_data.history.columns else None
+                            except:
+                                pass
+                
                 # Build signal record
                 signal_record = {
                     'ticker': ticker,
@@ -1424,7 +1447,9 @@ class Phase5PersistOptimized(Phase5Persist):
                     'risk_stability_score': ticker_data.get('risk_score'),
                     'risk_stability_coverage': risk_coverage,
                     'institutional_smart_money_score': ticker_data.get('institutional_score'),
-                    'institutional_smart_money_coverage': institutional_coverage
+                    'institutional_smart_money_coverage': institutional_coverage,
+                    'company_name': company_name,
+                    'current_price': current_price
                 }
                 
                 signals_to_insert.append(signal_record)

@@ -22,6 +22,7 @@ async def clear():
         'signals_risk_stability',
         'signals_institutional_smart_money',
         'performance',
+        'analytics',
         'signals',
         'signal_runs'
     ]
