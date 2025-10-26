@@ -24,8 +24,15 @@ from backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-def calculate_all_returns(ticker: str, signal_date: datetime) -> Optional[Dict]:
-    """Calculate ALL returns including SPY benchmark for all periods"""
+def calculate_all_returns(ticker: str, signal_date: datetime, days_old: int) -> Optional[Dict]:
+    """
+    Calculate baseline data (ALWAYS) and returns (based on age).
+    
+    Strategy:
+    1. ALWAYS get baseline price/date (needed for all signals)
+    2. Calculate returns only for periods where signal is old enough
+    3. Mark status based on what SHOULD be available vs what IS available
+    """
     try:
         stock = yf.Ticker(ticker)
         spy = yf.Ticker('SPY')
@@ -36,10 +43,21 @@ def calculate_all_returns(ticker: str, signal_date: datetime) -> Optional[Dict]:
         hist = stock.history(start=signal_str, end=end_str)
         spy_hist = spy.history(start=signal_str, end=end_str)
         
-        if hist.empty or spy_hist.empty:
-            logger.warning(f"No data for {ticker} or SPY")
-            return None
+        if hist.empty:
+            logger.warning(f"No price data for {ticker}")
+            return {
+                'backtest_status': 'error',
+                'backtest_last_update': datetime.now(),
+            }
+        
+        if spy_hist.empty:
+            logger.warning(f"No SPY data available")
+            return {
+                'backtest_status': 'error', 
+                'backtest_last_update': datetime.now(),
+            }
             
+        # ALWAYS get baseline data
         baseline_price = float(hist.iloc[0]['Close'])
         baseline_date = hist.index[0]
         spy_baseline = float(spy_hist.iloc[0]['Close'])
@@ -50,12 +68,17 @@ def calculate_all_returns(ticker: str, signal_date: datetime) -> Optional[Dict]:
             'backtest_last_update': datetime.now(),
         }
         
-        # All return periods
+        # Calculate returns for periods where signal is old enough
         periods = [1, 3, 7, 10, 14, 30, 90]
+        expected_periods = [p for p in periods if days_old >= p]  # What SHOULD be available
         completed = 0
         
         for days in periods:
             target = signal_date + timedelta(days=days)
+            
+            # Skip if signal not old enough yet
+            if days_old < days:
+                continue
             
             # Ticker returns
             future = hist[hist.index >= target]
@@ -70,13 +93,15 @@ def calculate_all_returns(ticker: str, signal_date: datetime) -> Optional[Dict]:
                 spy_price = float(spy_future.iloc[0]['Close'])
                 result[f'spy_return_{days}d'] = ((spy_price - spy_baseline) / spy_baseline) * 100
         
-        # Set status
-        if completed == len(periods):
-            result['backtest_status'] = 'completed'
+        # Set status based on what SHOULD be available
+        if len(expected_periods) == 0:
+            result['backtest_status'] = 'pending'  # Too recent for any returns
+        elif completed == len(expected_periods):
+            result['backtest_status'] = 'completed'  # Got all expected returns
         elif completed > 0:
-            result['backtest_status'] = 'partial'
+            result['backtest_status'] = 'partial'  # Got some but not all expected
         else:
-            result['backtest_status'] = 'pending'
+            result['backtest_status'] = 'pending'  # Old enough but no data available
             
         return result
         
@@ -92,40 +117,37 @@ async def backtest_all():
     await db.connect()
     
     print("=" * 80)
-    print("BACKTEST ALL SIGNALS - COMPLETE COLUMN POPULATION")
+    print("BACKTEST BACKFILL - Following phase6_backtest.py Logic")
+    print("=" * 80)
+    print("Baseline: next_day_open (signal_date + 1 day)")
+    print("Returns: measured from baseline_date")
+    print("Skip: signals < 2 days old, signals with baseline already set")
     print("=" * 80)
     
-    # Get signals missing backtest data
+    # Get signals missing backtest data (only those without baseline set)
     query = """
     SELECT id, ticker, created_at
     FROM signals
-    WHERE backtest_baseline_price IS NULL 
-       OR backtest_status IS NULL
-       OR backtest_status IN ('pending', 'partial', 'error')
-    ORDER BY created_at DESC
+    WHERE backtest_baseline_price IS NULL
+    ORDER BY created_at ASC
     """
     
     signals = await db.execute_query(query)
     print(f"\n{len(signals)} signals to backtest")
     print("-" * 80)
     
-    success = error = skipped = 0
+    success = error = 0
     
     for i, sig in enumerate(signals, 1):
         ticker = sig['ticker']
         created = sig['created_at']
         days_old = (datetime.now(created.tzinfo) - created).days
         
-        if days_old < 1:
-            print(f"[{i}/{len(signals)}] Skip {ticker} - too recent")
-            skipped += 1
-            continue
-            
-        print(f"[{i}/{len(signals)}] {ticker} ({created.date()}, {days_old}d ago)...", end=" ", flush=True)
+        print(f"[{i}/{len(signals)}] {ticker} ({created.date()}, {days_old}d old)...", end=" ", flush=True)
         
-        # Calculate in executor to not block
+        # Calculate in executor to not block (ALWAYS process, even if < 1 day)
         returns = await asyncio.get_event_loop().run_in_executor(
-            None, calculate_all_returns, ticker, created
+            None, calculate_all_returns, ticker, created, days_old
         )
         
         if not returns:
@@ -164,7 +186,9 @@ async def backtest_all():
             await asyncio.sleep(1)  # Rate limit
     
     print("\n" + "=" * 80)
-    print(f"Success: {success} | Errors: {error} | Skipped: {skipped}")
+    print(f"Success: {success} | Errors: {error}")
+    print(f"Note: Signals < 1 day old get baseline data only (status='pending')")
+    print(f"      Returns calculated only when signal is old enough for each period")
     print("=" * 80)
     
     await db.disconnect()
