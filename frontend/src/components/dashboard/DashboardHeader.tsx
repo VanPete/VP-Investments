@@ -38,7 +38,7 @@ export function DashboardHeader({
     <div className="bg-card border-b border-border shadow-lg rounded-2xl mx-4 mt-4 backdrop-blur-sm [border-image:linear-gradient(to_right,#001F3F,#00AEEF)_1] [border-top:2px_solid]">
       <div className="container mx-auto px-6 py-6">
         {/* Top Row: Title Left, Large Logo Center, Controls Right */}
-        <div className="flex items-center gap-4 mb-3">
+        <div className="flex items-center justify-between mb-3">
           {/* Left: Title + Badge */}
           <div className="flex items-center gap-3 whitespace-nowrap">
             <h1 className="text-xl font-bold text-foreground">
@@ -88,14 +88,14 @@ export function DashboardHeader({
             )}
           </div>
 
-          {/* Center: Large Logo (90% of header height) */}
-          <div className="flex items-center justify-center flex-1 py-2">
+          {/* Center: Large Logo (fills center space) */}
+          <div className="flex items-center justify-center flex-1 px-8">
             <Image 
               src="/vanpiq-logo.svg" 
               alt="VanPIQ" 
-              width={400} 
-              height={120}
-              className="h-[90%] w-auto max-h-[120px] transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(0,174,239,0.6)]"
+              width={350} 
+              height={100}
+              className="h-[85px] w-auto max-w-full transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(0,174,239,0.6)]"
               priority
             />
           </div>
