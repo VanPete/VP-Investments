@@ -906,3 +906,215 @@ class Phase1Fetcher:
             self.logger.warning(f"News ticker discovery failed: {e}")
             return {}
 
+
+# ============================================================================
+# OPTIMIZED VERSION (Phase 5.6 - Production Optimization)
+# ============================================================================
+
+class Phase1FetcherOptimized(Phase1Fetcher):
+    """
+    Optimized Phase 1 Fetcher with parallel batch processing (Phase 5.6).
+    
+    Optimizations implemented:
+    1. ✅ Parallel batch fetching with asyncio.gather()
+    2. ✅ Semaphore-based concurrency limiting
+    3. ✅ Optimized ticker batching strategy
+    
+    Performance targets:
+    - Current: ~367s for 500 tickers (Phase 1)
+    - Target: ~147s for 500 tickers (60% faster)
+    - Method: Process 10-20 tickers concurrently
+    
+    Inherits all functionality from Phase1Fetcher and adds:
+    - Concurrent ticker processing (10-20 at a time)
+    - Semaphore-based rate limiting
+    - Async batch coordination
+    """
+    
+    def __init__(self, max_concurrent_tickers: int = 10):
+        """
+        Initialize optimized fetcher.
+        
+        Args:
+            max_concurrent_tickers: Maximum number of tickers to fetch concurrently
+                                  (default: 10, increase carefully to avoid rate limits)
+        """
+        super().__init__()
+        self.max_concurrent_tickers = max_concurrent_tickers
+        self.semaphore = asyncio.Semaphore(max_concurrent_tickers)
+        self.logger.info(f"[OPTIMIZED] Phase1Fetcher initialized with {max_concurrent_tickers} concurrent workers")
+    
+    async def _fetch_comprehensive_yfinance_data(self, tickers: List[str]) -> Dict[str, Any]:
+        """
+        OPTIMIZED: Fetch comprehensive YFinance data with parallel batching.
+        
+        IMPROVEMENT: Process multiple tickers concurrently while respecting rate limits.
+        
+        Original: Sequential processing via ThreadPoolExecutor
+        Optimized: Async coordination + ThreadPoolExecutor batching
+        
+        Args:
+            tickers: List of ticker symbols
+            
+        Returns:
+            Dict mapping ticker -> RawYFinanceData bundle
+        """
+        if not self.yfinance_fetcher:
+            self.logger.error("[ERROR] YFinance fetcher not initialized - returning empty cache")
+            return {}
+        
+        self.logger.info(f"[OPTIMIZED] Fetching comprehensive data for {len(tickers)} tickers "
+                        f"({self.max_concurrent_tickers} concurrent)...")
+        
+        # Strategy: Split tickers into batches and process concurrently
+        # Each batch goes through yfinance_fetcher which handles its own ThreadPoolExecutor
+        batch_size = max(1, len(tickers) // self.max_concurrent_tickers)
+        if batch_size < 5:  # Minimum batch size for efficiency
+            batch_size = min(5, len(tickers))
+        
+        batches = [tickers[i:i+batch_size] for i in range(0, len(tickers), batch_size)]
+        
+        self.logger.info(f"[OPTIMIZED] Split into {len(batches)} batches of ~{batch_size} tickers each")
+        
+        # Process all batches concurrently with semaphore limiting
+        tasks = [self._fetch_batch_with_semaphore(batch) for batch in batches]
+        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Merge results from all batches
+        raw_cache = {}
+        errors = []
+        
+        for idx, result in enumerate(batch_results):
+            if isinstance(result, Exception):
+                errors.append(f"Batch {idx+1}: {str(result)}")
+                self.logger.error(f"[ERROR] Batch {idx+1} failed: {result}")
+                continue
+            
+            if isinstance(result, dict):
+                raw_cache.update(result)
+        
+        success_count = len(raw_cache)
+        success_rate = (success_count / len(tickers) * 100) if tickers else 0
+        
+        self.logger.info(f"   [SUCCESS] Optimized fetch complete: {success_count}/{len(tickers)} tickers "
+                        f"({success_rate:.1f}% success, {len(errors)} batch errors)")
+        
+        # Log endpoint success statistics
+        if raw_cache:
+            sample_ticker = list(raw_cache.keys())[0]
+            sample_bundle = raw_cache[sample_ticker]
+            self.logger.info(f"   [INFO]  Sample ({sample_ticker}): "
+                           f"{len(sample_bundle.endpoints_succeeded)}/{len(sample_bundle.endpoints_attempted)} endpoints succeeded")
+        
+        return raw_cache
+    
+    async def _fetch_batch_with_semaphore(self, batch_tickers: List[str]) -> Dict[str, Any]:
+        """
+        Fetch a batch of tickers with semaphore-based rate limiting.
+        
+        This ensures we don't overwhelm the API with too many concurrent requests.
+        
+        Args:
+            batch_tickers: Batch of ticker symbols to fetch
+            
+        Returns:
+            Dict mapping ticker -> RawYFinanceData for this batch
+        """
+        async with self.semaphore:
+            self.logger.debug(f"[BATCH] Processing {len(batch_tickers)} tickers: {batch_tickers[:3]}...")
+            
+            # Run the synchronous yfinance fetch_batch in executor
+            loop = asyncio.get_event_loop()
+            try:
+                batch_result = await loop.run_in_executor(
+                    None,
+                    self.yfinance_fetcher.fetch_batch,
+                    batch_tickers
+                )
+                return batch_result
+            except Exception as e:
+                self.logger.error(f"[BATCH] Error fetching batch: {e}")
+                return {}
+    
+    async def _fetch_news_data(self, tickers: List[str]) -> Dict[str, Any]:
+        """
+        OPTIMIZED: Fetch news data with parallel processing.
+        
+        Original method fetches news sequentially.
+        This version processes multiple tickers concurrently.
+        
+        Args:
+            tickers: List of ticker symbols
+            
+        Returns:
+            Dict mapping ticker -> NewsBundle
+        """
+        news_data = {}
+        
+        try:
+            # Try to use news integration if available
+            from backend.integrations.news import NewsFetcher
+            
+            news_fetcher = NewsFetcher()
+            
+            if not news_fetcher.enabled:
+                self.logger.info("ℹ️  News fetcher disabled - skipping")
+                return {}
+            
+            # Process news fetches in parallel with semaphore
+            tasks = [self._fetch_single_news_with_semaphore(news_fetcher, ticker) 
+                     for ticker in tickers]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Collect successful results
+            for ticker, result in zip(tickers, results):
+                if isinstance(result, Exception):
+                    self.logger.debug(f"News fetch failed for {ticker}: {result}")
+                    continue
+                
+                if result and result.available:
+                    news_data[ticker] = result
+            
+            self.logger.info(f"   [SUCCESS] News fetch complete: {len(news_data)}/{len(tickers)} tickers with news")
+            
+        except ImportError as e:
+            self.logger.info(f"[INFO]  News integration not available - skipping ({e})")
+        except Exception as e:
+            self.logger.warning(f"[WARNING]  News fetch failed: {e}")
+        
+        return news_data
+    
+    async def _fetch_single_news_with_semaphore(self, news_fetcher, ticker: str):
+        """
+        Fetch news for a single ticker with semaphore limiting.
+        
+        Args:
+            news_fetcher: NewsFetcher instance
+            ticker: Ticker symbol
+            
+        Returns:
+            NewsBundle or None
+        """
+        async with self.semaphore:
+            try:
+                return await news_fetcher.fetch_news_bundle(ticker, lookback_days=7)
+            except Exception as e:
+                raise  # Re-raise for gather() to catch
+
+
+# ============================================================================
+# Factory Function
+# ============================================================================
+
+def get_optimized_phase1_fetcher(max_concurrent: int = 10) -> Phase1FetcherOptimized:
+    """
+    Factory function to create optimized Phase 1 fetcher.
+    
+    Args:
+        max_concurrent: Maximum concurrent ticker fetches (default: 10)
+        
+    Returns:
+        Phase1FetcherOptimized instance
+    """
+    return Phase1FetcherOptimized(max_concurrent_tickers=max_concurrent)
+

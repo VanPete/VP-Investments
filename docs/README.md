@@ -4,17 +4,20 @@ A comprehensive quantitative trading platform using **143 multi-factor analysis*
 
 ## ✨ **Latest Updates - v3.1 Architecture Complete!**
 
-**v3.1 (October 2025): Complete Factor Coverage & Production Hardening**
+**v3.1 (October 2025): 10-Phase Modular Pipeline - 6/10 Complete (60%)**
 - 🎯 **143 factors, 100% coverage** - All factors weighted and utilized in scoring
-- 🏗️ **6-phase modular pipeline** - Fetch → Calculate → Normalize → Score → Persist → Post-ops
-- � **6 factor groups** - Technical (35), Fundamental (38), News/Macro (17), Social (13), Risk (18), Institutional (22)
+- 🏗️ **10-phase architecture** - Fetch → Calculate → Normalize → Score → Persist → Backtest → ML → AI → Reports → Polish
+- 📊 **6 phases complete** - Phases 1-6 production ready (Fetch through Backtest)
+- 🔬 **4 phases planned** - ML, AI, Reports, Polish (Q4 2025 - Q1 2026)
+- 📈 **Performance tracking** - 7 return intervals (1d-90d) with SPY benchmark
 - 🛡️ **4-layer validation** - Input validation, calculation error handling, normalization checks, score validation
 - ⚙️ **Robust z-score normalization** - MAD-based with extreme value clipping and zero-variance detection
 - ✅ **32/32 tickers validated** - 89.7% avg coverage, -0.32 to +0.71 score range
 
 **Key Improvements from v3.0:**
 - ✅ **100% factor coverage** (was 42.7% - only 61/143 factors weighted)
-- ✅ **Modular phase architecture** (was monolithic SignalScorer)
+- ✅ **10-phase modular architecture** (was monolithic SignalScorer, now 6 complete + 4 planned)
+- ✅ **Performance tracking** (Phase 6: 19 backtest columns, 7 return intervals, SPY benchmark)
 - ✅ **Production error handling** (graceful degradation, per-factor try-catch)
 - ✅ **Comprehensive validation** (input, calculation, normalization, scoring)
 - ✅ **Extreme value handling** (z-score clipping, zero-variance detection)
@@ -38,104 +41,140 @@ Analyzes stocks through **143 factors** across 6 domains:
 
 ## 🏗️ **v3.1 Pipeline Architecture**
 
-### **6-Phase Modular Design**
+### **10-Phase Modular Design**
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        V3.1 PIPELINE FLOW                            │
+│                     VP INVESTMENTS - 10-PHASE PIPELINE               │
 └─────────────────────────────────────────────────────────────────────┘
 
-PHASE 1: FETCH                    PHASE 2: CALCULATE
-┌──────────────────────┐          ┌──────────────────────┐
-│ Reddit Scraper       │          │ Factor Calculator    │
-│  → Mentions          │─────────▶│  → 143 factors       │
-│  → Sentiment (VADER) │          │  → 6 groups          │
-│  → Post counts       │          │  → 60% avg coverage  │
-└──────────────────────┘          └──────────────────────┘
-                                             │
-┌──────────────────────┐                     │
-│ News Integration     │                     │
-│  → Recent articles   │                     │
-│  → Sentiment         │                     │
-│  → Event flags       │                     │
-└──────────────────────┘                     │
-                                             ▼
-┌──────────────────────┐          PHASE 3: NORMALIZE
-│ YFinance Data (40)   │          ┌──────────────────────┐
-│  → Price history     │          │ Z-Score Transform    │
-│  → Fundamentals      │─────────▶│  → Robust MAD-based  │
-│  → Analyst data      │          │  → Extreme clipping  │
-│  → Insider trades    │          │  → Zero variance OK  │
-│  → Institutional     │          │  → Cross-sectional   │
-└──────────────────────┘          └──────────────────────┘
-                                             │
-                                             ▼
-                                  PHASE 4: SCORE & ASSEMBLE
-                                  ┌──────────────────────┐
-                                  │ Weighted Scoring     │
-                                  │  → Group weights     │
-                                  │  → Factor weights    │
-                                  │  → Overall score     │
-                                  │  → Coverage metrics  │
-                                  └──────────────────────┘
-                                             │
-                                             ▼
-                                  PHASE 5: PERSIST
-                                  ┌──────────────────────┐
-                                  │ Database Storage     │
-                                  │  → Supabase          │
-                                  │  → 3-table schema    │
-                                  │  → Upsert logic      │
-                                  └──────────────────────┘
-                                             │
-                                             ▼
-                                  PHASE 6: POST-OPS
-                                  ┌──────────────────────┐
-                                  │ Enrichment           │
-                                  │  → Backtest returns  │
-                                  │  → AI narratives     │
-                                  │  → Metadata          │
-                                  └──────────────────────┘
+PHASE 1: FETCH              PHASE 2: CALCULATE         PHASE 3: NORMALIZE
+┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│ Data Sources     │──────▶│ 143 Factors      │──────▶│ Z-Score          │
+│ • YFinance (40)  │       │ • Technical (35) │       │ • MAD-based      │
+│ • Reddit (5)     │       │ • Fundamental(38)│       │ • Winsorization  │
+│ • News API       │       │ • News/Macro(17) │       │ • Clipping       │
+│                  │       │ • Social (13)    │       │                  │
+│ ✅ COMPLETE      │       │ • Risk (18)      │       │ ✅ COMPLETE      │
+└──────────────────┘       │ • Instit. (22)   │       └──────────────────┘
+                           │                  │
+                           │ ✅ COMPLETE      │
+                           └──────────────────┘
+                                    │
+                                    ▼
+                         PHASE 4: SCORE & ASSEMBLE
+                         ┌──────────────────────┐
+                         │ Weighted Scoring     │
+                         │ • Group weights      │
+                         │ • Factor weights     │
+                         │ • Overall score      │
+                         │ • Coverage metrics   │
+                         │                      │
+                         │ ✅ COMPLETE          │
+                         └──────────────────────┘
+                                    │
+                                    ▼
+                            PHASE 5: PERSIST
+                         ┌──────────────────────┐
+                         │ Database Storage     │
+                         │ • Signals table      │
+                         │ • Signal metrics     │
+                         │ • Upsert logic       │
+                         │                      │
+                         │ ✅ COMPLETE          │
+                         └──────────────────────┘
+                                    │
+                                    ▼
+                           PHASE 6: BACKTEST
+                         ┌──────────────────────┐
+                         │ Performance Tracking │
+                         │ • Baseline prices    │
+                         │ • Return intervals   │
+                         │ • SPY comparison     │
+                         │                      │
+                         │ ✅ COMPLETE          │
+                         └──────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+  PHASE 7: ML              PHASE 8: AI               PHASE 9: REPORTS
+┌──────────────┐         ┌──────────────┐         ┌──────────────────┐
+│ Machine      │         │ AI           │         │ Reporting &      │
+│ Learning     │         │ Enhancement  │         │ Alerts           │
+│              │         │              │         │                  │
+│ 📋 PLANNED   │         │ 📋 PLANNED   │         │ 📋 PLANNED       │
+└──────────────┘         └──────────────┘         └──────────────────┘
+        │                           │                           │
+        └───────────────────────────┼───────────────────────────┘
+                                    ▼
+                           PHASE 10: POLISH
+                         ┌──────────────────────┐
+                         │ Production Ready     │
+                         │ • Monitoring         │
+                         │ • Documentation      │
+                         │ • Deployment         │
+                         │                      │
+                         │ 📋 PLANNED           │
+                         └──────────────────────┘
 ```
 
 ### **Phase Details**
 
-**Phase 1: Fetch** (`backend/phases/phase1_fetch.py`)
+**Phase 1: Fetch** (`backend/phases/phase1_fetch.py`) ✅ Complete
 - Sources: Reddit (5 subreddits), News API, YFinance (40 endpoints)
 - Validation: Critical field checks, minimum price history (5 rows)
 - Caching: 24-hour TTL in `public.data_cache`
 - Output: `RawYFinanceData` + Reddit/News data
 - Time: ~9s per ticker (optimized with intelligent caching)
 
-**Phase 2: Calculate** (`backend/phases/phase2_calculate.py`)
+**Phase 2: Calculate** (`backend/phases/phase2_calculate.py`) ✅ Complete
 - Calculates all 143 factors from raw data
 - Error Handling: `@safe_calculation` decorator per factor
 - Graceful Degradation: Missing factors return None, don't crash pipeline
 - Output: `GroupFactors` (6 groups × factors per group)
 - Coverage: ~60% avg (90/143 factors populated per ticker)
 
-**Phase 3: Normalize** (`backend/phases/phase3_normalize.py`)
+**Phase 3: Normalize** (`backend/phases/phase3_normalize.py`) ✅ Complete
 - Method: Robust z-scores using MAD (Median Absolute Deviation)
 - Extreme Handling: Clip z-scores >10σ to ±5σ
 - Edge Cases: Zero-variance → 0.0, insufficient tickers → 0.0
 - Winsorization: 1% outlier trimming
 - Output: Normalized z-scores for cross-sectional comparison
 
-**Phase 4: Score & Assemble** (`backend/phases/phase4_score_assemble.py`)
+**Phase 4: Score & Assemble** (`backend/phases/phase4_score_assemble.py`) ✅ Complete
 - Weighted Scoring: Group weights × Factor weights
 - Validation: NaN/Inf detection, extreme score warnings, coverage checks
 - Output: Overall score + 6 group scores + coverage metrics
 - Formula: `overall_score = Σ(group_weight × Σ(factor_weight × z_score))`
 
-**Phase 5: Persist** (`backend/phases/phase5_persist.py`)
+**Phase 5: Persist** (`backend/phases/phase5_persist.py`) ✅ Complete
 - Database: Supabase (PostgreSQL)
-- Tables: `ticker_data`, `runs`, `run_tickers`
+- Tables: `signals`, `signal_metrics`, `signal_performance`
 - Upsert Logic: Updates if exists, inserts if new
 
-**Phase 6: Post-Ops** (`backend/phases/phase6_post_ops.py`)
-- Backtesting: 3d, 7d, 10d, 30d returns
-- AI Narratives: GPT-4 generated analysis
-- Metadata: Run statistics, execution times
+**Phase 6: Backtest** (`backend/phases/phase6_backtest.py`) ✅ Complete
+- Performance Tracking: 1d, 3d, 7d, 10d, 14d, 30d, 90d returns
+- Baseline Prices: Next trading day's open (realistic entry point)
+- SPY Comparison: Calculate alpha vs benchmark
+- Status: pending → baseline_set → in_progress → completed
+- Migration: 003 applied (19 performance columns added)
+
+**Phase 7: ML** 📋 Planned (Q4 2025)
+- Pattern detection, predictive models, feature importance analysis
+- Technologies: scikit-learn, XGBoost, TensorFlow
+
+**Phase 8: AI** 📋 Planned (Q4 2025)
+- GPT-4 narratives, advanced sentiment, trade insights
+- Technologies: OpenAI GPT-4, LangChain
+
+**Phase 9: Reports** 📋 Planned (Q1 2026)
+- Daily summaries, email/SMS alerts, performance reports
+- Technologies: SendGrid, Twilio, Chart.js
+
+**Phase 10: Polish** 📋 Planned (Q1 2026)
+- Production deployment, monitoring, documentation, CI/CD
+- Technologies: Docker, GitHub Actions, Sentry
 
 ## 🚀 **Quick Start**
 

@@ -1,83 +1,243 @@
 # VP Investments - Operational Guidelines
-*Development Framework for Consolidated Backend Structure*
+*Development Framework for 10-Phase Modular Architecture*
 
-**Last Updated:** 2025-10-10  
-**Status:** ✅ Phase 2-10 Complete - Production Ready with Full Enhancement Stack
+**Last Updated:** 2025-10-25  
+**Status:** ✅ Phases 1-6 Complete (60%) - Production Ready with Enhancement Pipeline
 
 ---
 
-## 🚀 Enhancement Stack Summary (Phases 2-10)
+## 🚀 10-Phase Architecture Overview
 
-### ✅ Implemented Phases
+### **Current Status: 6/10 Phases Complete (60%)**
 
-**Phase 2: Z-Score Normalization**
-- Statistical normalization for consistent signal comparison
-- `ZScoreCalculator` class with 60-day lookback
-- Database: `z_score_momentum`, `z_score_volume`, `z_score_volatility`, `z_score_valuation`
+```
+Phase 1: Fetch        ✅ COMPLETE - Data sources (YFinance, Reddit, News)
+Phase 2: Calculate    ✅ COMPLETE - 143 factors across 6 groups  
+Phase 3: Normalize    ✅ COMPLETE - MAD-based z-scores
+Phase 4: Score        ✅ COMPLETE - Weighted multi-factor scoring
+Phase 5: Persist      ✅ COMPLETE - Database storage (signals, metrics, performance)
+Phase 6: Backtest     ✅ COMPLETE - Performance tracking (19 columns, 7 intervals)
+Phase 7: ML           📋 PLANNED  - Machine learning (Q4 2025)
+Phase 8: AI           📋 PLANNED  - AI enhancement (Q4 2025)
+Phase 9: Reports      📋 PLANNED  - Reporting & alerts (Q1 2026)
+Phase 10: Polish      📋 PLANNED  - Production ready (Q1 2026)
+```
 
-**Phase 3: Trade Type Classification**
-- 7 trade types: Momentum, Value, Event-Driven, Speculative Growth, Contrarian, Multi-Factor, Balanced
-- `TradeTypeClassifier` with multi-factor analysis
-- Database: `trade_type`, `trade_type_confidence`
+**See PHASE_SUMMARY.md for complete architecture documentation.**
 
-**Phase 4: Risk Scoring System**
-- 7 risk factors weighted scoring (0-100 scale)
-- 5 risk levels: Very Low, Low, Moderate, Elevated, High
-- `RiskScoreCalculator` class
-- Database: `risk_score`, `risk_level`, + 7 individual risk factor columns
+---
 
-**Phase 5: Enhanced Data Collection**
-- 20+ new metrics: ATR, implied volatility, options data, institutional ownership
-- Advanced fundamentals: profit margin, ROE, debt-to-equity
-- Database: `atr`, `atr_percent`, `implied_volatility`, `put_call_ratio`, + 16 more columns
+## ✅ Completed Phases (1-6)
 
-**Phase 6: Score Adjustments**
-- Trade-type-specific multipliers
-- Risk-adjusted position sizing (1-10%)
-- Dynamic threshold adjustments
-- Database: `adjusted_signal_score`, `position_size_recommendation`, `entry_threshold`
+### **Phase 1: Data Fetch** ✅ COMPLETE
+**Purpose:** Gather raw market data from multiple sources  
+**Location:** `backend/phases/phase1_fetch.py`
 
-**Phase 7: AI-Enhanced Risk Narratives**
-- OpenAI GPT-4o-mini integration (4.96x more detailed)
+**Features:**
+- YFinance integration (price, volume, options, fundamentals)
+- Reddit sentiment (wallstreetbets, stocks, investing)
+- News API integration (company-specific news)
+- Earnings calendar data
+- Historical price data with validation
+
+**Database Impact:**
+- Raw data cached for 15 minutes
+- No direct database writes (data passed to Phase 2)
+
+---
+
+### **Phase 2: Factor Calculation** ✅ COMPLETE
+**Purpose:** Calculate 143 quantitative factors across 6 domains  
+**Location:** `backend/phases/phase2_calculate.py`
+
+**Factor Groups (143 total):**
+1. **Technical (35 factors):** RSI, MACD, Bollinger Bands, momentum, volume analysis
+2. **Fundamental (38 factors):** P/E, EPS growth, margins, ROE, debt ratios, liquidity
+3. **News/Macro (17 factors):** Sentiment scores, article counts, earnings catalysts
+4. **Social (13 factors):** Reddit mentions, sentiment, velocity, contrarian signals
+5. **Risk (18 factors):** Volatility, beta, drawdown, Sharpe ratio, ATR, bid-ask spread
+6. **Institutional (22 factors):** Analyst ratings, price targets, insider trading, ownership
+
+**Features:**
+- Per-factor error handling (graceful degradation)
+- Zero-variance detection
+- Missing data handling
+- Input validation
+
+**Database Impact:**
+- Factors stored in `signal_metrics` table
+- 143 columns for raw factor values
+- Calculation metadata (timestamp, coverage %)
+
+---
+
+### **Phase 3: Normalization** ✅ COMPLETE
+**Purpose:** Normalize factors to z-scores for consistent comparison  
+**Location:** `backend/phases/phase3_normalize.py`
+
+**Features:**
+- MAD-based z-score calculation (robust to outliers)
+- Extreme value clipping (±3 standard deviations)
+- Zero-variance handling (avoid division by zero)
+- Group-level normalization (within factor groups)
+
+**Formula:**
+```python
+z_score = (value - median) / (MAD * 1.4826)
+z_score_clipped = clip(z_score, -3, +3)
+```
+
+**Database Impact:**
+- Z-scores stored in `signal_metrics` table
+- 143 normalized factor columns
+- Normalization metadata (median, MAD values)
+
+---
+
+### **Phase 4: Scoring & Assembly** ✅ COMPLETE
+**Purpose:** Calculate weighted scores and assemble final signal  
+**Location:** `backend/phases/phase4_score.py`
+
+**Scoring Components (100% total):**
+1. **Technical Score (25%)** - Price momentum, volume, volatility
+2. **Fundamental Score (25%)** - Valuation, profitability, growth
+3. **News/Macro Score (20%)** - Sentiment, catalysts, market conditions
+4. **Social Score (15%)** - Reddit sentiment, mentions, velocity
+5. **Risk Score (10%)** - Volatility, beta, drawdown
+6. **Institutional Score (5%)** - Analyst ratings, insider trading
+
+**Features:**
+- 100% factor coverage (all 143 factors weighted)
+- Group-level aggregation (median z-score per group)
+- Weighted combination into final score
+- Score validation (-3 to +3 range)
+
+**Database Impact:**
+- Component scores stored in `signals` table
+- Final `signal_score` column
+- Score breakdown for transparency
+
+---
+
+### **Phase 5: Database Persistence** ✅ COMPLETE
+**Purpose:** Store signals, metrics, and performance data  
+**Location:** `backend/phases/phase5_persist.py`
+
+**Database Tables:**
+1. **signals** - Main signal data (ticker, score, components, metadata)
+2. **signal_metrics** - Detailed factor values (143 raw + 143 normalized)
+3. **signal_performance** - Tracking table for backtesting
+
+**Features:**
+- Transaction-based writes (rollback on failure)
+- Duplicate detection (same ticker + timeframe)
+- Constraint validation (score ranges, data types)
+- Error logging and recovery
+
+**Database Columns:**
+- `signals`: 25+ columns (ticker, score, components, timestamps)
+- `signal_metrics`: 290+ columns (143 raw + 143 normalized factors)
+- `signal_performance`: 50+ columns (returns, benchmarks, metadata)
+
+---
+
+### **Phase 6: Backtest Performance Tracking** ✅ COMPLETE
+**Purpose:** Calculate historical performance for signal validation  
+**Location:** `backend/phases/phase6_backtest.py`
+
+**Performance Metrics:**
+- **Baseline:** Next trading day's open price (signal creation + 1 day)
+- **Returns:** 7 intervals (1d, 3d, 7d, 10d, 14d, 30d, 90d)
+- **SPY Benchmark:** Same 7 intervals for comparison
+- **Age-Based Calculation:** `eligible = signal_age >= interval + 1`
+
+**Features:**
+- Avoids lookahead bias (baseline = next day open)
+- Incremental updates (calculates only eligible intervals)
+- Error handling (delisted tickers, missing data)
+- SPY benchmark tracking (relative performance)
+
+**Database Impact (19 new columns):**
+- `backtest_baseline_price`, `backtest_baseline_date`
+- `return_1d`, `return_3d`, `return_7d`, `return_10d`, `return_14d`, `return_30d`, `return_90d`
+- `spy_return_1d`, `spy_return_3d`, `spy_return_7d`, `spy_return_10d`, `spy_return_14d`, `spy_return_30d`, `spy_return_90d`
+- `backtest_status`, `backtest_last_update`, `backtest_error`
+
+**Migration:** `migrations/migration_003_add_backtest_columns.py`
+
+---
+
+## 📋 Planned Phases (7-10)
+
+### **Phase 7: Machine Learning** 📋 PLANNED (Q4 2025)
+**Purpose:** ML-based signal enhancement and prediction
+
+**Planned Features:**
+- Feature engineering from 143 factors
+- Gradient boosting models (XGBoost, LightGBM)
+- Prediction: Signal success probability
+- Model versioning and retraining pipeline
+- Validation: Out-of-sample backtesting
+
+**Database Impact:**
+- `ml_predictions` table (probabilities, confidence)
+- `ml_models` table (version tracking, metadata)
+- New columns in `signals`: `ml_score`, `ml_confidence`
+
+---
+
+### **Phase 8: AI Enhancement** 📋 PLANNED (Q4 2025)
+**Purpose:** AI-generated narratives and insights
+
+**Planned Features:**
+- OpenAI GPT-4 integration
+- Risk narratives (trade rationale, key factors)
+- Natural language explanations
 - Template-based fallback system
-- `AIIntegrator` class
-- Database: `risk_narrative` TEXT
+- Cost optimization (caching, batching)
 
-**Phase 8: Backtesting Integration**
-- Dynamic parameters by trade type and risk level
-- ATR-based stops and targets
-- Risk-adaptive position sizing
-- `BacktestIntegrator` class
-- Database: 6 backtest columns (thresholds, hold periods, prices)
-
-**Phase 9: Testing & Validation**
-- 3 comprehensive test suites
-- 24/24 tests passing (100% coverage)
-- Mock classes for isolated testing
-- Integration tests for full pipeline
-
-**Phase 10: Documentation**
-- Complete implementation guide (PHASE10_DOCUMENTATION_COMPLETE.md)
-- Usage examples and best practices
-- Development guidelines for future enhancements
-
-### 📊 System Metrics
-
-**Total New Database Columns:** 38  
-**Test Coverage:** 100% (24/24 tests passing)  
-**AI Narrative Quality:** 4.96x improvement over templates  
-**Position Sizing Range:** 1-10% (risk-adaptive)  
-**Risk Scoring Factors:** 7 comprehensive metrics  
-**Trade Types Supported:** 7 distinct strategies  
-
-**See PHASE10_DOCUMENTATION_COMPLETE.md for full details.**
+**Database Impact:**
+- New columns in `signals`: `risk_narrative` (TEXT), `ai_insights` (JSONB)
+- `ai_generations` table (tracking, costs, quality metrics)
 
 ---
 
-## 🎯 CRITICAL: Phase 7 Scoring System (MANDATORY)
+### **Phase 9: Reporting & Alerts** � PLANNED (Q1 2026)
+**Purpose:** User-facing reports and notifications
+
+**Planned Features:**
+- Daily signal summaries (email, webhook)
+- Performance dashboards (Streamlit)
+- Custom alert rules (score thresholds, specific tickers)
+- Historical performance reports
+- PDF export for signals
+
+**Database Impact:**
+- `user_preferences` table (alert settings, watchlists)
+- `report_history` table (tracking sent reports)
+
+---
+
+### **Phase 10: Production Polish** 📋 PLANNED (Q1 2026)
+**Purpose:** Production-ready deployment and monitoring
+
+**Planned Features:**
+- CI/CD pipeline (GitHub Actions)
+- Monitoring and alerting (Sentry, Datadog)
+- Rate limiting and caching optimizations
+- API versioning
+- Comprehensive logging and observability
+
+**Database Impact:**
+- `system_health` table (uptime, performance metrics)
+- `api_usage` table (rate limiting, quotas)
+
+---
+
+## 🎯 CRITICAL: Phase 4 Scoring System (MANDATORY)
 
 ### Signal Scoring Architecture
-**ALL new features and enhancements MUST integrate into the Phase 7 six-component scoring system.**
+**ALL new features and enhancements MUST integrate into the Phase 4 six-component scoring system.**
 
 #### The 6 Scoring Components (100% Total):
 

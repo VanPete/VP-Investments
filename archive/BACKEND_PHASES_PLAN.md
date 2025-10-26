@@ -69,14 +69,17 @@ signals_institutional_smart_money -- Institutional metrics breakdown
 
 ### Why This Order?
 
-**Key Principle:** Build foundation → Add intelligence → Optimize → Report
+**Key Principle:** Build foundation → Validate at scale → Optimize → Add intelligence → Report
 
-1. **Database persistence first** (Phase 5) - Establishes data foundation
-2. **Backtesting next** (Phase 6) - Validates signal quality before production use
-3. **AI strategy generation** (Phase 7) - Leverage validated signals for intelligent strategies
-4. **Report generation** (Phase 8) - Communicate insights from real data
-5. **Cleanup & validation** (Phase 9) - Optimize after everything works
-6. **Production readiness** (Phase 10) - Final polish for deployment
+1. **Database persistence first** (Phase 5) - Establishes data foundation ✅ COMPLETE
+2. **Volume testing** (Phase 5.5) - Identify bottlenecks at scale ✅ COMPLETE
+3. **Production optimization** (Phase 5.6) - Optimize identified bottlenecks (Phase 1 + Phase 5)
+4. **Backtesting next** (Phase 6) - Validates signal quality (benefits from optimization)
+5. **ML weight optimization** (Phase 6.6) - Data-driven component weighting
+6. **AI strategy generation** (Phase 7) - Leverage validated signals for intelligent strategies
+7. **Report generation** (Phase 8) - Communicate insights from real data
+8. **Cleanup & validation** (Phase 9) - Final code quality improvements
+9. **Production readiness** (Phase 10) - Deployment and monitoring
 
 ---
 

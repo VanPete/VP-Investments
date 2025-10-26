@@ -17,9 +17,32 @@ Schema Structure (8 tables):
 
 import json
 import logging
+import math
 from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """
+    Recursively sanitize Python objects for PostgreSQL JSONB.
+    Converts NaN, Infinity to None (NULL in JSON).
+    
+    Args:
+        obj: Any Python object (dict, list, float, etc.)
+        
+    Returns:
+        Sanitized object safe for JSON serialization
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    return obj
 
 
 # ==============================================================================
@@ -561,43 +584,17 @@ class Phase5Persist:
                 risk_factors = self.extract_risk_factors(ticker_data)
                 institutional_factors = self.extract_institutional_factors(ticker_data)
                 
-                # Calculate coverage
-                technical_coverage = self.calculate_coverage(technical_factors)
-                fundamental_coverage = self.calculate_coverage(fundamental_factors)
-                news_macro_coverage = self.calculate_coverage(news_macro_factors)
-                social_coverage = self.calculate_coverage(social_factors)
-                risk_coverage = self.calculate_coverage(risk_factors)
-                institutional_coverage = self.calculate_coverage(institutional_factors)
-                
-                # Calculate total coverage (average of group coverages)
-                all_coverages = [
-                    technical_coverage,
-                    fundamental_coverage,
-                    news_macro_coverage,
-                    social_coverage,
-                    risk_coverage,
-                    institutional_coverage
-                ]
-                total_coverage = sum(all_coverages) / len(all_coverages)
-                
                 # Build signal record
                 signal_record = {
                     'ticker': ticker,
                     'rank': ticker_data.get('rank'),
                     'overall_score': ticker_data.get('overall_score'),
-                    'total_coverage': total_coverage,
                     'technical_score': ticker_data.get('technical_score'),
-                    'technical_coverage': technical_coverage,
                     'fundamental_score': ticker_data.get('fundamental_score'),
-                    'fundamental_coverage': fundamental_coverage,
                     'news_macro_score': ticker_data.get('news_macro_score'),
-                    'news_macro_coverage': news_macro_coverage,
                     'social_alternative_score': ticker_data.get('social_score'),
-                    'social_alternative_coverage': social_coverage,
                     'risk_stability_score': ticker_data.get('risk_score'),
-                    'risk_stability_coverage': risk_coverage,
-                    'institutional_smart_money_score': ticker_data.get('institutional_score'),
-                    'institutional_smart_money_coverage': institutional_coverage
+                    'institutional_smart_money_score': ticker_data.get('institutional_score')
                 }
                 
                 signals_to_insert.append(signal_record)
@@ -843,17 +840,11 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             - rank: int
             - overall_score: float
             - technical_score: float
-            - technical_coverage: float
             - fundamental_score: float
-            - fundamental_coverage: float
             - news_macro_score: float
-            - news_macro_coverage: float
             - social_alternative_score: float
-            - social_alternative_coverage: float
             - risk_stability_score: float
-            - risk_stability_coverage: float
             - institutional_smart_money_score: float
-            - institutional_smart_money_coverage: float
             
     Returns:
         List of signal IDs created
@@ -867,7 +858,7 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
     param_count = 1
     
     for signal in signals:
-        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 17)])
+        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 10)])
         query_parts.append(f"({placeholders})")
         
         params.extend([
@@ -875,31 +866,24 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             signal['ticker'],
             signal.get('rank'),
             signal.get('overall_score'),
-            signal.get('total_coverage', 0),
             signal.get('technical_score'),
-            signal.get('technical_coverage', 0),
             signal.get('fundamental_score'),
-            signal.get('fundamental_coverage', 0),
             signal.get('news_macro_score'),
-            signal.get('news_macro_coverage', 0),
             signal.get('social_alternative_score'),
-            signal.get('social_alternative_coverage', 0),
             signal.get('risk_stability_score'),
-            signal.get('risk_stability_coverage', 0),
-            signal.get('institutional_smart_money_score'),
-            signal.get('institutional_smart_money_coverage', 0)
+            signal.get('institutional_smart_money_score')
         ])
-        param_count += 17
+        param_count += 10
     
     query = f"""
     INSERT INTO signals (
-        run_id, ticker, rank, overall_score, total_coverage,
-        technical_score, technical_coverage,
-        fundamental_score, fundamental_coverage,
-        news_macro_score, news_macro_coverage,
-        social_alternative_score, social_alternative_coverage,
-        risk_stability_score, risk_stability_coverage,
-        institutional_smart_money_score, institutional_smart_money_coverage
+        run_id, ticker, rank, overall_score,
+        technical_score,
+        fundamental_score,
+        news_macro_score,
+        social_alternative_score,
+        risk_stability_score,
+        institutional_smart_money_score
     ) VALUES {', '.join(query_parts)}
     RETURNING id
     """
@@ -925,12 +909,12 @@ async def get_signals_by_run_id(self, run_id: str, limit: Optional[int] = None) 
     query = """
     SELECT 
         id, run_id, ticker, rank, overall_score,
-        technical_score, technical_coverage,
-        fundamental_score, fundamental_coverage,
-        news_macro_score, news_macro_coverage,
-        social_alternative_score, social_alternative_coverage,
-        risk_stability_score, risk_stability_coverage,
-        institutional_smart_money_score, institutional_smart_money_coverage,
+        technical_score,
+        fundamental_score,
+        news_macro_score,
+        social_alternative_score,
+        risk_stability_score,
+        institutional_smart_money_score,
         created_at
     FROM signals
     WHERE run_id = $1
@@ -991,7 +975,8 @@ async def insert_technical_factors(self, signal_id: str, factors: Dict[str, Dict
     VALUES ($1, $2)
     """
     
-    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    sanitized = sanitize_for_json(factors)
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(sanitized)])
     return affected > 0
 
 
@@ -1002,7 +987,8 @@ async def insert_fundamental_factors(self, signal_id: str, factors: Dict[str, Di
     VALUES ($1, $2)
     """
     
-    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    sanitized = sanitize_for_json(factors)
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(sanitized)])
     return affected > 0
 
 
@@ -1013,7 +999,8 @@ async def insert_news_macro_factors(self, signal_id: str, factors: Dict[str, Dic
     VALUES ($1, $2)
     """
     
-    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    sanitized = sanitize_for_json(factors)
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(sanitized)])
     return affected > 0
 
 
@@ -1024,7 +1011,8 @@ async def insert_social_factors(self, signal_id: str, factors: Dict[str, Dict[st
     VALUES ($1, $2)
     """
     
-    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    sanitized = sanitize_for_json(factors)
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(sanitized)])
     return affected > 0
 
 
@@ -1035,7 +1023,8 @@ async def insert_risk_factors(self, signal_id: str, factors: Dict[str, Dict[str,
     VALUES ($1, $2)
     """
     
-    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    sanitized = sanitize_for_json(factors)
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(sanitized)])
     return affected > 0
 
 
@@ -1046,7 +1035,8 @@ async def insert_institutional_factors(self, signal_id: str, factors: Dict[str, 
     VALUES ($1, $2)
     """
     
-    affected = await self.execute_non_query(query, [signal_id, json.dumps(factors)])
+    sanitized = sanitize_for_json(factors)
+    affected = await self.execute_non_query(query, [signal_id, json.dumps(sanitized)])
     return affected > 0
 
 
@@ -1209,3 +1199,435 @@ def add_phase5_methods_to_supabase_interface():
 
 # Auto-add methods when module is imported
 add_phase5_methods_to_supabase_interface()
+
+
+# ============================================================================
+# OPTIMIZED VERSION (Phase 5.6 - Production Optimization)
+# ============================================================================
+
+class Phase5PersistOptimized(Phase5Persist):
+    """
+    Optimized Phase 5 Persistence with Bulk INSERT Operations (Phase 5.6).
+    
+    Optimizations implemented:
+    1. Bulk INSERT for all 6 factor tables (single transaction)
+    2. Parallel factor table insertion using asyncio.gather()
+    3. Reduced database round-trips from 6N to 6 (where N = number of signals)
+    4. Transaction batching for atomicity
+    
+    Performance Target:
+    - Baseline: 157s for 500 tickers
+    - Optimized: ~47s for 500 tickers (60-70% improvement)
+    
+    Inherits from Phase5Persist and overrides factor insertion methods
+    to use bulk INSERT operations instead of one-by-one insertions.
+    """
+    
+    def __init__(self, db=None):
+        """
+        Initialize optimized Phase5Persist.
+        
+        Args:
+            db: SupabaseInterface instance
+        """
+        super().__init__(db)
+        self.logger.info("[OPTIMIZED] Phase5PersistOptimized initialized with bulk INSERT capability")
+    
+    # --------------------------------------------------------------------------
+    # BULK INSERT METHODS (Optimized)
+    # --------------------------------------------------------------------------
+    
+    async def insert_technical_factors_bulk(
+        self, 
+        signal_ids: List[str], 
+        factors_list: List[Dict[str, Dict[str, float]]]
+    ) -> int:
+        """
+        Bulk insert technical factors for multiple signals.
+        
+        Args:
+            signal_ids: List of signal UUIDs
+            factors_list: List of JSONB factor structures (one per signal)
+            
+        Returns:
+            Number of rows inserted
+        """
+        if not signal_ids or not factors_list:
+            return 0
+        
+        # Build bulk INSERT query
+        values_parts = []
+        params = []
+        param_idx = 1
+        
+        for signal_id, factors in zip(signal_ids, factors_list):
+            sanitized = sanitize_for_json(factors)
+            values_parts.append(f"(${param_idx}, ${param_idx + 1})")
+            params.extend([signal_id, json.dumps(sanitized)])
+            param_idx += 2
+        
+        query = f"""
+        INSERT INTO signals_technical (signal_id, factors)
+        VALUES {', '.join(values_parts)}
+        """
+        
+        affected = await self.db.execute_non_query(query, params)
+        self.logger.info(f"✅ [BULK] Inserted {affected} technical factor records")
+        return affected
+    
+    async def insert_fundamental_factors_bulk(
+        self, 
+        signal_ids: List[str], 
+        factors_list: List[Dict[str, Dict[str, float]]]
+    ) -> int:
+        """Bulk insert fundamental factors for multiple signals."""
+        if not signal_ids or not factors_list:
+            return 0
+        
+        values_parts = []
+        params = []
+        param_idx = 1
+        
+        for signal_id, factors in zip(signal_ids, factors_list):
+            sanitized = sanitize_for_json(factors)
+            values_parts.append(f"(${param_idx}, ${param_idx + 1})")
+            params.extend([signal_id, json.dumps(sanitized)])
+            param_idx += 2
+        
+        query = f"""
+        INSERT INTO signals_fundamental (signal_id, factors)
+        VALUES {', '.join(values_parts)}
+        """
+        
+        affected = await self.db.execute_non_query(query, params)
+        self.logger.info(f"✅ [BULK] Inserted {affected} fundamental factor records")
+        return affected
+    
+    async def insert_news_macro_factors_bulk(
+        self, 
+        signal_ids: List[str], 
+        factors_list: List[Dict[str, Dict[str, float]]]
+    ) -> int:
+        """Bulk insert news/macro factors for multiple signals."""
+        if not signal_ids or not factors_list:
+            return 0
+        
+        values_parts = []
+        params = []
+        param_idx = 1
+        
+        for signal_id, factors in zip(signal_ids, factors_list):
+            sanitized = sanitize_for_json(factors)
+            values_parts.append(f"(${param_idx}, ${param_idx + 1})")
+            params.extend([signal_id, json.dumps(sanitized)])
+            param_idx += 2
+        
+        query = f"""
+        INSERT INTO signals_news_macro (signal_id, factors)
+        VALUES {', '.join(values_parts)}
+        """
+        
+        affected = await self.db.execute_non_query(query, params)
+        self.logger.info(f"✅ [BULK] Inserted {affected} news/macro factor records")
+        return affected
+    
+    async def insert_social_factors_bulk(
+        self, 
+        signal_ids: List[str], 
+        factors_list: List[Dict[str, Dict[str, float]]]
+    ) -> int:
+        """Bulk insert social/alternative factors for multiple signals."""
+        if not signal_ids or not factors_list:
+            return 0
+        
+        values_parts = []
+        params = []
+        param_idx = 1
+        
+        for signal_id, factors in zip(signal_ids, factors_list):
+            sanitized = sanitize_for_json(factors)
+            values_parts.append(f"(${param_idx}, ${param_idx + 1})")
+            params.extend([signal_id, json.dumps(sanitized)])
+            param_idx += 2
+        
+        query = f"""
+        INSERT INTO signals_social_alternative (signal_id, factors)
+        VALUES {', '.join(values_parts)}
+        """
+        
+        affected = await self.db.execute_non_query(query, params)
+        self.logger.info(f"✅ [BULK] Inserted {affected} social factor records")
+        return affected
+    
+    async def insert_risk_factors_bulk(
+        self, 
+        signal_ids: List[str], 
+        factors_list: List[Dict[str, Dict[str, float]]]
+    ) -> int:
+        """Bulk insert risk/stability factors for multiple signals."""
+        if not signal_ids or not factors_list:
+            return 0
+        
+        values_parts = []
+        params = []
+        param_idx = 1
+        
+        for signal_id, factors in zip(signal_ids, factors_list):
+            sanitized = sanitize_for_json(factors)
+            values_parts.append(f"(${param_idx}, ${param_idx + 1})")
+            params.extend([signal_id, json.dumps(sanitized)])
+            param_idx += 2
+        
+        query = f"""
+        INSERT INTO signals_risk_stability (signal_id, factors)
+        VALUES {', '.join(values_parts)}
+        """
+        
+        affected = await self.db.execute_non_query(query, params)
+        self.logger.info(f"✅ [BULK] Inserted {affected} risk factor records")
+        return affected
+    
+    async def insert_institutional_factors_bulk(
+        self, 
+        signal_ids: List[str], 
+        factors_list: List[Dict[str, Dict[str, float]]]
+    ) -> int:
+        """Bulk insert institutional/smart money factors for multiple signals."""
+        if not signal_ids or not factors_list:
+            return 0
+        
+        values_parts = []
+        params = []
+        param_idx = 1
+        
+        for signal_id, factors in zip(signal_ids, factors_list):
+            sanitized = sanitize_for_json(factors)
+            values_parts.append(f"(${param_idx}, ${param_idx + 1})")
+            params.extend([signal_id, json.dumps(sanitized)])
+            param_idx += 2
+        
+        query = f"""
+        INSERT INTO signals_institutional_smart_money (signal_id, factors)
+        VALUES {', '.join(values_parts)}
+        """
+        
+        affected = await self.db.execute_non_query(query, params)
+        self.logger.info(f"✅ [BULK] Inserted {affected} institutional factor records")
+        return affected
+    
+    # --------------------------------------------------------------------------
+    # OVERRIDE persist_pipeline_run (Optimized)
+    # --------------------------------------------------------------------------
+    
+    async def persist_pipeline_run(
+        self,
+        phase4_results: List[Dict[str, Any]],
+        pipeline_config: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Persist complete pipeline run with optimized bulk INSERT operations.
+        
+        This method overrides the parent class implementation to use bulk INSERTs
+        instead of sequential single-row insertions.
+        
+        Args:
+            phase4_results: List of Phase 4 ticker results
+            pipeline_config: Optional pipeline configuration (unused in optimized version)
+            
+        Returns:
+            Signal run UUID
+        """
+        import time
+        import uuid
+        from datetime import datetime, timezone
+        start_time = time.time()
+        
+        try:
+            # Step 1: Generate run_id and create signal_run record
+            run_id = str(uuid.uuid4())
+            
+            # Create signal_run record in database
+            try:
+                await self.db.pool.execute(
+                    """
+                    INSERT INTO signal_runs (run_id, pipeline_version, total_tickers, created_at, status)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    run_id,
+                    "3.1-optimized",
+                    len(phase4_results),
+                    datetime.now(timezone.utc),
+                    "running"
+                )
+                self.logger.info(f"[OPTIMIZED] Created signal_run record: {run_id}")
+            except Exception as e:
+                self.logger.warning(f"Could not create signal_run (table may not exist): {e}")
+                # Continue anyway - run_id is still valid for signals table
+            
+            self.logger.info(f"[OPTIMIZED] Started bulk INSERT persistence (run_id: {run_id})")
+            
+            # Step 2-5: Extract factors and build signals (same as parent)
+            signals_to_insert = []
+            factor_details = {}
+            ticker_signal_map = []  # Track ticker-to-signal_id mapping
+            
+            for rank, ticker_data in enumerate(phase4_results, start=1):
+                ticker = ticker_data.get('ticker')
+                if not ticker:
+                    continue
+                
+                # Extract all factors (reuse parent class methods)
+                technical_factors = self.extract_technical_factors(ticker_data)
+                fundamental_factors = self.extract_fundamental_factors(ticker_data)
+                news_macro_factors = self.extract_news_macro_factors(ticker_data)
+                social_factors = self.extract_social_factors(ticker_data)
+                risk_factors = self.extract_risk_factors(ticker_data)
+                institutional_factors = self.extract_institutional_factors(ticker_data)
+                
+                # Calculate coverages
+                technical_coverage = self.calculate_coverage(technical_factors)
+                fundamental_coverage = self.calculate_coverage(fundamental_factors)
+                news_macro_coverage = self.calculate_coverage(news_macro_factors)
+                social_coverage = self.calculate_coverage(social_factors)
+                risk_coverage = self.calculate_coverage(risk_factors)
+                institutional_coverage = self.calculate_coverage(institutional_factors)
+                
+                # Calculate total coverage
+                total_coverage = (
+                    (technical_coverage + fundamental_coverage + news_macro_coverage +
+                     social_coverage + risk_coverage + institutional_coverage) / 6.0
+                )
+                
+                # Build signal record
+                signal_record = {
+                    'ticker': ticker,
+                    'rank': rank,
+                    'overall_score': ticker_data.get('overall_score'),
+                    'total_coverage': total_coverage,
+                    'technical_score': ticker_data.get('technical_score'),
+                    'technical_coverage': technical_coverage,
+                    'fundamental_score': ticker_data.get('fundamental_score'),
+                    'fundamental_coverage': fundamental_coverage,
+                    'news_macro_score': ticker_data.get('news_score'),
+                    'news_macro_coverage': news_macro_coverage,
+                    'social_alternative_score': ticker_data.get('social_score'),
+                    'social_alternative_coverage': social_coverage,
+                    'risk_stability_score': ticker_data.get('risk_score'),
+                    'risk_stability_coverage': risk_coverage,
+                    'institutional_smart_money_score': ticker_data.get('institutional_score'),
+                    'institutional_smart_money_coverage': institutional_coverage
+                }
+                
+                signals_to_insert.append(signal_record)
+                ticker_signal_map.append(ticker)
+                
+                # Store factor details
+                factor_details[ticker] = {
+                    'technical': technical_factors,
+                    'fundamental': fundamental_factors,
+                    'news_macro': news_macro_factors,
+                    'social': social_factors,
+                    'risk': risk_factors,
+                    'institutional': institutional_factors
+                }
+            
+            # Step 6: Insert signals batch (same as parent)
+            if signals_to_insert:
+                signal_ids = await self.db.insert_signals_batch(run_id, signals_to_insert)
+                self.logger.info(f"✅ [OPTIMIZED] Inserted {len(signal_ids)} signals")
+                
+                # Step 7: OPTIMIZED - Bulk insert all factors in parallel
+                # Prepare ordered factor lists
+                technical_list = []
+                fundamental_list = []
+                news_macro_list = []
+                social_list = []
+                risk_list = []
+                institutional_list = []
+                
+                for ticker in ticker_signal_map:
+                    factors = factor_details.get(ticker, {})
+                    technical_list.append(factors.get('technical', {}))
+                    fundamental_list.append(factors.get('fundamental', {}))
+                    news_macro_list.append(factors.get('news_macro', {}))
+                    social_list.append(factors.get('social', {}))
+                    risk_list.append(factors.get('risk', {}))
+                    institutional_list.append(factors.get('institutional', {}))
+                
+                # Execute parallel bulk INSERTs
+                self.logger.info(f"[OPTIMIZED] Inserting factors for {len(signal_ids)} signals (6 tables, parallel bulk INSERT)")
+                
+                results = await asyncio.gather(
+                    self.insert_technical_factors_bulk(signal_ids, technical_list),
+                    self.insert_fundamental_factors_bulk(signal_ids, fundamental_list),
+                    self.insert_news_macro_factors_bulk(signal_ids, news_macro_list),
+                    self.insert_social_factors_bulk(signal_ids, social_list),
+                    self.insert_risk_factors_bulk(signal_ids, risk_list),
+                    self.insert_institutional_factors_bulk(signal_ids, institutional_list),
+                    return_exceptions=True
+                )
+                
+                # Count successes
+                successful_tickers = len([r for r in results if not isinstance(r, Exception)])
+                failed_tickers = len([r for r in results if isinstance(r, Exception)])
+                
+                if failed_tickers > 0:
+                    self.logger.warning(f"⚠️ {failed_tickers} factor insertion failures")
+                
+                # Step 8: Update signal_run with completion
+                duration = time.time() - start_time
+                
+                await self.db.update_signal_run(run_id, {
+                    'status': 'completed' if failed_tickers == 0 else 'partial',
+                    'total_tickers': len(signals_to_insert),
+                    'successful_tickers': len(signal_ids),
+                    'failed_tickers': failed_tickers,
+                    'duration_seconds': duration
+                })
+                
+                self.logger.info(
+                    f"✅ [OPTIMIZED] Completed signal run {run_id}: "
+                    f"{len(signal_ids)} signals, {successful_tickers}/6 factor groups, "
+                    f"{duration:.2f}s (bulk INSERT)"
+                )
+            else:
+                # No signals to insert
+                await self.db.update_signal_run(run_id, {
+                    'status': 'failed',
+                    'error_message': 'No valid ticker data to persist'
+                })
+                self.logger.warning(f"❌ Signal run {run_id} failed: No valid ticker data")
+            
+            return run_id
+            
+        except Exception as e:
+            self.logger.error(f"Failed to persist pipeline run: {e}")
+            
+            # Try to update run status to failed
+            try:
+                if run_id:
+                    await self.db.update_signal_run(run_id, {
+                        'status': 'failed',
+                        'error_message': str(e)
+                    })
+            except:
+                pass
+            
+            raise
+
+
+# ==============================================================================
+# FACTORY FUNCTION
+# ==============================================================================
+
+def get_optimized_phase5_persist(db_interface=None):
+    """
+    Factory function to create optimized Phase5Persist instance.
+    
+    Args:
+        db_interface: SupabaseInterface instance (optional)
+        
+    Returns:
+        Phase5PersistOptimized instance
+    """
+    return Phase5PersistOptimized(db=db_interface)

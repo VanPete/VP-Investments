@@ -70,7 +70,6 @@ class ScoreResult:
     institutional_smart_money: GroupScore
     
     # Metadata
-    total_coverage: float     # Overall coverage across all groups
     scored_at: str           # ISO timestamp
     
     def to_dict(self) -> Dict[str, Any]:
@@ -84,7 +83,6 @@ class ScoreResult:
             'social_alternative': self.social_alternative.to_dict(),
             'risk_stability': self.risk_stability.to_dict(),
             'institutional_smart_money': self.institutional_smart_money.to_dict(),
-            'total_coverage': self.total_coverage,
             'scored_at': self.scored_at
         }
 
@@ -191,13 +189,11 @@ class Phase4ScoreAssembler:
         # Calculate statistics
         if results:
             avg_overall = sum(r.overall_score for r in results.values()) / len(results)
-            avg_coverage = sum(r.total_coverage for r in results.values()) / len(results)
             
             self.logger.info("=" * 80)
             self.logger.info(f"[SUCCESS] PHASE 4 COMPLETE - {execution_time:.2f}s")
             self.logger.info(f"   Scored tickers: {len(results)}")
             self.logger.info(f"   Avg overall score: {avg_overall:.3f}")
-            self.logger.info(f"   Avg coverage: {avg_coverage:.1%}")
             self.logger.info("=" * 80)
         else:
             self.logger.warning("[WARNING] No tickers scored successfully")
@@ -307,7 +303,6 @@ class Phase4ScoreAssembler:
             social_alternative=social_alternative_score,
             risk_stability=risk_stability_score,
             institutional_smart_money=institutional_smart_money_score,
-            total_coverage=total_coverage,
             scored_at=datetime.now().isoformat()
         )
     

@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "timestamp": "2025-10-24T19:17:50.282936",
+    "total_tickers": 0,
+    "source": "manual",
+    "discovery": {
+      "reddit_tickers": 51,
+      "news_tickers": 6,
+      "total_universe": 59
+    }
+  },
+  "rankings": []
+}
