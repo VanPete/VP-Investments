@@ -74,7 +74,10 @@ class Phase5Persist:
     
     def extract_technical_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Extract ~60 technical factors from Phase 4 technical_data.
+        Extract ALL technical factors from Phase 4 technical_data.
+        
+        Phase 4 passes normalized factors from Phase 3 as a simple dict: {factor_name: z_score}
+        We need to convert to the format: {factor_name: {"raw": value, "normalized": z_score, "percentile": 0}}
         
         Args:
             phase4_data: Complete Phase 4 ticker data dictionary
@@ -82,128 +85,31 @@ class Phase5Persist:
         Returns:
             Dictionary with structure:
             {
-                "rsi_14": {"raw": 65.2, "normalized": 0.75, "percentile": 0.82},
-                "macd": {"raw": 1.2, "normalized": 0.60, "percentile": 0.65},
+                "rsi_14": {"raw": z_score, "normalized": z_score, "percentile": 0},
+                "macd_signal": {"raw": z_score, "normalized": z_score, "percentile": 0},
                 ...
             }
         """
         factors = {}
         
-        # Get technical_data section
+        # Get technical_data section (this is a Dict[str, float] from Phase 3 normalized factors)
         technical_data = phase4_data.get('technical_data', {})
         
-        # RSI Indicators
-        if 'rsi_14' in technical_data:
-            factors['rsi_14'] = {
-                'raw': technical_data['rsi_14'],
-                'normalized': technical_data.get('rsi_14_norm', 0),
-                'percentile': technical_data.get('rsi_14_percentile', 0)
-            }
-        
-        # MACD Indicators
-        if 'macd' in technical_data:
-            factors['macd'] = {
-                'raw': technical_data['macd'],
-                'normalized': technical_data.get('macd_norm', 0),
-                'percentile': technical_data.get('macd_percentile', 0)
-            }
-        
-        if 'macd_signal' in technical_data:
-            factors['macd_signal'] = {
-                'raw': technical_data['macd_signal'],
-                'normalized': technical_data.get('macd_signal_norm', 0),
-                'percentile': technical_data.get('macd_signal_percentile', 0)
-            }
-        
-        if 'macd_histogram' in technical_data:
-            factors['macd_histogram'] = {
-                'raw': technical_data['macd_histogram'],
-                'normalized': technical_data.get('macd_histogram_norm', 0),
-                'percentile': technical_data.get('macd_histogram_percentile', 0)
-            }
-        
-        # Moving Averages
-        for ma_period in [10, 20, 50, 100, 200]:
-            ma_key = f'sma_{ma_period}'
-            if ma_key in technical_data:
-                factors[ma_key] = {
-                    'raw': technical_data[ma_key],
-                    'normalized': technical_data.get(f'{ma_key}_norm', 0),
-                    'percentile': technical_data.get(f'{ma_key}_percentile', 0)
-                }
-            
-            ema_key = f'ema_{ma_period}'
-            if ema_key in technical_data:
-                factors[ema_key] = {
-                    'raw': technical_data[ema_key],
-                    'normalized': technical_data.get(f'{ema_key}_norm', 0),
-                    'percentile': technical_data.get(f'{ema_key}_percentile', 0)
-                }
-        
-        # Bollinger Bands
-        for bb_field in ['bb_upper', 'bb_middle', 'bb_lower', 'bb_width', 'bb_percent']:
-            if bb_field in technical_data:
-                factors[bb_field] = {
-                    'raw': technical_data[bb_field],
-                    'normalized': technical_data.get(f'{bb_field}_norm', 0),
-                    'percentile': technical_data.get(f'{bb_field}_percentile', 0)
-                }
-        
-        # ATR (Average True Range)
-        if 'atr_14' in technical_data:
-            factors['atr_14'] = {
-                'raw': technical_data['atr_14'],
-                'normalized': technical_data.get('atr_14_norm', 0),
-                'percentile': technical_data.get('atr_14_percentile', 0)
-            }
-        
-        # Stochastic Oscillator
-        if 'stoch_k' in technical_data:
-            factors['stoch_k'] = {
-                'raw': technical_data['stoch_k'],
-                'normalized': technical_data.get('stoch_k_norm', 0),
-                'percentile': technical_data.get('stoch_k_percentile', 0)
-            }
-        
-        if 'stoch_d' in technical_data:
-            factors['stoch_d'] = {
-                'raw': technical_data['stoch_d'],
-                'normalized': technical_data.get('stoch_d_norm', 0),
-                'percentile': technical_data.get('stoch_d_percentile', 0)
-            }
-        
-        # Volume Indicators
-        for vol_field in ['volume', 'volume_sma_20', 'volume_ratio', 'obv', 'vwap']:
-            if vol_field in technical_data:
-                factors[vol_field] = {
-                    'raw': technical_data[vol_field],
-                    'normalized': technical_data.get(f'{vol_field}_norm', 0),
-                    'percentile': technical_data.get(f'{vol_field}_percentile', 0)
-                }
-        
-        # Price Action
-        for price_field in ['close', 'open', 'high', 'low', 'daily_return', 'volatility_20']:
-            if price_field in technical_data:
-                factors[price_field] = {
-                    'raw': technical_data[price_field],
-                    'normalized': technical_data.get(f'{price_field}_norm', 0),
-                    'percentile': technical_data.get(f'{price_field}_percentile', 0)
-                }
-        
-        # Momentum Indicators
-        for mom_field in ['roc_10', 'cci_20', 'williams_r', 'adx_14', 'plus_di', 'minus_di']:
-            if mom_field in technical_data:
-                factors[mom_field] = {
-                    'raw': technical_data[mom_field],
-                    'normalized': technical_data.get(f'{mom_field}_norm', 0),
-                    'percentile': technical_data.get(f'{mom_field}_percentile', 0)
+        # Convert all factors to the expected format
+        # Since Phase 3 normalized factors are z-scores, we use them as both raw and normalized
+        for factor_name, z_score in technical_data.items():
+            if z_score is not None:
+                factors[factor_name] = {
+                    'raw': z_score,
+                    'normalized': z_score,
+                    'percentile': 0  # Percentile not calculated in current pipeline
                 }
         
         return factors
     
     def extract_fundamental_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Extract ~45 fundamental factors from Phase 4 fundamental_data.
+        Extract ALL fundamental factors from Phase 4 fundamental_data.
         
         Args:
             phase4_data: Complete Phase 4 ticker data dictionary
@@ -215,71 +121,20 @@ class Phase5Persist:
         
         fundamental_data = phase4_data.get('fundamental_data', {})
         
-        # Valuation Metrics
-        for metric in ['pe_ratio', 'pb_ratio', 'ps_ratio', 'peg_ratio', 'ev_ebitda', 
-                       'price_to_fcf', 'ev_to_sales', 'ev_to_revenue']:
-            if metric in fundamental_data:
-                factors[metric] = {
-                    'raw': fundamental_data[metric],
-                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
-                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Profitability Metrics
-        for metric in ['roe', 'roa', 'roic', 'gross_margin', 'operating_margin', 
-                       'profit_margin', 'ebitda_margin', 'fcf_margin']:
-            if metric in fundamental_data:
-                factors[metric] = {
-                    'raw': fundamental_data[metric],
-                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
-                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Growth Metrics
-        for metric in ['revenue_growth', 'earnings_growth', 'fcf_growth', 
-                       'book_value_growth', 'eps_growth', 'dividend_growth']:
-            if metric in fundamental_data:
-                factors[metric] = {
-                    'raw': fundamental_data[metric],
-                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
-                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Financial Health
-        for metric in ['current_ratio', 'quick_ratio', 'debt_to_equity', 
-                       'debt_to_assets', 'interest_coverage', 'altman_z_score']:
-            if metric in fundamental_data:
-                factors[metric] = {
-                    'raw': fundamental_data[metric],
-                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
-                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Efficiency Metrics
-        for metric in ['asset_turnover', 'inventory_turnover', 'receivables_turnover',
-                       'days_sales_outstanding', 'cash_conversion_cycle']:
-            if metric in fundamental_data:
-                factors[metric] = {
-                    'raw': fundamental_data[metric],
-                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
-                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Per-Share Metrics
-        for metric in ['eps', 'book_value_per_share', 'fcf_per_share', 
-                       'revenue_per_share', 'dividend_per_share']:
-            if metric in fundamental_data:
-                factors[metric] = {
-                    'raw': fundamental_data[metric],
-                    'normalized': fundamental_data.get(f'{metric}_norm', 0),
-                    'percentile': fundamental_data.get(f'{metric}_percentile', 0)
+        # Convert all factors to the expected format
+        for factor_name, z_score in fundamental_data.items():
+            if z_score is not None:
+                factors[factor_name] = {
+                    'raw': z_score,
+                    'normalized': z_score,
+                    'percentile': 0
                 }
         
         return factors
     
     def extract_news_macro_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Extract ~15 news/macro factors from Phase 4 news_macro_data.
+        Extract ALL news/macro factors from Phase 4 news_macro_data.
         
         Args:
             phase4_data: Complete Phase 4 ticker data dictionary
@@ -291,33 +146,20 @@ class Phase5Persist:
         
         news_macro_data = phase4_data.get('news_macro_data', {})
         
-        # News Sentiment
-        for metric in ['news_sentiment_score', 'news_sentiment_count', 
-                       'news_positive_ratio', 'news_negative_ratio', 
-                       'news_buzz_score', 'news_volume_7d', 'news_volume_30d']:
-            if metric in news_macro_data:
-                factors[metric] = {
-                    'raw': news_macro_data[metric],
-                    'normalized': news_macro_data.get(f'{metric}_norm', 0),
-                    'percentile': news_macro_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Macro Indicators
-        for metric in ['sector_correlation', 'market_beta', 'spy_correlation',
-                       'qqq_correlation', 'vix_correlation', 'sector_momentum',
-                       'relative_strength', 'sector_relative_strength']:
-            if metric in news_macro_data:
-                factors[metric] = {
-                    'raw': news_macro_data[metric],
-                    'normalized': news_macro_data.get(f'{metric}_norm', 0),
-                    'percentile': news_macro_data.get(f'{metric}_percentile', 0)
+        # Convert all factors to the expected format
+        for factor_name, z_score in news_macro_data.items():
+            if z_score is not None:
+                factors[factor_name] = {
+                    'raw': z_score,
+                    'normalized': z_score,
+                    'percentile': 0
                 }
         
         return factors
     
     def extract_social_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Extract ~10 social/alternative factors from Phase 4 social_data.
+        Extract ALL social/alternative factors from Phase 4 social_data.
         
         Args:
             phase4_data: Complete Phase 4 ticker data dictionary
@@ -329,23 +171,20 @@ class Phase5Persist:
         
         social_data = phase4_data.get('social_data', {})
         
-        # Social Sentiment
-        for metric in ['twitter_sentiment', 'reddit_sentiment', 'stocktwits_sentiment',
-                       'social_volume', 'social_engagement', 'influencer_mentions',
-                       'reddit_mentions', 'twitter_mentions', 'social_momentum',
-                       'viral_score']:
-            if metric in social_data:
-                factors[metric] = {
-                    'raw': social_data[metric],
-                    'normalized': social_data.get(f'{metric}_norm', 0),
-                    'percentile': social_data.get(f'{metric}_percentile', 0)
+        # Convert all factors to the expected format
+        for factor_name, z_score in social_data.items():
+            if z_score is not None:
+                factors[factor_name] = {
+                    'raw': z_score,
+                    'normalized': z_score,
+                    'percentile': 0
                 }
         
         return factors
     
     def extract_risk_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Extract ~25 risk/stability factors from Phase 4 risk_data.
+        Extract ALL risk/stability factors from Phase 4 risk_data.
         
         Args:
             phase4_data: Complete Phase 4 ticker data dictionary
@@ -357,61 +196,20 @@ class Phase5Persist:
         
         risk_data = phase4_data.get('risk_data', {})
         
-        # Volatility Metrics
-        for metric in ['volatility_30d', 'volatility_90d', 'historical_volatility',
-                       'implied_volatility', 'volatility_ratio', 'volatility_skew',
-                       'downside_volatility', 'upside_volatility']:
-            if metric in risk_data:
-                factors[metric] = {
-                    'raw': risk_data[metric],
-                    'normalized': risk_data.get(f'{metric}_norm', 0),
-                    'percentile': risk_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Risk-Adjusted Returns
-        for metric in ['sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 
-                       'information_ratio', 'treynor_ratio']:
-            if metric in risk_data:
-                factors[metric] = {
-                    'raw': risk_data[metric],
-                    'normalized': risk_data.get(f'{metric}_norm', 0),
-                    'percentile': risk_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Drawdown Metrics
-        for metric in ['max_drawdown', 'current_drawdown', 'drawdown_duration',
-                       'avg_drawdown', 'recovery_time']:
-            if metric in risk_data:
-                factors[metric] = {
-                    'raw': risk_data[metric],
-                    'normalized': risk_data.get(f'{metric}_norm', 0),
-                    'percentile': risk_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Value at Risk
-        for metric in ['var_95', 'var_99', 'cvar_95', 'cvar_99']:
-            if metric in risk_data:
-                factors[metric] = {
-                    'raw': risk_data[metric],
-                    'normalized': risk_data.get(f'{metric}_norm', 0),
-                    'percentile': risk_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Stability Metrics
-        for metric in ['price_stability', 'earnings_stability', 'dividend_stability',
-                       'consistency_score']:
-            if metric in risk_data:
-                factors[metric] = {
-                    'raw': risk_data[metric],
-                    'normalized': risk_data.get(f'{metric}_norm', 0),
-                    'percentile': risk_data.get(f'{metric}_percentile', 0)
+        # Convert all factors to the expected format
+        for factor_name, z_score in risk_data.items():
+            if z_score is not None:
+                factors[factor_name] = {
+                    'raw': z_score,
+                    'normalized': z_score,
+                    'percentile': 0
                 }
         
         return factors
     
     def extract_institutional_factors(self, phase4_data: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         """
-        Extract ~20 institutional/smart money factors from Phase 4 institutional_data.
+        Extract ALL institutional/smart money factors from Phase 4 institutional_data.
         
         Args:
             phase4_data: Complete Phase 4 ticker data dictionary
@@ -423,46 +221,13 @@ class Phase5Persist:
         
         institutional_data = phase4_data.get('institutional_data', {})
         
-        # Institutional Ownership
-        for metric in ['institutional_ownership_pct', 'institutional_holders_count',
-                       'institutional_shares_held', 'institutional_position_change',
-                       'top10_ownership_pct', 'insider_ownership_pct']:
-            if metric in institutional_data:
-                factors[metric] = {
-                    'raw': institutional_data[metric],
-                    'normalized': institutional_data.get(f'{metric}_norm', 0),
-                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Smart Money Flow
-        for metric in ['institutional_buying', 'institutional_selling',
-                       'net_institutional_flow', 'smart_money_confidence',
-                       'hedge_fund_ownership', 'mutual_fund_ownership']:
-            if metric in institutional_data:
-                factors[metric] = {
-                    'raw': institutional_data[metric],
-                    'normalized': institutional_data.get(f'{metric}_norm', 0),
-                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Insider Activity
-        for metric in ['insider_buying', 'insider_selling', 'net_insider_trades',
-                       'insider_sentiment', 'ceo_confidence_score']:
-            if metric in institutional_data:
-                factors[metric] = {
-                    'raw': institutional_data[metric],
-                    'normalized': institutional_data.get(f'{metric}_norm', 0),
-                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
-                }
-        
-        # Analyst Coverage
-        for metric in ['analyst_count', 'buy_recommendations', 'hold_recommendations',
-                       'sell_recommendations', 'consensus_rating']:
-            if metric in institutional_data:
-                factors[metric] = {
-                    'raw': institutional_data[metric],
-                    'normalized': institutional_data.get(f'{metric}_norm', 0),
-                    'percentile': institutional_data.get(f'{metric}_percentile', 0)
+        # Convert all factors to the expected format
+        for factor_name, z_score in institutional_data.items():
+            if z_score is not None:
+                factors[factor_name] = {
+                    'raw': z_score,
+                    'normalized': z_score,
+                    'percentile': 0
                 }
         
         return factors
@@ -846,6 +611,13 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             - social_alternative_score: float
             - risk_stability_score: float
             - institutional_smart_money_score: float
+            - total_coverage: float (optional)
+            - technical_coverage: float (optional)
+            - fundamental_coverage: float (optional)
+            - news_macro_coverage: float (optional)
+            - social_alternative_coverage: float (optional)
+            - risk_stability_coverage: float (optional)
+            - institutional_smart_money_coverage: float (optional)
             
     Returns:
         List of signal IDs created
@@ -859,7 +631,7 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
     param_count = 1
     
     for signal in signals:
-        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 10)])
+        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 17)])
         query_parts.append(f"({placeholders})")
         
         params.extend([
@@ -872,9 +644,16 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             signal.get('news_macro_score'),
             signal.get('social_alternative_score'),
             signal.get('risk_stability_score'),
-            signal.get('institutional_smart_money_score')
+            signal.get('institutional_smart_money_score'),
+            signal.get('total_coverage'),
+            signal.get('technical_coverage'),
+            signal.get('fundamental_coverage'),
+            signal.get('news_macro_coverage'),
+            signal.get('social_alternative_coverage'),
+            signal.get('risk_stability_coverage'),
+            signal.get('institutional_smart_money_coverage')
         ])
-        param_count += 10
+        param_count += 17
     
     query = f"""
     INSERT INTO signals (
@@ -884,7 +663,14 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
         news_macro_score,
         social_alternative_score,
         risk_stability_score,
-        institutional_smart_money_score
+        institutional_smart_money_score,
+        total_coverage,
+        technical_coverage,
+        fundamental_coverage,
+        news_macro_coverage,
+        social_alternative_coverage,
+        risk_stability_coverage,
+        institutional_smart_money_coverage
     ) VALUES {', '.join(query_parts)}
     RETURNING id
     """

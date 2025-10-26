@@ -35,7 +35,7 @@ export function DashboardHeader({
   totalCount,
 }: DashboardHeaderProps) {
   return (
-    <div className="bg-white dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 shadow-lg rounded-2xl mx-4 mt-4 backdrop-blur-sm [border-image:linear-gradient(to_right,#001F3F,#00AEEF)_1] [border-top:2px_solid]">
+    <div className="bg-card border-b border-border shadow-lg rounded-2xl mx-4 mt-4 backdrop-blur-sm [border-image:linear-gradient(to_right,#001F3F,#00AEEF)_1] [border-top:2px_solid]">
       <div className="container mx-auto px-6 py-4">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           {/* Left: Logo + Title and Inline Stats */}
@@ -53,7 +53,7 @@ export function DashboardHeader({
             
             {/* Title with Discovery Badge Tooltip */}
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+              <h1 className="text-xl font-bold text-foreground">
                 VanPiQ Signals Dashboard
               </h1>
               
@@ -101,7 +101,7 @@ export function DashboardHeader({
             </div>
             
             {/* Inline Stats */}
-            <div className="flex flex-wrap gap-x-2 text-sm text-gray-600 dark:text-gray-400 font-medium">
+            <div className="flex flex-wrap gap-x-2 text-sm text-muted-foreground font-medium">
               <span>Latest: {formatTimestamp(metadata.timestamp)}</span>
               <span>•</span>
               <span>Source: {metadata.source}</span>

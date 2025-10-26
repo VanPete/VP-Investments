@@ -229,11 +229,13 @@ institutional_smart_money:
   
   # Analyst ratings
   analyst_rating_avg: "Average analyst rating (1=Strong Buy, 5=Strong Sell)"
-  analyst_rating_momentum_3m: "3-month analyst rating momentum (upgrade/downgrade trend)"
   analyst_count: "Number of analysts covering the stock"
-  analyst_consensus_change: "Change in analyst consensus rating"
-  strong_buy_count: "Number of Strong Buy ratings"
-  strong_sell_count: "Number of Strong Sell ratings"
+  analyst_strong_buy_count: "Number of Strong Buy ratings"
+  analyst_strong_sell_count: "Number of Strong Sell ratings"
+  analyst_consensus_strength: "Percentage of analysts with same rating (consensus strength)"
+  analyst_upgrade_count_3m: "Number of analyst upgrades in last 3 months"
+  analyst_downgrade_count_3m: "Number of analyst downgrades in last 3 months"
+  analyst_momentum: "Net analyst momentum (upgrades - downgrades)"
   
   # Price targets
   price_target_mean: "Mean analyst price target"
@@ -243,15 +245,11 @@ institutional_smart_money:
   price_target_dispersion: "Standard deviation of analyst price targets"
   
   # Smart money composite
-  smart_money_flow: "Composite smart money indicator (institutional + insider + analyst signals)"
+  smart_money_composite: "Composite smart money indicator (institutional + insider + analyst signals)"
   
   # NEW INSTITUTIONAL SIGNALS
   institutional_concentration_top5: "Percentage of shares held by top 5 institutions"
   insider_transaction_intensity: "Log-transformed insider transaction count"
-  analyst_consensus_strength: "Strength of analyst consensus (low dispersion = high strength)"
-  analyst_upgrade_count_3m: "Number of analyst upgrades over past 3 months"
-  analyst_downgrade_count_3m: "Number of analyst downgrades over past 3 months"
-  analyst_momentum: "Net analyst momentum score (upgrades - downgrades)"
 
 # Validation rules
 validation:
