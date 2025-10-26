@@ -18,45 +18,84 @@ export function PerformanceTab({ signals, loading }: PerformanceTabProps) {
       return null;
     }
 
-    // Filter signals with backtest data
-    const backtested = signals.filter(s => 
+    // Filter signals with backtest data for each interval
+    const backtestedAny = signals.filter(s => 
       s.return_1d !== null && s.return_1d !== undefined
     );
+    const backtested1d = signals.filter(s => s.return_1d !== null && s.return_1d !== undefined);
+    const backtested7d = signals.filter(s => s.return_7d !== null && s.return_7d !== undefined);
+    const backtested30d = signals.filter(s => s.return_30d !== null && s.return_30d !== undefined);
+    const backtested90d = signals.filter(s => s.return_90d !== null && s.return_90d !== undefined);
 
-    if (backtested.length === 0) {
+    if (backtestedAny.length === 0) {
       return null;
     }
 
-    // Calculate average returns
-    const avgReturn1d = backtested.reduce((sum, s) => sum + (s.return_1d || 0), 0) / backtested.length;
-    const avgReturn7d = backtested.reduce((sum, s) => sum + (s.return_7d || 0), 0) / backtested.length;
-    const avgReturn30d = backtested.reduce((sum, s) => sum + (s.return_30d || 0), 0) / backtested.length;
-    const avgReturn90d = backtested.reduce((sum, s) => sum + (s.return_90d || 0), 0) / backtested.length;
+    // Calculate average returns (only for non-null values)
+    const avgReturn1d = backtested1d.length > 0 
+      ? backtested1d.reduce((sum, s) => sum + (s.return_1d || 0), 0) / backtested1d.length 
+      : null;
+    const avgReturn7d = backtested7d.length > 0
+      ? backtested7d.reduce((sum, s) => sum + (s.return_7d || 0), 0) / backtested7d.length
+      : null;
+    const avgReturn30d = backtested30d.length > 0
+      ? backtested30d.reduce((sum, s) => sum + (s.return_30d || 0), 0) / backtested30d.length
+      : null;
+    const avgReturn90d = backtested90d.length > 0
+      ? backtested90d.reduce((sum, s) => sum + (s.return_90d || 0), 0) / backtested90d.length
+      : null;
 
     // Calculate SPY average returns
-    const avgSpy1d = backtested.reduce((sum, s) => sum + (s.spy_return_1d || 0), 0) / backtested.length;
-    const avgSpy7d = backtested.reduce((sum, s) => sum + (s.spy_return_7d || 0), 0) / backtested.length;
-    const avgSpy30d = backtested.reduce((sum, s) => sum + (s.spy_return_30d || 0), 0) / backtested.length;
-    const avgSpy90d = backtested.reduce((sum, s) => sum + (s.spy_return_90d || 0), 0) / backtested.length;
+    const avgSpy1d = backtested1d.length > 0
+      ? backtested1d.reduce((sum, s) => sum + (s.spy_return_1d || 0), 0) / backtested1d.length
+      : null;
+    const avgSpy7d = backtested7d.length > 0
+      ? backtested7d.reduce((sum, s) => sum + (s.spy_return_7d || 0), 0) / backtested7d.length
+      : null;
+    const avgSpy30d = backtested30d.length > 0
+      ? backtested30d.reduce((sum, s) => sum + (s.spy_return_30d || 0), 0) / backtested30d.length
+      : null;
+    const avgSpy90d = backtested90d.length > 0
+      ? backtested90d.reduce((sum, s) => sum + (s.spy_return_90d || 0), 0) / backtested90d.length
+      : null;
 
-    // Calculate win rates (beating SPY)
-    const winRate1d = backtested.filter(s => (s.return_1d || 0) > (s.spy_return_1d || 0)).length / backtested.length;
-    const winRate7d = backtested.filter(s => (s.return_7d || 0) > (s.spy_return_7d || 0)).length / backtested.length;
-    const winRate30d = backtested.filter(s => (s.return_30d || 0) > (s.spy_return_30d || 0)).length / backtested.length;
-    const winRate90d = backtested.filter(s => (s.return_90d || 0) > (s.spy_return_90d || 0)).length / backtested.length;
+    // Calculate win rates (beating SPY) - only for non-null values
+    const winRate1d = backtested1d.length > 0
+      ? backtested1d.filter(s => (s.return_1d || 0) > (s.spy_return_1d || 0)).length / backtested1d.length
+      : null;
+    const winRate7d = backtested7d.length > 0
+      ? backtested7d.filter(s => (s.return_7d || 0) > (s.spy_return_7d || 0)).length / backtested7d.length
+      : null;
+    const winRate30d = backtested30d.length > 0
+      ? backtested30d.filter(s => (s.return_30d || 0) > (s.spy_return_30d || 0)).length / backtested30d.length
+      : null;
+    const winRate90d = backtested90d.length > 0
+      ? backtested90d.filter(s => (s.return_90d || 0) > (s.spy_return_90d || 0)).length / backtested90d.length
+      : null;
 
-    // Find top/worst performers (7D)
-    const sorted7d = [...backtested].sort((a, b) => (b.return_7d || 0) - (a.return_7d || 0));
-    const topPerformers = sorted7d.slice(0, 5);
-    const worstPerformers = sorted7d.slice(-5).reverse();
+    // Find top/worst performers - use 1D if 7D not available
+    const performanceMetric = backtested7d.length > 0 ? 'return_7d' : 'return_1d';
+    const sortableSignals = (backtested7d.length > 0 ? backtested7d : backtested1d);
+    const sorted = [...sortableSignals].sort((a, b) => 
+      (b[performanceMetric] || 0) - (a[performanceMetric] || 0)
+    );
+    const topPerformers = sorted.slice(0, 5);
+    const worstPerformers = sorted.slice(-5).reverse();
 
     return {
-      totalBacktested: backtested.length,
+      totalBacktested: backtestedAny.length,
+      counts: {
+        d1: backtested1d.length,
+        d7: backtested7d.length,
+        d30: backtested30d.length,
+        d90: backtested90d.length,
+      },
       avgReturns: { d1: avgReturn1d, d7: avgReturn7d, d30: avgReturn30d, d90: avgReturn90d },
       avgSpyReturns: { d1: avgSpy1d, d7: avgSpy7d, d30: avgSpy30d, d90: avgSpy90d },
       winRates: { d1: winRate1d, d7: winRate7d, d30: winRate30d, d90: winRate90d },
       topPerformers,
       worstPerformers,
+      performanceMetric,
     };
   }, [signals]);
 
