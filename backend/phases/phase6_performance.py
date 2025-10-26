@@ -108,12 +108,17 @@ class PerformanceUpdater:
                     if isinstance(baseline_date_raw, str):
                         # Clean up timezone format and handle microseconds
                         baseline_date_str = baseline_date_raw.replace('Z', '+00:00')
-                        # Truncate microseconds to 6 digits if needed
+                        # Normalize microseconds to exactly 6 digits
                         if '+' in baseline_date_str:
                             dt_part, tz_part = baseline_date_str.rsplit('+', 1)
                             if '.' in dt_part:
                                 dt_main, microsec = dt_part.rsplit('.', 1)
-                                microsec = microsec[:6]  # Keep only 6 digits
+                                # Python's fromisoformat requires exactly 0, 1, 2, 3, 4, or 6 digits
+                                # 5 digits is invalid, so pad to 6
+                                if len(microsec) == 5:
+                                    microsec = microsec + '0'
+                                elif len(microsec) > 6:
+                                    microsec = microsec[:6]
                                 baseline_date_str = f"{dt_main}.{microsec}+{tz_part}"
                         baseline_date = datetime.fromisoformat(baseline_date_str)
                     else:

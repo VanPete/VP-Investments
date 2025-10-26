@@ -153,43 +153,27 @@ async def run_pipeline(tickers=None):
         logger.info(f"   Signals persisted: {len(phase4_list)}")
         logger.info("=" * 80)
         
-        # PHASE 6: PERFORMANCE TRACKING & ANALYTICS
+        # PHASE 6: PERFORMANCE TRACKING
         logger.info("")
         logger.info("=" * 80)
-        logger.info("PHASE 6: PERFORMANCE TRACKING & ANALYTICS")
+        logger.info("PHASE 6: PERFORMANCE TRACKING")
         logger.info("=" * 80)
         
         phase6_start = datetime.now()
         
         try:
             from backend.phases.phase6_performance import get_performance_updater
-            from backend.phases.phase7_analytics import get_performance_analytics
             
-            # Part 1: Update performance intervals for pending signals
+            # Update performance intervals for pending signals
             p6_tracker = get_performance_updater(db)
-            perf_stats = await p6_tracker.update_pending_performance(limit=100)
+            perf_stats = await p6_tracker.update_pending_performance(limit=200)
             
-            logger.info(f"[TRACKING] Performance records processed: {perf_stats['processed']}")
-            logger.info(f"[TRACKING] Performance records updated: {perf_stats['updated']}")
+            logger.info(f"  Performance records processed: {perf_stats['processed']}")
+            logger.info(f"  Performance records updated: {perf_stats['updated']}")
             if perf_stats['failed'] > 0:
-                logger.warning(f"[TRACKING] Performance records failed: {perf_stats['failed']}")
-            
-            # Part 2: Calculate risk metrics and analytics
-            p6_analytics = get_performance_analytics(db)
-            analytics_7d = await p6_analytics.calculate_all_metrics(interval='7d', min_signals=3)
+                logger.warning(f"  Performance records failed: {perf_stats['failed']}")
             
             phase6_duration = (datetime.now() - phase6_start).total_seconds()
-            
-            if analytics_7d.get('total_signals', 0) >= 3:
-                logger.info(f"[ANALYTICS] Sharpe Ratio (7d): {analytics_7d['sharpe_ratio']:.2f}")
-                logger.info(f"[ANALYTICS] Sortino Ratio (7d): {analytics_7d['sortino_ratio']:.2f}")
-                logger.info(f"[ANALYTICS] Win Rate (7d): {analytics_7d['win_rate_pct']:.1f}%")
-                logger.info(f"[ANALYTICS] Profit Factor (7d): {analytics_7d['profit_factor']:.2f}x")
-                logger.info(f"[ANALYTICS] Max Drawdown: {analytics_7d['max_drawdown_pct']:.1f}%")
-                logger.info(f"[ANALYTICS] Signals analyzed: {analytics_7d['total_signals']}")
-            else:
-                logger.info(f"[ANALYTICS] Skipped - insufficient data ({analytics_7d.get('total_signals', 0)} signals)")
-            
             logger.info(f"[SUCCESS] Phase 6 complete in {phase6_duration:.2f}s")
             logger.info("=" * 80)
             
@@ -197,6 +181,32 @@ async def run_pipeline(tickers=None):
             logger.warning(f"[WARNING] Phase 6 failed: {e}")
             logger.warning("   This is non-critical - continuing...")
             phase6_duration = (datetime.now() - phase6_start).total_seconds()
+        
+        # PHASE 7: ANALYTICS (CALCULATE & PERSIST)
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("PHASE 7: ANALYTICS")
+        logger.info("=" * 80)
+        
+        phase7_start = datetime.now()
+        
+        try:
+            from backend.phases.phase7_analytics import get_analytics_engine
+            
+            # Calculate and persist analytics to analytics table
+            p7_analytics = get_analytics_engine(db)
+            analytics_result = await p7_analytics.calculate_and_persist_analytics(
+                period_type='all_time'
+            )
+            
+            phase7_duration = (datetime.now() - phase7_start).total_seconds()
+            logger.info(f"[SUCCESS] Phase 7 complete in {phase7_duration:.2f}s")
+            logger.info("=" * 80)
+            
+        except Exception as e:
+            logger.warning(f"[WARNING] Phase 7 failed: {e}")
+            logger.warning("   This is non-critical - continuing...")
+            phase7_duration = (datetime.now() - phase7_start).total_seconds()
         
         # Disconnect database
         await db.disconnect()
@@ -207,6 +217,7 @@ async def run_pipeline(tickers=None):
         logger.exception(e)  # Log full traceback for debugging
         phase5_duration = (datetime.now() - phase5_start).total_seconds()
         phase6_duration = 0
+        phase7_duration = 0
     
     # Print results
     total_duration = (datetime.now() - start_time).total_seconds()
@@ -216,7 +227,8 @@ async def run_pipeline(tickers=None):
         'phase3': phase3_duration,
         'phase4': phase4_duration,
         'phase5': phase5_duration,
-        'phase6': phase6_duration,  # Now includes both tracking and analytics
+        'phase6': phase6_duration,
+        'phase7': phase7_duration,
     }
     _print_results(phase4_results, total_duration, phase_timings)
     _export_json(phase4_results, phase1_results)
@@ -245,7 +257,8 @@ def _print_results(results: Dict[str, ScoreResult], duration: float, phase_timin
     logger.info(f"  Phase 3 (Normalize):   {phase_timings['phase3']:6.1f}s  ({phase_timings['phase3']/duration*100:5.1f}%)")
     logger.info(f"  Phase 4 (Score):       {phase_timings['phase4']:6.1f}s  ({phase_timings['phase4']/duration*100:5.1f}%)")
     logger.info(f"  Phase 5 (Persist):     {phase_timings['phase5']:6.1f}s  ({phase_timings['phase5']/duration*100:5.1f}%)")
-    logger.info(f"  Phase 6 (Tracking+Analytics): {phase_timings['phase6']:6.1f}s  ({phase_timings['phase6']/duration*100:5.1f}%)")
+    logger.info(f"  Phase 6 (Performance): {phase_timings['phase6']:6.1f}s  ({phase_timings['phase6']/duration*100:5.1f}%)")
+    logger.info(f"  Phase 7 (Analytics):   {phase_timings['phase7']:6.1f}s  ({phase_timings['phase7']/duration*100:5.1f}%)")
     logger.info("")
     logger.info("=" * 80)
     logger.info(f"[SUCCESS] COMPLETE - {len(results)} tickers analyzed in {duration:.1f}s")
