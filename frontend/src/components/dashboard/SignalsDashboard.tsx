@@ -7,11 +7,14 @@ import type {
 } from '@/types/pipeline';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SignalsTable } from './SignalsTable';
 import { DashboardHeader } from './DashboardHeader';
 import { QuickStats } from './QuickStats';
+import { PerformanceTab } from './PerformanceTab';
 import { usePersistedColumnVisibility } from '@/hooks/usePersistedState';
 import { useSupabaseSignals } from '@/hooks/useSupabaseSignals';
+import { BarChart3, Table } from 'lucide-react';
 
 interface SignalsDashboardProps {
   weightsConfig: WeightsConfig | null;
@@ -26,6 +29,7 @@ export function SignalsDashboard({
   const { signals, loading, error, refetch, runs, selectedRunId, setSelectedRunId } = useSupabaseSignals();
   
   const [showAll, setShowAll] = useState(false);
+  const [activeTab, setActiveTab] = useState('signals');
 
   // Use persisted column visibility - now with backtest columns
   const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility({
@@ -43,6 +47,8 @@ export function SignalsDashboard({
     baseline: false,
     return1d: false,
     return7d: false,
+    return30d: false,
+    return90d: false,
     vsSpy: false,
   });
 
@@ -132,43 +138,62 @@ export function SignalsDashboard({
       {/* Quick Stats Cards */}
       <QuickStats results={mockResults} />
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Signals Table */}
-        <SignalsTable
-          rankings={displayedRankings}
-          weightsConfig={weightsConfig}
-          factorToGroup={factorToGroup}
-          columnVisibility={columnVisibility}
-          onColumnVisibilityChange={setColumnVisibility}
-        />
+      {/* Main Content with Tabs */}
+      <div className="container mx-auto px-4 py-6">
+        <Tabs defaultValue="signals" value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="signals" className="flex items-center gap-2">
+              <Table className="h-4 w-4" />
+              Signals
+            </TabsTrigger>
+            <TabsTrigger value="performance" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Performance
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Show All Button */}
-        {!showAll && filteredRankings.length > 10 && (
-          <div className="flex justify-center">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => setShowAll(true)}
-              className="min-w-[200px]"
-            >
-              Show All {filteredRankings.length} Tickers
-            </Button>
-          </div>
-        )}
+          <TabsContent value="signals" className="space-y-6">
+            {/* Signals Table */}
+            <SignalsTable
+              rankings={displayedRankings}
+              weightsConfig={weightsConfig}
+              factorToGroup={factorToGroup}
+              columnVisibility={columnVisibility}
+              onColumnVisibilityChange={setColumnVisibility}
+            />
 
-        {showAll && filteredRankings.length > 10 && (
-          <div className="flex justify-center">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => setShowAll(false)}
-              className="min-w-[200px]"
-            >
-              Show Top 10 Only
-            </Button>
-          </div>
-        )}
+            {/* Show All Button */}
+            {!showAll && filteredRankings.length > 10 && (
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setShowAll(true)}
+                  className="min-w-[200px]"
+                >
+                  Show All {filteredRankings.length} Tickers
+                </Button>
+              </div>
+            )}
+
+            {showAll && filteredRankings.length > 10 && (
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setShowAll(false)}
+                  className="min-w-[200px]"
+                >
+                  Show Top 10 Only
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="performance">
+            <PerformanceTab signals={signals} loading={loading} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

@@ -104,6 +104,8 @@ export function DashboardHeader({
               <span>Latest: {formatTimestamp(metadata.timestamp)}</span>
               <span>•</span>
               <span>Source: {metadata.source}</span>
+              <span>•</span>
+              <span>Last updated: {new Date().toLocaleTimeString()}</span>
             </div>
           </div>
 

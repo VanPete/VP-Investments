@@ -26,6 +26,8 @@ export interface ColumnVisibility {
   baseline?: boolean;
   return1d?: boolean;
   return7d?: boolean;
+  return30d?: boolean;
+  return90d?: boolean;
   vsSpy?: boolean;
 }
 
@@ -53,6 +55,8 @@ export function ColumnVisibilityToggle({
     { key: 'baseline' as keyof ColumnVisibility, label: 'Baseline Price', required: false },
     { key: 'return1d' as keyof ColumnVisibility, label: '1D Return', required: false },
     { key: 'return7d' as keyof ColumnVisibility, label: '7D Return', required: false },
+    { key: 'return30d' as keyof ColumnVisibility, label: '30D Return', required: false },
+    { key: 'return90d' as keyof ColumnVisibility, label: '90D Return', required: false },
     { key: 'vsSpy' as keyof ColumnVisibility, label: 'vs SPY', required: false },
   ];
 

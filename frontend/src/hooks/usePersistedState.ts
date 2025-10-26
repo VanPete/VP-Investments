@@ -102,5 +102,7 @@ export interface ColumnVisibility {
   baseline?: boolean;
   return1d?: boolean;
   return7d?: boolean;
+  return30d?: boolean;
+  return90d?: boolean;
   vsSpy?: boolean;
 }

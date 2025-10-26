@@ -13,7 +13,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, TrendingUp } from 'lucide-react';
 import {
   formatScore,
   formatCoverage,
@@ -147,6 +147,14 @@ export function SignalsTable({
         case 'return7d':
           aValue = a.return_7d || 0;
           bValue = b.return_7d || 0;
+          break;
+        case 'return30d':
+          aValue = a.return_30d || 0;
+          bValue = b.return_30d || 0;
+          break;
+        case 'return90d':
+          aValue = a.return_90d || 0;
+          bValue = b.return_90d || 0;
           break;
         case 'vsSpy':
           aValue = (a.return_7d || 0) - (a.spy_return_7d || 0);
@@ -390,6 +398,28 @@ export function SignalsTable({
                   </span>
                 </TableHead>
               )}
+              {columnVisibility.return30d && (
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('return30d')}
+                >
+                  <span className="inline-flex items-center justify-end">
+                    30D Return
+                    <SortIcon column="return30d" />
+                  </span>
+                </TableHead>
+              )}
+              {columnVisibility.return90d && (
+                <TableHead 
+                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('return90d')}
+                >
+                  <span className="inline-flex items-center justify-end">
+                    90D Return
+                    <SortIcon column="return90d" />
+                  </span>
+                </TableHead>
+              )}
               {columnVisibility.vsSpy && (
                 <TableHead 
                   className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -486,9 +516,18 @@ export function SignalsTable({
                   )}
                   {columnVisibility.baseline && (
                     <TableCell className="text-right">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {ranking.backtest_baseline_price ? `$${ranking.backtest_baseline_price.toFixed(2)}` : '-'}
-                      </span>
+                      {ranking.backtest_baseline_price && ranking.backtest_baseline_date ? (
+                        <div className="text-sm">
+                          <div className="font-semibold text-gray-900 dark:text-gray-100">
+                            ${ranking.backtest_baseline_price.toFixed(2)}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {new Date(ranking.backtest_baseline_date).toLocaleDateString()}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </TableCell>
                   )}
                   {columnVisibility.return1d && (
@@ -505,6 +544,20 @@ export function SignalsTable({
                       </span>
                     </TableCell>
                   )}
+                  {columnVisibility.return30d && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${ranking.return_30d && ranking.return_30d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_30d && ranking.return_30d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {ranking.return_30d !== null && ranking.return_30d !== undefined ? `${(ranking.return_30d * 100).toFixed(2)}%` : '-'}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.return90d && (
+                    <TableCell className="text-right">
+                      <span className={`font-semibold ${ranking.return_90d && ranking.return_90d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_90d && ranking.return_90d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                        {ranking.return_90d !== null && ranking.return_90d !== undefined ? `${(ranking.return_90d * 100).toFixed(2)}%` : '-'}
+                      </span>
+                    </TableCell>
+                  )}
                   {columnVisibility.vsSpy && (
                     <TableCell className="text-right">
                       <span className={`font-semibold ${ranking.return_7d && ranking.spy_return_7d && (ranking.return_7d - ranking.spy_return_7d) > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_7d && ranking.spy_return_7d && (ranking.return_7d - ranking.spy_return_7d) < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
@@ -517,12 +570,106 @@ export function SignalsTable({
                 {/* Expanded Row */}
                 {expandedRow === ranking.ticker && (
                   <TableRow>
-                    <TableCell colSpan={11} className="bg-gray-50 dark:bg-gray-900/30 p-6">
-                      <div className="space-y-4">
-                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                          Group Breakdown for {ranking.ticker}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <TableCell colSpan={20} className="bg-gray-50 dark:bg-gray-900/30 p-6">
+                      <div className="space-y-6">
+                        {/* Backtest Performance Section */}
+                        {ranking.backtest_baseline_price && (
+                          <div>
+                            <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+                              <TrendingUp className="h-5 w-5 text-blue-600" />
+                              Backtest Performance
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <Card className="bg-white dark:bg-gray-800/50">
+                                <CardContent className="p-4">
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">Baseline</div>
+                                  <div className="text-2xl font-bold">
+                                    ${ranking.backtest_baseline_price.toFixed(2)}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {ranking.backtest_baseline_date && new Date(ranking.backtest_baseline_date).toLocaleDateString()}
+                                  </div>
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-white dark:bg-gray-800/50">
+                                <CardContent className="p-4">
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">Status</div>
+                                  <Badge 
+                                    variant={ranking.backtest_status === 'completed' ? 'default' : 'secondary'}
+                                    className="mt-1"
+                                  >
+                                    {ranking.backtest_status || 'pending'}
+                                  </Badge>
+                                  {ranking.backtest_last_update && (
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      Updated: {new Date(ranking.backtest_last_update).toLocaleString()}
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </div>
+                            
+                            {/* Returns Table */}
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                                    <th className="text-left py-2 font-semibold">Interval</th>
+                                    <th className="text-right py-2 font-semibold">Stock Return</th>
+                                    <th className="text-right py-2 font-semibold">SPY Return</th>
+                                    <th className="text-right py-2 font-semibold">vs SPY</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {[
+                                    { label: '1 Day', stock: ranking.return_1d, spy: ranking.spy_return_1d },
+                                    { label: '3 Days', stock: ranking.return_3d, spy: ranking.spy_return_3d },
+                                    { label: '7 Days', stock: ranking.return_7d, spy: ranking.spy_return_7d },
+                                    { label: '10 Days', stock: ranking.return_10d, spy: ranking.spy_return_10d },
+                                    { label: '14 Days', stock: ranking.return_14d, spy: ranking.spy_return_14d },
+                                    { label: '30 Days', stock: ranking.return_30d, spy: ranking.spy_return_30d },
+                                    { label: '90 Days', stock: ranking.return_90d, spy: ranking.spy_return_90d },
+                                  ].map((interval) => {
+                                    const diff = (interval.stock || 0) - (interval.spy || 0);
+                                    return (
+                                      <tr key={interval.label} className="border-b border-gray-100 dark:border-gray-800">
+                                        <td className="py-2">{interval.label}</td>
+                                        <td className={`text-right py-2 font-semibold ${
+                                          interval.stock && interval.stock > 0 ? 'text-green-600' : 
+                                          interval.stock && interval.stock < 0 ? 'text-red-600' : 
+                                          'text-gray-600'
+                                        }`}>
+                                          {interval.stock !== null && interval.stock !== undefined 
+                                            ? `${(interval.stock * 100).toFixed(2)}%` 
+                                            : '-'}
+                                        </td>
+                                        <td className="text-right py-2 text-gray-600">
+                                          {interval.spy !== null && interval.spy !== undefined 
+                                            ? `${(interval.spy * 100).toFixed(2)}%` 
+                                            : '-'}
+                                        </td>
+                                        <td className={`text-right py-2 font-semibold ${
+                                          diff > 0 ? 'text-green-600' : diff < 0 ? 'text-red-600' : 'text-gray-600'
+                                        }`}>
+                                          {interval.stock !== null && interval.spy !== null 
+                                            ? `${(diff * 100).toFixed(2)}%` 
+                                            : '-'}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Group Breakdown Section */}
+                        <div>
+                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                            Group Breakdown
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {(Object.keys(ranking.group_scores) as GroupKey[]).map((groupKey) => (
                             <Card key={groupKey} className="bg-white dark:bg-gray-800/50 shadow-md">
                               <CardContent className="p-4">
@@ -562,6 +709,7 @@ export function SignalsTable({
                           ))}
                         </div>
                       </div>
+                    </div>
                     </TableCell>
                   </TableRow>
                 )}
