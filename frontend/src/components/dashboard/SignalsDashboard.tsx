@@ -118,8 +118,9 @@ export function SignalsDashboard({
       <DashboardHeader
         metadata={mockResults.metadata}
         availableFiles={runs.map((r: { run_timestamp: string; id: string }) => ({
+          filename: r.id,
+          timestamp: r.run_timestamp,
           label: new Date(r.run_timestamp).toLocaleString(),
-          value: r.id,
         }))}
         selectedFile={selectedRunId || ''}
         onFileChange={(runId: string) => setSelectedRunId(runId)}
