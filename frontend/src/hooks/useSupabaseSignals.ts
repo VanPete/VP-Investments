@@ -127,6 +127,7 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
       }
 
       // Query signals for the selected run
+      // v3.2: Performance data moved to performance table
       const { data, error: fetchError } = await supabase
         .from('signals')
         .select(`
@@ -140,24 +141,14 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
           social_alternative_score,
           risk_stability_score,
           institutional_smart_money_score,
-          backtest_baseline_price,
-          backtest_baseline_date,
-          return_1d,
-          return_3d,
-          return_7d,
-          return_10d,
-          return_14d,
-          return_30d,
-          return_90d,
-          spy_return_1d,
-          spy_return_3d,
-          spy_return_7d,
-          spy_return_10d,
-          spy_return_14d,
-          spy_return_30d,
-          spy_return_90d,
-          backtest_status,
-          backtest_last_update
+          total_coverage,
+          technical_coverage,
+          fundamental_coverage,
+          news_macro_coverage,
+          social_alternative_coverage,
+          risk_stability_coverage,
+          institutional_smart_money_coverage,
+          created_at
         `)
         .eq('run_id', selectedRunId)
         .order('overall_score', { ascending: false });
@@ -206,25 +197,26 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
             risk_stability: coverage.risk_stability,
             institutional_smart_money: coverage.institutional_smart_money,
           },
-          // Backtest data (Phase 6)
-          backtest_baseline_price: signal.backtest_baseline_price,
-          backtest_baseline_date: signal.backtest_baseline_date,
-          return_1d: signal.return_1d,
-          return_3d: signal.return_3d,
-          return_7d: signal.return_7d,
-          return_10d: signal.return_10d,
-          return_14d: signal.return_14d,
-          return_30d: signal.return_30d,
-          return_90d: signal.return_90d,
-          spy_return_1d: signal.spy_return_1d,
-          spy_return_3d: signal.spy_return_3d,
-          spy_return_7d: signal.spy_return_7d,
-          spy_return_10d: signal.spy_return_10d,
-          spy_return_14d: signal.spy_return_14d,
-          spy_return_30d: signal.spy_return_30d,
-          spy_return_90d: signal.spy_return_90d,
-          backtest_status: signal.backtest_status,
-          backtest_last_update: signal.backtest_last_update,
+          // v3.2: Performance data moved to separate performance table
+          // These fields are optional and will be undefined until joined with performance data
+          backtest_baseline_price: undefined,
+          backtest_baseline_date: undefined,
+          return_1d: undefined,
+          return_3d: undefined,
+          return_7d: undefined,
+          return_10d: undefined,
+          return_14d: undefined,
+          return_30d: undefined,
+          return_90d: undefined,
+          spy_return_1d: undefined,
+          spy_return_3d: undefined,
+          spy_return_7d: undefined,
+          spy_return_10d: undefined,
+          spy_return_14d: undefined,
+          spy_return_30d: undefined,
+          spy_return_90d: undefined,
+          backtest_status: undefined,
+          backtest_last_update: undefined,
         };
       });
 

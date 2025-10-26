@@ -146,7 +146,7 @@ export function SignalsDashboard({
       <QuickStats results={mockResults} />
 
       {/* Main Content with Tabs */}
-      <div className="container mx-auto px-4 py-6">
+      <div className="px-4 py-6">
         <Tabs defaultValue="signals" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="signals" className="flex items-center gap-2">

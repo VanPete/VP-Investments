@@ -11,14 +11,14 @@ export default function MethodologyPage() {
   const factorCounts = factorToGroup ? getFactorCounts(factorToGroup) : {};
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Methodology
           </h1>
-          <p className="text-lg text-gray-600">
+          <p className="text-lg text-gray-600 dark:text-gray-400">
             Understanding the VP Investments signal ranking system
           </p>
         </div>
@@ -33,12 +33,12 @@ export default function MethodologyPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <h3 className="font-semibold text-gray-900 mb-3">Key Principles</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Key Principles</h3>
               <ul className="space-y-2">
                 {methodologyConfig.overview.key_principles.map((principle, idx) => (
                   <li key={idx} className="flex items-start">
-                    <span className="text-gray-600 mr-2">•</span>
-                    <span className="text-gray-700">{principle}</span>
+                    <span className="text-gray-600 dark:text-gray-400 mr-2">•</span>
+                    <span className="text-gray-700 dark:text-gray-300">{principle}</span>
                   </li>
                 ))}
               </ul>
@@ -71,7 +71,7 @@ export default function MethodologyPage() {
         {methodologyConfig && (
           <Card className="mt-8">
             <CardContent className="pt-6">
-              <p className="text-sm text-gray-500 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
                 Methodology Version {methodologyConfig.version.current} • 
                 Last Updated: {methodologyConfig.version.last_updated}
               </p>

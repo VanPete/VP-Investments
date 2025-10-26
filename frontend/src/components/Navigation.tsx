@@ -9,6 +9,7 @@ export function Navigation() {
 
   const navItems = [
     { label: 'Dashboard', href: '/' },
+    { label: 'Analytics', href: '/analytics' },
     { label: 'Methodology', href: '/methodology' },
   ];
 
