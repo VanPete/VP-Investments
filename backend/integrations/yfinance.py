@@ -291,7 +291,7 @@ class ComprehensiveYFinanceFetcher:
             success_rate = total_succeeded / total_attempted if total_attempted > 0 else 0
             
             elapsed = time.time() - start_time
-            self.logger.info(f"✅ {ticker}: Fetched {total_succeeded}/{total_attempted} endpoints "
+            self.logger.info(f"[SUCCESS] {ticker}: Fetched {total_succeeded}/{total_attempted} endpoints "
                            f"({success_rate:.1%} success) in {elapsed:.2f}s")
             
             emit_metric("yfinance.fetch_ticker.success", 1, 
@@ -302,7 +302,7 @@ class ComprehensiveYFinanceFetcher:
         except Exception as e:
             import traceback
             error_trace = traceback.format_exc()
-            self.logger.error(f"❌ {ticker}: Fatal error during fetch: {e}")
+            self.logger.error(f"[FAILED] {ticker}: Fatal error during fetch: {e}")
             self.logger.debug(f"Full traceback:\n{error_trace}")
             bundle.fetch_success = False
             bundle.fetch_errors['fatal'] = str(e)
@@ -780,11 +780,11 @@ class ComprehensiveYFinanceFetcher:
                         consecutive_failures = 0
                         
                         with self._lock:  # Thread-safe logging
-                            self.logger.info(f"  ✅ {ticker}: {len(bundle.endpoints_succeeded)}/{len(bundle.endpoints_attempted)} endpoints")
+                            self.logger.info(f"  [SUCCESS] {ticker}: {len(bundle.endpoints_succeeded)}/{len(bundle.endpoints_attempted)} endpoints")
                     else:
                         consecutive_failures += 1
                         with self._lock:
-                            self.logger.warning(f"  ❌ {ticker}: Failed (consecutive failures: {consecutive_failures})")
+                            self.logger.warning(f"  [ERROR] {ticker}: Failed (consecutive failures: {consecutive_failures})")
                         
                         if consecutive_failures >= max_failures:
                             self.logger.error(f"Stopping after {max_failures} consecutive failures")
@@ -793,7 +793,7 @@ class ComprehensiveYFinanceFetcher:
                 except FuturesTimeoutError:
                     consecutive_failures += 1
                     with self._lock:
-                        self.logger.error(f"  ⏱️ {ticker}: Timeout after {FETCH_TIMEOUT}s (consecutive failures: {consecutive_failures})")
+                        self.logger.error(f"  [TIMEOUT] {ticker}: Timeout after {FETCH_TIMEOUT}s (consecutive failures: {consecutive_failures})")
                     
                     if consecutive_failures >= max_failures:
                         self.logger.error(f"Stopping after {max_failures} consecutive failures")
@@ -802,7 +802,7 @@ class ComprehensiveYFinanceFetcher:
                 except Exception as e:
                     consecutive_failures += 1
                     with self._lock:
-                        self.logger.error(f"  💥 {ticker}: Unexpected error: {e} (consecutive failures: {consecutive_failures})")
+                        self.logger.error(f"  [ERROR] {ticker}: Unexpected error: {e} (consecutive failures: {consecutive_failures})")
                     
                     if consecutive_failures >= max_failures:
                         self.logger.error(f"Stopping after {max_failures} consecutive failures")
@@ -818,13 +818,13 @@ class ComprehensiveYFinanceFetcher:
         elapsed = time.time() - batch_start
         success_count = len(results)
         
-        self.logger.info(f"✅ Batch complete: {success_count}/{len(tickers)} tickers "
+        self.logger.info(f"[SUCCESS] Batch complete: {success_count}/{len(tickers)} tickers "
                         f"({success_count/len(tickers)*100:.1f}% success) in {elapsed:.2f}s")
         
         # Performance metrics
         if len(tickers) > 0:
             avg_time_per_ticker = elapsed / len(tickers)
-            self.logger.info(f"📈 Performance: {avg_time_per_ticker:.2f}s per ticker (parallel batches)")
+            self.logger.info(f"[GAIN] Performance: {avg_time_per_ticker:.2f}s per ticker (parallel batches)")
         
         emit_metric("yfinance.fetch_batch.complete", 1, 
                    tags={'total': len(tickers), 'success': success_count})
@@ -1175,6 +1175,6 @@ def calculate_spy_correlation(stock_history: pd.DataFrame, spy_history: pd.DataF
 # ============================================================================
 
 if not YFINANCE_AVAILABLE:
-    logger.warning("⚠️  yfinance package not available - install with: pip install yfinance")
+    logger.warning("[WARNING] yfinance package not available - install with: pip install yfinance")
 else:
-    logger.info("✅ YFinance Integration v3.1 loaded with comprehensive endpoint coverage")
+    logger.info("[OK] YFinance Integration v3.1 loaded with comprehensive endpoint coverage")
