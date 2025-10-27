@@ -31,7 +31,27 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION - Centralized Reddit Settings
 # ============================================================================
-DEFAULT_SUBREDDITS = ['wallstreetbets', 'stocks', 'investing', 'StockMarket', 'options']
+DEFAULT_SUBREDDITS = [
+    # Core - Broad Market Discussion
+    'stocks', 
+    'investing', 
+    'StockMarket', 
+    'options',
+    
+    # Quality Fundamental Analysis
+    'SecurityAnalysis',    # Deep fundamental analysis
+    'ValueInvesting',      # Long-term value investing
+    'dividends',          # Income-focused investing
+    
+    # Trading & Technical Analysis
+    'Daytrading',         # Short-term momentum
+    'SwingTrading',       # Medium-term technical
+    
+    # Sector-Specific
+    'technologystock',    # Tech sector analysis
+    'biotech_stocks',     # Biotech/pharma
+    'RenewableEnergy',    # ESG/clean energy
+]
 
 class Phase1Fetcher:
     """

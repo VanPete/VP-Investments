@@ -51,7 +51,8 @@ async def run_pipeline(tickers=None):
     if tickers:
         phase1_results = await p1.fetch_all_data(tickers=tickers)
     else:
-        phase1_results = await p1.fetch_all_data()
+        # Increased post limit from 100 → 150 for better ticker discovery
+        phase1_results = await p1.fetch_all_data(post_limit=150)
     phase1_duration = (datetime.now() - phase1_start).total_seconds()
     
     # Phase 2-4: Calculate, Normalize, Score
