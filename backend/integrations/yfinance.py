@@ -156,6 +156,16 @@ class RawYFinanceData:
     endpoints_attempted: List[str] = field(default_factory=list)
     endpoints_succeeded: List[str] = field(default_factory=list)
     
+    @property
+    def is_valid(self) -> bool:
+        """Check if ticker has minimum required data (price history and basic info)"""
+        return (
+            self.fetch_success and
+            not self.history.empty and
+            len(self.info) > 0 and
+            'currentPrice' in self.info or 'regularMarketPrice' in self.info
+        )
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict, handling pandas objects"""
         result = {}
@@ -179,6 +189,7 @@ class MarketData:
     credit_spread: Optional[float] = None           # Corporate credit spread proxy
     fetch_timestamp: Optional[datetime] = None
     
+    @property
     def is_valid(self) -> bool:
         """Check if market data was successfully fetched"""
         return self.spy_history is not None and not self.spy_history.empty
