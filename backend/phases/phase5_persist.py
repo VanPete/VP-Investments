@@ -350,16 +350,18 @@ class Phase5Persist:
                 risk_factors = self.extract_risk_factors(ticker_data)
                 institutional_factors = self.extract_institutional_factors(ticker_data)
                 
-                # Extract company name and current price from raw data if available
+                # Extract company name, current price, and sector from raw data if available
                 company_name = None
                 current_price = None
+                sector = None  # v3.3: Extract sector for signals table
                 
                 # Try to get from ticker_data (if Phase 1 raw data is preserved)
                 raw_data = ticker_data.get('raw_data')  # If Phase 4 passes it through
                 if raw_data:
-                    # Get company name from info
+                    # Get company name and sector from info
                     info = raw_data.get('info', {})
                     company_name = info.get('longName') or info.get('shortName')
+                    sector = info.get('sector')  # v3.3: Extract sector
                     
                     # Get current price from fast_info or history
                     fast_info = raw_data.get('fast_info', {})
@@ -384,7 +386,8 @@ class Phase5Persist:
                     'risk_stability_score': ticker_data.get('risk_score'),
                     'institutional_smart_money_score': ticker_data.get('institutional_score'),
                     'company_name': company_name,
-                    'current_price': current_price
+                    'current_price': current_price,
+                    'sector': sector  # v3.3: Add sector to signals table
                 }
                 
                 signals_to_insert.append(signal_record)
@@ -642,6 +645,7 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             - social_alternative_coverage: float (optional)
             - risk_stability_coverage: float (optional)
             - institutional_smart_money_coverage: float (optional)
+            - sector: str (optional, v3.3)
             
     Returns:
         List of signal IDs created
@@ -655,7 +659,7 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
     param_count = 1
     
     for signal in signals:
-        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 19)])
+        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 20)])
         query_parts.append(f"({placeholders})")
         
         params.extend([
@@ -677,9 +681,10 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             signal.get('risk_stability_coverage'),
             signal.get('institutional_smart_money_coverage'),
             signal.get('company_name'),
-            signal.get('current_price')
+            signal.get('current_price'),
+            signal.get('sector')  # v3.3: Sector column
         ])
-        param_count += 19
+        param_count += 20
     
     query = f"""
     INSERT INTO signals (
@@ -698,7 +703,8 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
         risk_stability_coverage,
         institutional_smart_money_coverage,
         company_name,
-        current_price
+        current_price,
+        sector
     ) VALUES {', '.join(query_parts)}
     RETURNING id
     """
@@ -1102,7 +1108,7 @@ class Phase5PersistOptimized(Phase5Persist):
                     
                     # Extract sector information (v3.2)
                     if hasattr(raw_data, 'info') and raw_data.info:
-                        sector = getattr(raw_data.info, 'sector', None)
+                        sector = raw_data.info.get('sector')  # info is a dict, not an object
                         if sector:
                             sector_etf = get_sector_etf(sector)
                 
@@ -1407,16 +1413,18 @@ class Phase5PersistOptimized(Phase5Persist):
                 # Get total coverage from Phase 4
                 total_coverage = ticker_data.get('total_coverage', 0.0)
                 
-                # Extract company name and current price from phase1_cache
+                # Extract company name, current price, and sector from phase1_cache
                 company_name = None
                 current_price = None
+                sector = None  # v3.3: Extract sector for signals table
                 
                 if phase1_cache and ticker in phase1_cache:
                     ticker_raw_data = phase1_cache[ticker]  # This is a RawYFinanceData object
                     
-                    # Get company name from info (direct attribute access)
+                    # Get company name and sector from info (direct attribute access)
                     if ticker_raw_data.info:
                         company_name = ticker_raw_data.info.get('longName') or ticker_raw_data.info.get('shortName')
+                        sector = ticker_raw_data.info.get('sector')  # v3.3: Extract sector
                     
                     # Get current price from fast_info or history (direct attribute access)
                     if ticker_raw_data.fast_info:
@@ -1449,7 +1457,8 @@ class Phase5PersistOptimized(Phase5Persist):
                     'institutional_smart_money_score': ticker_data.get('institutional_score'),
                     'institutional_smart_money_coverage': institutional_coverage,
                     'company_name': company_name,
-                    'current_price': current_price
+                    'current_price': current_price,
+                    'sector': sector  # v3.3: Add sector to signals table
                 }
                 
                 signals_to_insert.append(signal_record)

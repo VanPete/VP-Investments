@@ -145,7 +145,8 @@ async def run_pipeline(tickers=None):
         # Persist complete pipeline run to database
         logger.info(f"[STATS] Persisting {len(phase4_list)} signals to database...")
         run_id = await p5.persist_pipeline_run(
-            phase4_results=phase4_list
+            phase4_results=phase4_list,
+            phase1_cache=raw_cache  # Pass Phase 1 cache for sector & current_price
         )
         
         phase5_duration = (datetime.now() - phase5_start).total_seconds()
@@ -166,9 +167,16 @@ async def run_pipeline(tickers=None):
         try:
             from backend.phases.phase6_performance import get_performance_updater
             
+            # Get benchmark cache from Phase 1 (v3.3: Prevents redundant yfinance calls)
+            benchmark_cache = phase1_results.get('sector_etf_data', {})
+            logger.info(f"  Using cached benchmark data: {len(benchmark_cache)} ETFs from Phase 1")
+            
             # Update performance intervals for pending signals
             p6_tracker = get_performance_updater(db)
-            perf_stats = await p6_tracker.update_pending_performance(limit=200)
+            perf_stats = await p6_tracker.update_pending_performance(
+                limit=200,
+                benchmark_cache=benchmark_cache  # v3.3: Pass cached benchmarks
+            )
             
             logger.info(f"  Performance records processed: {perf_stats['processed']}")
             logger.info(f"  Performance records updated: {perf_stats['updated']}")

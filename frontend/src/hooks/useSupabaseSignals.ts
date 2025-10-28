@@ -54,13 +54,15 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
       }
 
       // Query signals for the selected run
-      // v3.2: Performance data moved to performance table
+      // v3.2: Performance data in separate table - join to get backtest results
+      // v3.3: Include sector from signals table
       const { data, error: fetchError } = await supabase
         .from('signals')
         .select(`
           id,
           ticker,
           company_name,
+          sector,
           current_price,
           rank,
           overall_score,
@@ -77,7 +79,27 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
           social_alternative_coverage,
           risk_stability_coverage,
           institutional_smart_money_coverage,
-          created_at
+          created_at,
+          performance (
+            baseline_price,
+            baseline_date,
+            return_1d,
+            return_3d,
+            return_7d,
+            return_10d,
+            return_14d,
+            return_30d,
+            return_90d,
+            spy_return_1d,
+            spy_return_3d,
+            spy_return_7d,
+            spy_return_10d,
+            spy_return_14d,
+            spy_return_30d,
+            spy_return_90d,
+            status,
+            last_update
+          )
         `)
         .eq('run_id', selectedRunId)
         .order('overall_score', { ascending: false });
@@ -90,12 +112,18 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
       console.log('Successfully fetched signals:', data?.length || 0);
 
       // Transform Supabase data to SignalRanking format
-      // v3.2: Coverage values now stored directly in signals table
+      // v3.2: Coverage values and performance data now properly joined
       const rankings: SignalRanking[] = (data || []).map((signal, index) => {
+        // Access performance data from joined table (array with single element or empty)
+        const perf = Array.isArray(signal.performance) && signal.performance.length > 0 
+          ? signal.performance[0] 
+          : null;
+        
         return {
           rank: signal.rank || index + 1,
           ticker: signal.ticker,
           company_name: signal.company_name || undefined,
+          sector: signal.sector || undefined,  // v3.3: Include sector
           current_price: signal.current_price || undefined,
           overall_score: signal.overall_score || 0,
           total_coverage: signal.total_coverage || 0,  // Use database value, not calculated
@@ -115,26 +143,25 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
             risk_stability: signal.risk_stability_coverage || 0,
             institutional_smart_money: signal.institutional_smart_money_coverage || 0,
           },
-          // v3.2: Performance data moved to separate performance table
-          // These fields are optional and will be undefined until joined with performance data
-          backtest_baseline_price: undefined,
-          backtest_baseline_date: undefined,
-          return_1d: undefined,
-          return_3d: undefined,
-          return_7d: undefined,
-          return_10d: undefined,
-          return_14d: undefined,
-          return_30d: undefined,
-          return_90d: undefined,
-          spy_return_1d: undefined,
-          spy_return_3d: undefined,
-          spy_return_7d: undefined,
-          spy_return_10d: undefined,
-          spy_return_14d: undefined,
-          spy_return_30d: undefined,
-          spy_return_90d: undefined,
-          backtest_status: undefined,
-          backtest_last_update: undefined,
+          // v3.2: Performance data from joined performance table
+          backtest_baseline_price: perf?.baseline_price || undefined,
+          backtest_baseline_date: perf?.baseline_date || undefined,
+          return_1d: perf?.return_1d ?? undefined,
+          return_3d: perf?.return_3d ?? undefined,
+          return_7d: perf?.return_7d ?? undefined,
+          return_10d: perf?.return_10d ?? undefined,
+          return_14d: perf?.return_14d ?? undefined,
+          return_30d: perf?.return_30d ?? undefined,
+          return_90d: perf?.return_90d ?? undefined,
+          spy_return_1d: perf?.spy_return_1d ?? undefined,
+          spy_return_3d: perf?.spy_return_3d ?? undefined,
+          spy_return_7d: perf?.spy_return_7d ?? undefined,
+          spy_return_10d: perf?.spy_return_10d ?? undefined,
+          spy_return_14d: perf?.spy_return_14d ?? undefined,
+          spy_return_30d: perf?.spy_return_30d ?? undefined,
+          spy_return_90d: perf?.spy_return_90d ?? undefined,
+          backtest_status: perf?.status || undefined,
+          backtest_last_update: perf?.last_update || undefined,
         };
       });
 

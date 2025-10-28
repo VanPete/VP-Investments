@@ -3,13 +3,14 @@
 
 # GROUP WEIGHTS (must sum to 1.0)
 # These determine how much each group contributes to the overall signal score
+# UPDATED: Reduced news_macro from 15% to 3% (unimplemented factors removed)
 group_weights:
-  technical: 0.20              # 20% - Price momentum, volume, indicators
-  fundamental: 0.25            # 25% - Valuation, profitability, growth
-  news_macro: 0.15             # 15% - News sentiment, earnings, regime
-  social_alternative: 0.10     # 10% - Reddit, social media, buzz
-  risk_stability: 0.15         # 15% - Volatility, drawdowns, beta
-  institutional_smart_money: 0.15  # 15% - Ownership, insiders, analysts
+  technical: 0.24              # 24% (was 20%) - Price momentum, volume, indicators
+  fundamental: 0.29            # 29% (was 25%) - Valuation, profitability, growth
+  news_macro: 0.03             # 3% (was 15%) - Only pre/post earnings flags implemented
+  social_alternative: 0.12     # 12% (was 10%) - Reddit, social media, buzz
+  risk_stability: 0.16         # 16% (was 15%) - Volatility, drawdowns, beta
+  institutional_smart_money: 0.16  # 16% (was 15%) - Ownership, insiders, analysts
 
 # FACTOR WEIGHTS (per group, must sum to 1.0 within each group)
 # These determine how much each factor contributes to its group score
@@ -134,36 +135,30 @@ factor_weights_fundamental:
   net_debt_to_ebitda: 0.012
   shares_change_1y: 0.004
 
-# NEWS/MACRO GROUP (15% of overall) - 21 factors total (was 17, added 4)
+# NEWS/MACRO GROUP (6% of overall) - Only implemented factors
+# NOTE: 16 unimplemented factors moved to docs/FUTURE_SIGNALS.md
 factor_weights_news_macro:
-  # News sentiment (23% - reduced from 25%)
-  news_sentiment: 0.12
-  news_sentiment_consensus: 0.11
+  # Earnings events (50% - only implemented factors)
+  pre_earnings_flag: 0.25
+  post_earnings_flag: 0.25
   
-  # Earnings events (28% - reduced from 30%)
-  days_to_earnings: 0.05
-  pre_earnings_flag: 0.04
-  post_earnings_flag: 0.04
-  earnings_surprise_last: 0.08
-  earnings_beat_streak: 0.07
-  
-  # Market regime (23% - reduced from 25%)
-  market_regime: 0.09
-  spy_correlation_60d: 0.05
-  sector_momentum_30d: 0.05
-  sector_relative_strength: 0.04
-  
-  # Macro indicators (12% - removed unemployment/gdp/inflation)
-  vix_level: 0.05
-  treasury_yield_10y: 0.04
-  credit_spread: 0.03
-  # REMOVED: unemployment_rate, gdp_growth_rate, inflation_rate (require FRED API)
-  
-  # NEW NEWS/MACRO SIGNALS (8%)
-  earnings_revision_3m: 0.02
-  eps_surprise_std_4q: 0.02
-  post_earnings_drift_21d: 0.02
-  price_target_dispersion_ratio: 0.02
+  # UNIMPLEMENTED - Moved to docs/FUTURE_SIGNALS.md:
+  # news_sentiment: 0.12
+  # news_sentiment_consensus: 0.11
+  # days_to_earnings: 0.05
+  # earnings_surprise_last: 0.08
+  # earnings_beat_streak: 0.07
+  # market_regime: 0.09
+  # spy_correlation_60d: 0.05
+  # sector_momentum_30d: 0.05
+  # sector_relative_strength: 0.04
+  # vix_level: 0.05
+  # treasury_yield_10y: 0.04
+  # credit_spread: 0.03
+  # earnings_revision_3m: 0.02
+  # eps_surprise_std_4q: 0.02
+  # post_earnings_drift_21d: 0.02
+  # price_target_dispersion_ratio: 0.02
 
 # SOCIAL/ALTERNATIVE GROUP (10% of overall) - 10 factors total
 factor_weights_social_alternative:

@@ -282,9 +282,9 @@ class Phase1Fetcher:
             self.logger.warning("   [WARNING] YFinance fetcher not initialized")
         
         # STEP 5: Fetch sector ETF data for sector-relative performance tracking
-        self.logger.info(f"\n[SECTOR] Step 1.5: Fetching sector ETF data...")
+        self.logger.info(f"\n[BENCHMARKS] Step 1.5: Fetching benchmark & sector ETF data (SPY, QQQ, sector ETFs)...")
         sector_etf_data = await self._fetch_sector_etf_data(raw_cache_by_ticker)
-        self.logger.info(f"   [SUCCESS] Fetched {len(sector_etf_data)} sector ETFs")
+        self.logger.info(f"   [SUCCESS] Fetched {len(sector_etf_data)} benchmark ETFs")
         
         # VALIDATION: Validate fetched data before returning
         validated_cache = self._validate_fetched_data(raw_cache_by_ticker)
@@ -298,7 +298,7 @@ class Phase1Fetcher:
         self.logger.info(f"   News: {len(news_tickers)} tickers discovered from news")
         self.logger.info(f"   News Sentiment: {len(news_data)} tickers with sentiment data")
         self.logger.info(f"   YFinance: {len(validated_cache)} tickers with comprehensive data")
-        self.logger.info(f"   Sector ETFs: {len(sector_etf_data)} ETFs fetched")
+        self.logger.info(f"   Benchmarks: {len(sector_etf_data)} ETFs (SPY, QQQ, sector ETFs)")
         self.logger.info("=" * 80)
         
         return {
@@ -393,7 +393,10 @@ class Phase1Fetcher:
     
     async def _fetch_sector_etf_data(self, raw_cache_by_ticker: Dict) -> Dict[str, Any]:
         """
-        Fetch historical data for sector ETFs based on ticker sectors.
+        Fetch historical data for benchmarks (SPY, QQQ) and sector ETFs.
+        
+        v3.3: Consolidated benchmark data fetching in Phase 1 to prevent
+        multiple yfinance calls in Phase 6 performance tracking.
         
         Args:
             raw_cache_by_ticker: Dictionary of ticker -> YFinanceData
@@ -403,34 +406,46 @@ class Phase1Fetcher:
         """
         from backend.utils.sector_etfs import get_sector_etf
         
-        # Extract unique sectors from tickers
+        # ALWAYS fetch core benchmarks (SPY, QQQ)
+        benchmark_etfs = {'SPY', 'QQQ'}
+        
+        # Extract unique sectors from tickers and map to ETFs
         sectors = set()
         for ticker_data in raw_cache_by_ticker.values():
-            if ticker_data and ticker_data.info and hasattr(ticker_data.info, 'sector') and ticker_data.info.sector:
-                sectors.add(ticker_data.info.sector)
+            if ticker_data and ticker_data.info:
+                # Handle both dict and object attribute access
+                if isinstance(ticker_data.info, dict):
+                    sector = ticker_data.info.get('sector')
+                else:
+                    sector = getattr(ticker_data.info, 'sector', None)
+                
+                if sector:
+                    sectors.add(sector)
         
         self.logger.info(f"   Discovered {len(sectors)} unique sectors: {sorted(sectors)}")
         
         # Map sectors to ETFs
-        sector_etfs = {}
+        sector_etfs = set()
         for sector in sectors:
             etf = get_sector_etf(sector)
-            if etf and etf != 'SPY':  # Skip SPY, already fetched in market_data
-                sector_etfs[sector] = etf
+            if etf:
+                sector_etfs.add(etf)
         
-        # Get unique ETF tickers
-        unique_etfs = set(sector_etfs.values())
-        self.logger.info(f"   Mapped to {len(unique_etfs)} unique sector ETFs: {sorted(unique_etfs)}")
+        # Combine benchmarks + sector ETFs
+        all_etfs = benchmark_etfs | sector_etfs
+        self.logger.info(f"   Fetching {len(all_etfs)} ETFs: {sorted(all_etfs)}")
+        self.logger.info(f"      Benchmarks: SPY, QQQ")
+        self.logger.info(f"      Sector ETFs: {sorted(sector_etfs)}")
         
-        # Fetch historical data for each sector ETF
+        # Fetch historical data for each ETF
         etf_data = {}
-        if self.yfinance_fetcher and unique_etfs:
-            for etf in sorted(unique_etfs):
+        if all_etfs:
+            for etf in sorted(all_etfs):
                 try:
-                    # Fetch 2 years of history to match SPY
+                    # Fetch 2 years of history for performance tracking
                     import yfinance as yf
                     ticker_obj = yf.Ticker(etf)
-                    history = ticker_obj.history(period='2y')
+                    history = ticker_obj.history(period='2y', auto_adjust=True)
                     
                     if history is not None and not history.empty:
                         etf_data[etf] = history

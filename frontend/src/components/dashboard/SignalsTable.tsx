@@ -300,6 +300,17 @@ export function SignalsTable({
                   </span>
                 </TableHead>
               )}
+              {columnVisibility.sector && (
+                <TableHead 
+                  className="font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                  onClick={() => handleSort('sector')}
+                >
+                  <span className="inline-flex items-center">
+                    Sector
+                    <SortIcon column="sector" />
+                  </span>
+                </TableHead>
+              )}
               {columnVisibility.currentPrice && (
                 <TableHead 
                   className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -519,6 +530,13 @@ export function SignalsTable({
                     <TableCell>
                       <span className="text-sm text-gray-700 dark:text-gray-300">
                         {ranking.company_name || 'N/A'}
+                      </span>
+                    </TableCell>
+                  )}
+                  {columnVisibility.sector && (
+                    <TableCell>
+                      <span className="text-xs text-gray-600 dark:text-gray-400">
+                        {ranking.sector || '-'}
                       </span>
                     </TableCell>
                   )}

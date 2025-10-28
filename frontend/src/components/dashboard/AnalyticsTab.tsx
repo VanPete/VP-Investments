@@ -87,6 +87,7 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedInterval, setSelectedInterval] = useState<string>('7d');
+  const [selectedScoreBucket, setSelectedScoreBucket] = useState<string>('all');
 
   useEffect(() => {
     fetchAnalytics();
@@ -169,6 +170,41 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
     { key: '30d', label: '1 Month' },
     { key: '90d', label: '3 Months' },
   ];
+
+  // Filter analytics data based on selected score bucket
+  const getFilteredMetrics = (bucket: string) => {
+    if (!analyticsData || bucket === 'all') {
+      return analyticsData;
+    }
+
+    // Map bucket selection to score_bucket_performance keys
+    const bucketMap: Record<string, string> = {
+      'top_10': 'strong_buy',  // > 0.75 is roughly top 10%
+      '10_25': 'buy',          // 0.50-0.75
+      '25_50': 'hold',         // -0.25 to 0.50
+      '50_75': 'sell',         // -0.50 to -0.25
+      'bottom_25': 'strong_sell' // < -0.50
+    };
+
+    const bucketKey = bucketMap[bucket];
+    const bucketData = analyticsData.score_bucket_performance?.[bucketKey];
+
+    if (!bucketData) {
+      return analyticsData; // Fallback to all data
+    }
+
+    // Return modified analytics with bucket-specific metrics
+    // Note: This is a simplified filter - full implementation would require
+    // backend support for percentile-based buckets
+    return {
+      ...analyticsData,
+      // Override metrics with bucket-specific data if available
+      total_signals: bucketData.count || 0,
+      // TODO: Map other metrics from bucket data
+    };
+  };
+
+  const displayData = getFilteredMetrics(selectedScoreBucket);
 
   return (
     <div className="space-y-6">
@@ -352,31 +388,62 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
         </CardContent>
       </Card>
 
-      {/* Interval Selector */}
+      {/* Interval and Score Bucket Selectors */}
       <Card className="p-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold">Analytics Dashboard</h3>
-            <p className="text-sm text-gray-600">
+          <div className="flex-1">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Comprehensive analysis of signal performance and factor relationships
             </p>
+            {selectedScoreBucket !== 'all' && (
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                <span className="font-medium">Active Filter:</span> {
+                  selectedScoreBucket === 'top_10' ? 'Top 10% (Strong Buy)' :
+                  selectedScoreBucket === '10_25' ? '10-25% (Buy)' :
+                  selectedScoreBucket === '25_50' ? '25-50% (Hold)' :
+                  selectedScoreBucket === '50_75' ? '50-75% (Sell)' :
+                  'Bottom 25% (Strong Sell)'
+                }
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="interval-selector" className="text-sm text-gray-600">Time Interval:</label>
-            <select
-              id="interval-selector"
-              value={selectedInterval}
-              onChange={(e) => setSelectedInterval(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="1d">1 Day</option>
-              <option value="3d">3 Days</option>
-              <option value="7d">7 Days</option>
-              <option value="10d">10 Days</option>
-              <option value="14d">14 Days</option>
-              <option value="30d">30 Days</option>
-              <option value="90d">90 Days</option>
-            </select>
+          <div className="flex items-center gap-4">
+            {/* Score Bucket Filter */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="score-bucket-selector" className="text-sm text-gray-600 dark:text-gray-400">Score Bucket:</label>
+              <select
+                id="score-bucket-selector"
+                value={selectedScoreBucket}
+                onChange={(e) => setSelectedScoreBucket(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Signals</option>
+                <option value="top_10">Top 10%</option>
+                <option value="10_25">10-25%</option>
+                <option value="25_50">25-50%</option>
+                <option value="50_75">50-75%</option>
+                <option value="bottom_25">Bottom 25%</option>
+              </select>
+            </div>
+
+            {/* Time Interval Selector */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="interval-selector" className="text-sm text-gray-600 dark:text-gray-400">Time Interval:</label>
+              <select
+                id="interval-selector"
+                value={selectedInterval}
+                onChange={(e) => setSelectedInterval(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="1d">1 Day</option>
+                <option value="3d">3 Days</option>
+                <option value="7d">7 Days</option>
+                <option value="10d">10 Days</option>
+                <option value="14d">14 Days</option>
+                <option value="30d">30 Days</option>
+                <option value="90d">90 Days</option>
+              </select>
+            </div>
           </div>
         </div>
       </Card>

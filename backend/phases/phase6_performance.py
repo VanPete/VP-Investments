@@ -65,22 +65,36 @@ class PerformanceUpdater:
             from ..storage.database import get_supabase_database
             self.db = await get_supabase_database()
     
-    async def update_pending_performance(self, limit: int = 200) -> Dict[str, int]:
+    async def update_pending_performance(
+        self,
+        limit: int = 200,
+        benchmark_cache: Optional[Dict[str, pd.DataFrame]] = None  # v3.3: Cached benchmark data from Phase 1
+    ) -> Dict[str, int]:
         """
         Update performance intervals for signals with pending/in-progress status.
         
         Called during pipeline execution to keep performance data current.
         Only fetches price data for intervals that are now eligible but not yet calculated.
         
+        v3.3: Now accepts optional benchmark_cache from Phase 1 to avoid redundant yfinance calls.
+        
         Args:
             limit: Maximum number of performance records to update (default: 200)
                    Increased from 50 to handle larger batches of signals efficiently.
+            benchmark_cache: Optional dict of ETF ticker -> DataFrame from Phase 1.
+                             If provided, reuses SPY, QQQ, sector ETF data instead of fetching.
             
         Returns:
             Dict with stats (processed, updated, failed)
         """
         try:
             await self.set_database()
+            
+            # Log benchmark cache usage
+            if benchmark_cache:
+                self.logger.info(f"[CACHE] Using {len(benchmark_cache)} cached benchmarks from Phase 1")
+            else:
+                self.logger.debug("[FETCH] No benchmark cache - will fetch benchmarks as needed")
             
             # Get performance records needing updates
             result = self.db.client.table('performance').select(
@@ -160,7 +174,8 @@ class PerformanceUpdater:
                         baseline_price=baseline_price,
                         baseline_date=baseline_date,
                         intervals=missing_intervals,
-                        sector_etf=sector_etf  # v3.2: Pass sector ETF
+                        sector_etf=sector_etf,  # v3.2: Pass sector ETF
+                        benchmark_cache=benchmark_cache  # v3.3: Pass cached benchmarks
                     )
                     
                     if update_data:
@@ -208,10 +223,14 @@ class PerformanceUpdater:
         baseline_price: float,
         baseline_date: datetime,
         intervals: List[int],
-        sector_etf: Optional[str] = None  # v3.2: Sector ETF for comparison
+        sector_etf: Optional[str] = None,  # v3.2: Sector ETF for comparison
+        benchmark_cache: Optional[Dict[str, pd.DataFrame]] = None  # v3.3: Cached benchmark data from Phase 1
     ) -> Dict[str, Any]:
         """
         Calculate returns for specific intervals.
+        
+        v3.3: Now accepts optional benchmark_cache from Phase 1 to avoid redundant yfinance calls.
+        If benchmark_cache is None, falls back to fetching directly (for standalone execution).
         
         Args:
             ticker: Stock ticker
@@ -219,9 +238,10 @@ class PerformanceUpdater:
             baseline_date: Baseline date
             intervals: List of intervals to calculate (e.g., [1, 3, 7])
             sector_etf: Sector ETF ticker (e.g., 'XLK') for sector comparison
+            benchmark_cache: Optional dict of ETF ticker -> DataFrame from Phase 1
             
         Returns:
-            Dict with return_Xd, spy_return_Xd, alpha_Xd, sector_return_Xd, sector_alpha_Xd for each interval
+            Dict with return_Xd, spy_return_Xd, qqq_return_Xd, sector_return_Xd for each interval
         """
         try:
             import yfinance as yf
@@ -230,7 +250,7 @@ class PerformanceUpdater:
             end_date = datetime.now()
             start_date = baseline_date - timedelta(days=2)  # Small buffer
             
-            # Download ticker data
+            # Download ticker data (ticker is NOT in benchmark cache)
             ticker_df = yf.download(
                 ticker,
                 start=start_date,
@@ -243,34 +263,64 @@ class PerformanceUpdater:
                 self.logger.warning(f"No price data for {ticker}")
                 return {}
             
-            # Download SPY data for comparison
-            spy_df = yf.download(
-                'SPY',
-                start=start_date,
-                end=end_date,
-                progress=False,
-                auto_adjust=True
-            )
+            # Get benchmark data - use cache if available, otherwise fetch
+            # SPY (S&P 500 benchmark)
+            if benchmark_cache and 'SPY' in benchmark_cache:
+                spy_df = benchmark_cache['SPY']
+                self.logger.debug(f"Using cached SPY data ({len(spy_df)} days)")
+            else:
+                spy_df = yf.download(
+                    'SPY',
+                    start=start_date,
+                    end=end_date,
+                    progress=False,
+                    auto_adjust=True
+                )
+                self.logger.debug(f"Fetched SPY data ({len(spy_df)} days)")
             
-            # Get SPY baseline price
-            spy_baseline = self._get_price_at_date(spy_df, baseline_date, 'Close')
+            # Get SPY baseline price (use backward fill - last available price before/on baseline date)
+            spy_baseline = self._get_price_at_date(spy_df, baseline_date, 'Close', fill_direction='backward')
             
-            # Download sector ETF data if available (v3.2)
+            # QQQ (Nasdaq benchmark)
+            if benchmark_cache and 'QQQ' in benchmark_cache:
+                qqq_df = benchmark_cache['QQQ']
+                self.logger.debug(f"Using cached QQQ data ({len(qqq_df)} days)")
+            else:
+                qqq_df = yf.download(
+                    'QQQ',
+                    start=start_date,
+                    end=end_date,
+                    progress=False,
+                    auto_adjust=True
+                )
+                self.logger.debug(f"Fetched QQQ data ({len(qqq_df)} days)")
+            
+            # Get QQQ baseline price
+            qqq_baseline = self._get_price_at_date(qqq_df, baseline_date, 'Close', fill_direction='backward')
+            
+            # Sector ETF (if available)
             sector_df = None
             sector_baseline = None
             if sector_etf and sector_etf != 'SPY':
                 try:
-                    sector_df = yf.download(
-                        sector_etf,
-                        start=start_date,
-                        end=end_date,
-                        progress=False,
-                        auto_adjust=True
-                    )
-                    if not sector_df.empty:
-                        sector_baseline = self._get_price_at_date(sector_df, baseline_date, 'Close')
+                    # Use cache if available
+                    if benchmark_cache and sector_etf in benchmark_cache:
+                        sector_df = benchmark_cache[sector_etf]
+                        self.logger.debug(f"Using cached {sector_etf} data ({len(sector_df)} days)")
+                    else:
+                        sector_df = yf.download(
+                            sector_etf,
+                            start=start_date,
+                            end=end_date,
+                            progress=False,
+                            auto_adjust=True
+                        )
+                        self.logger.debug(f"Fetched {sector_etf} data ({len(sector_df)} days)")
+                    
+                    if sector_df is not None and not sector_df.empty:
+                        sector_baseline = self._get_price_at_date(sector_df, baseline_date, 'Close', fill_direction='backward')
                 except Exception as e:
-                    self.logger.debug(f"Failed to fetch sector ETF {sector_etf}: {e}")
+                    self.logger.debug(f"Failed to get sector ETF {sector_etf}: {e}")
             
             # Calculate returns for each interval
             update_data = {}
@@ -278,8 +328,8 @@ class PerformanceUpdater:
             for interval_days in intervals:
                 target_date = baseline_date + timedelta(days=interval_days)
                 
-                # Get ticker price at target date
-                target_price = self._get_price_at_date(ticker_df, target_date, 'Close')
+                # Get ticker price at target date (use forward fill - next available price on/after target)
+                target_price = self._get_price_at_date(ticker_df, target_date, 'Close', fill_direction='forward')
                 
                 if target_price and baseline_price > 0:
                     # Calculate ticker return
@@ -288,7 +338,7 @@ class PerformanceUpdater:
                     
                     # Calculate SPY return for comparison
                     if spy_baseline and not spy_df.empty:
-                        spy_target = self._get_price_at_date(spy_df, target_date, 'Close')
+                        spy_target = self._get_price_at_date(spy_df, target_date, 'Close', fill_direction='forward')
                         
                         if spy_target and spy_baseline > 0:
                             spy_return_pct = ((spy_target - spy_baseline) / spy_baseline) * 100
@@ -298,9 +348,21 @@ class PerformanceUpdater:
                             # alpha_Xd = return_Xd - spy_return_Xd (for all 7 intervals)
                             # No need to set them here - database handles it automatically
                     
+                    # Calculate QQQ return for Nasdaq comparison (v3.3)
+                    if qqq_baseline and not qqq_df.empty:
+                        qqq_target = self._get_price_at_date(qqq_df, target_date, 'Close', fill_direction='forward')
+                        
+                        if qqq_target and qqq_baseline > 0:
+                            qqq_return_pct = ((qqq_target - qqq_baseline) / qqq_baseline) * 100
+                            update_data[f'qqq_return_{interval_days}d'] = round(qqq_return_pct, 4)
+                            
+                            # NOTE: All qqq_alpha columns are GENERATED (auto-calculated by database)
+                            # qqq_alpha_Xd = return_Xd - qqq_return_Xd (for all 7 intervals)
+                            # No need to set them here - database handles it automatically
+                    
                     # Calculate sector ETF return (v3.2)
                     if sector_baseline and sector_df is not None and not sector_df.empty:
-                        sector_target = self._get_price_at_date(sector_df, target_date, 'Close')
+                        sector_target = self._get_price_at_date(sector_df, target_date, 'Close', fill_direction='forward')
                         
                         if sector_target and sector_baseline > 0:
                             sector_return_pct = ((sector_target - sector_baseline) / sector_baseline) * 100
@@ -320,15 +382,17 @@ class PerformanceUpdater:
         self, 
         df: pd.DataFrame, 
         target_date: datetime, 
-        price_col: str = 'Close'
+        price_col: str = 'Close',
+        fill_direction: str = 'forward'
     ) -> Optional[float]:
         """
-        Get price at specific date with forward fill for weekends/holidays.
+        Get price at specific date with forward/backward fill for weekends/holidays.
         
         Args:
             df: Price DataFrame
             target_date: Target date
             price_col: Column name ('Close', 'Open', etc.)
+            fill_direction: 'forward' (use next available) or 'backward' (use last available)
             
         Returns:
             Price at date, or None if not available
@@ -341,10 +405,16 @@ class PerformanceUpdater:
             if target_ts in df.index:
                 return float(df.loc[target_ts, price_col].iloc[0] if hasattr(df.loc[target_ts, price_col], 'iloc') else df.loc[target_ts, price_col])
             
-            # Forward fill - find next available date
-            available_dates = [d for d in df.index if d >= target_ts]
-            if available_dates:
-                return float(df.loc[available_dates[0], price_col].iloc[0] if hasattr(df.loc[available_dates[0], price_col], 'iloc') else df.loc[available_dates[0], price_col])
+            if fill_direction == 'forward':
+                # Forward fill - find next available date (for future target dates)
+                available_dates = [d for d in df.index if d >= target_ts]
+                if available_dates:
+                    return float(df.loc[available_dates[0], price_col].iloc[0] if hasattr(df.loc[available_dates[0], price_col], 'iloc') else df.loc[available_dates[0], price_col])
+            else:
+                # Backward fill - find last available date (for baseline dates)
+                available_dates = [d for d in df.index if d <= target_ts]
+                if available_dates:
+                    return float(df.loc[available_dates[-1], price_col].iloc[0] if hasattr(df.loc[available_dates[-1], price_col], 'iloc') else df.loc[available_dates[-1], price_col])
             
             return None
             

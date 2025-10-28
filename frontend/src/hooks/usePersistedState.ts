@@ -91,6 +91,7 @@ export interface ColumnVisibility {
   rank: boolean;
   ticker: boolean;
   companyName: boolean;
+  sector: boolean;  // v3.3: Sector column (required, always true)
   currentPrice: boolean;
   overallScore: boolean;
   coverage: boolean;

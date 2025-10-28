@@ -15,6 +15,7 @@ export interface ColumnVisibility {
   rank: boolean;
   ticker: boolean;
   companyName: boolean;
+  sector: boolean;  // v3.3: Sector column (required, always true)
   currentPrice: boolean;
   overallScore: boolean;
   coverage: boolean;
@@ -45,6 +46,7 @@ export function ColumnVisibilityToggle({
     { key: 'rank' as keyof ColumnVisibility, label: 'Rank', required: false },
     { key: 'ticker' as keyof ColumnVisibility, label: 'Ticker', required: true },
     { key: 'companyName' as keyof ColumnVisibility, label: 'Company Name', required: false },
+    { key: 'sector' as keyof ColumnVisibility, label: 'Sector', required: true },  // v3.3: Required column
     { key: 'currentPrice' as keyof ColumnVisibility, label: 'Current Price', required: false },
     { key: 'overallScore' as keyof ColumnVisibility, label: 'Overall Score', required: true },
     { key: 'coverage' as keyof ColumnVisibility, label: 'Coverage', required: false },

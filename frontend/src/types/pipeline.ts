@@ -42,6 +42,7 @@ export interface SignalRanking {
   rank: number;
   ticker: string;
   company_name?: string;
+  sector?: string;  // v3.3: Industry sector
   current_price?: number;
   overall_score: number;
   total_coverage: number;

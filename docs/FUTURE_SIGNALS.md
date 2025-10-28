@@ -113,8 +113,58 @@ inflation = ((cpi.iloc[-1] / cpi.iloc[-13]) - 1) * 100  # YoY
 
 ---
 
-**Last Updated**: January 2025 (Updated after factor removal)  
+**Last Updated**: October 28, 2025 (Added unimplemented news/macro factors)  
 **Status**: Macro factors officially removed from active pipeline
+
+---
+
+## UNIMPLEMENTED NEWS/MACRO FACTORS (16 factors)
+
+These factors are currently stubbed in the code but return NaN (not implemented). They should be removed from `config/weights.yaml` to eliminate false positives in factor monitoring.
+
+### News Sentiment Factors (2 factors)
+- **news_sentiment** (Weight: 0.06) - Aggregate news sentiment score from recent articles
+- **news_sentiment_consensus** (Weight: 0.05) - Consensus of analyst ratings/news sentiment
+- **Data Source Required**: News API (NewsAPI, Benzinga, Alpha Vantage)
+- **Implementation Effort**: Medium (API integration + NLP sentiment analysis)
+
+### Earnings-Related Factors (7 factors)
+- **days_to_earnings** (Weight: 0.05) - Days until next earnings announcement
+- **earnings_surprise_last** (Weight: 0.07) - Last quarter's earnings surprise (%)
+- **earnings_beat_streak** (Weight: 0.07) - Consecutive quarters beating estimates
+- **earnings_revision_3m** (Weight: 0.03) - Analyst EPS revision trend (3 months)
+- **eps_surprise_std_4q** (Weight: 0.02) - Standard deviation of last 4 earnings surprises
+- **post_earnings_drift_21d** (Weight: 0.04) - Price momentum 21 days post-earnings
+- **price_target_dispersion_ratio** (Weight: 0.03) - Dispersion of analyst price targets
+- **Data Source Required**: Earnings calendar API, analyst estimates (Benzinga, Earnings Whispers, Zacks)
+- **Implementation Effort**: High (multiple data sources, complex calculations)
+
+### Market Regime & Correlation Factors (4 factors)
+- **market_regime** (Weight: 0.04) - Current market regime classification (bull/bear/neutral)
+- **spy_correlation_60d** (Weight: 0.04) - 60-day correlation with S&P 500
+- **sector_momentum_30d** (Weight: 0.05) - 30-day sector relative performance
+- **sector_relative_strength** (Weight: 0.04) - Sector RSI vs market RSI
+- **Data Source Required**: Historical price data (can use yfinance), sector ETF data
+- **Implementation Effort**: Low-Medium (calculations only, no external API)
+
+### Macro Economic Indicators (3 factors)
+- **vix_level** (Weight: 0.04) - Current VIX (market volatility index)
+- **treasury_yield_10y** (Weight: 0.03) - 10-year Treasury yield
+- **credit_spread** (Weight: 0.03) - Investment grade vs high yield spread
+- **Data Source Required**: FRED API, Yahoo Finance
+- **Implementation Effort**: Low (simple API calls)
+
+### Total Impact
+- **Total Unimplemented**: 16 factors
+- **Total Weight**: ~0.60 (60% of news_macro group weight)
+- **Current Group Coverage**: ~6% (only 1-2 factors actually populated)
+- **Recommended Action**: Remove from weights.yaml until implemented
+
+### Removal Plan
+1. Comment out in `config/weights.yaml` (both backend & frontend)
+2. Comment out in `config/factor_to_group.yaml`
+3. Leave stub code in `backend/phases/phase2_calculate.py` (for future implementation)
+4. Adjust news_macro group weight from 0.15 to 0.06 (only implemented factors)
 
 ---
 

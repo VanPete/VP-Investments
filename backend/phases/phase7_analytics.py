@@ -23,7 +23,7 @@ Architecture:
 
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 import numpy as np
 from collections import defaultdict
@@ -223,8 +223,39 @@ class AnalyticsEngine:
         spy_return_col = f'spy_return_{interval}'
         alpha_col = f'alpha_{interval}'
         
-        # Filter records with data for this interval
-        valid_data = [p for p in performance_data if p.get(return_col) is not None]
+        # Extract interval days from string (e.g., "1d" -> 1)
+        interval_days = int(interval.replace('d', ''))
+        
+        # Current time for age calculation
+        now = datetime.now(timezone.utc)
+        
+        # Filter records with data for this interval AND sufficient time elapsed
+        valid_data = []
+        for p in performance_data:
+            # Must have return data
+            if p.get(return_col) is None:
+                continue
+            
+            # Check if enough time has passed since baseline_date
+            baseline_date = p.get('baseline_date')
+            if baseline_date:
+                # Parse baseline_date (ISO format string from database)
+                try:
+                    if isinstance(baseline_date, str):
+                        baseline_dt = datetime.fromisoformat(baseline_date.replace('Z', '+00:00'))
+                    else:
+                        baseline_dt = baseline_date
+                    
+                    # Calculate days elapsed
+                    days_elapsed = (now - baseline_dt).total_seconds() / 86400
+                    
+                    # Only include if sufficient time has passed
+                    if days_elapsed >= interval_days:
+                        valid_data.append(p)
+                except (ValueError, AttributeError) as e:
+                    # If date parsing fails, skip this record
+                    self.logger.debug(f"Failed to parse baseline_date {baseline_date}: {e}")
+                    continue
         
         if not valid_data:
             return {
