@@ -105,8 +105,13 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
         .order('overall_score', { ascending: false });
 
       if (fetchError) {
-        console.error('Supabase error details:', fetchError);
-        throw fetchError;
+        console.error('Supabase fetch error:', {
+          message: fetchError.message,
+          details: fetchError.details,
+          hint: fetchError.hint,
+          code: fetchError.code,
+        });
+        throw new Error(`Supabase error: ${fetchError.message}`);
       }
 
       console.log('Successfully fetched signals:', data?.length || 0);
