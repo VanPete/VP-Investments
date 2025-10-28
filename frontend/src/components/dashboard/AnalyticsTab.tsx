@@ -10,11 +10,11 @@ import { supabase } from '@/lib/supabase';
 import { TrendingUp, Activity, BarChart3 } from 'lucide-react';
 
 interface AnalyticsData {
-  score_bucket_performance: any;
-  factor_correlations: any;
-  factor_contributions: any;
-  group_performance: any;
-  backtest_cumulative_returns: any;
+  score_bucket_performance: Record<string, unknown> | null;
+  factor_correlations: Record<string, unknown> | null;
+  factor_contributions: Record<string, unknown> | null;
+  group_performance: Record<string, unknown> | null;
+  backtest_cumulative_returns: Record<string, unknown> | null;
 }
 
 interface AnalyticsTabProps {
@@ -155,7 +155,7 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
               </p>
             </div>
             <ScoreBucketChart 
-              data={analyticsData.score_bucket_performance} 
+              data={analyticsData.score_bucket_performance as never}
               interval={selectedInterval}
             />
           </Card>
@@ -169,7 +169,7 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
                 Understand how different factor groups relate to each other
               </p>
             </div>
-            <CorrelationHeatmap data={analyticsData.factor_correlations} />
+            <CorrelationHeatmap data={analyticsData.factor_correlations as never} />
           </Card>
         </TabsContent>
 
@@ -181,7 +181,7 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
                 VP Strategy performance vs market benchmarks (SPY & QQQ)
               </p>
             </div>
-            <BacktestChart data={analyticsData.backtest_cumulative_returns} />
+            <BacktestChart data={analyticsData.backtest_cumulative_returns as never} />
           </Card>
         </TabsContent>
       </Tabs>

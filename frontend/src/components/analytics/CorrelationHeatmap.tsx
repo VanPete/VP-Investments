@@ -82,8 +82,8 @@ export const CorrelationHeatmap: React.FC<CorrelationHeatmapProps> = ({ data }) 
                   tickvals: [-1, -0.5, 0, 0.5, 1],
                   ticktext: ['-1.0', '-0.5', '0.0', '0.5', '1.0']
                 }
-              } as any
-            ]}
+              }
+            ] as Plotly.Data[]}
             layout={{
               height: 500,
               xaxis: {

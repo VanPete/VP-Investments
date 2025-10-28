@@ -3,10 +3,18 @@ import dynamic from 'next/dynamic';
 
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
 
+interface IntervalData {
+  avg_return?: number;
+  win_rate?: number;
+  sharpe?: number;
+  max?: number;
+  min?: number;
+}
+
 interface BucketMetrics {
   threshold: string;
   count: number;
-  [interval: string]: any;
+  [interval: string]: string | number | IntervalData;
 }
 
 interface ScoreBucketData {
@@ -61,9 +69,9 @@ export const ScoreBucketChart: React.FC<ScoreBucketChartProps> = ({
 
   buckets.forEach((bucket) => {
     const bucketData = data[bucket];
-    const intervalData = bucketData[interval];
+    const intervalData = bucketData[interval] as IntervalData | undefined;
     
-    if (intervalData && bucketData.count > 0) {
+    if (intervalData && typeof intervalData === 'object' && bucketData.count > 0) {
       avgReturns.push((intervalData.avg_return || 0) * 100); // Convert to percentage
       winRates.push((intervalData.win_rate || 0) * 100);
       counts.push(bucketData.count);
@@ -164,7 +172,7 @@ export const ScoreBucketChart: React.FC<ScoreBucketChartProps> = ({
           Signal Distribution
         </h3>
         <div className="grid grid-cols-5 gap-2">
-          {buckets.map((bucket, idx) => {
+          {buckets.map((bucket) => {
             const bucketData = data[bucket];
             if (bucketData.count === 0) return null;
             

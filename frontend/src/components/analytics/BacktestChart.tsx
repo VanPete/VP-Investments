@@ -87,7 +87,7 @@ export const BacktestChart: React.FC<BacktestChartProps> = ({ data }) => {
               },
               hovertemplate: '<b>QQQ</b><br>%{x}<br>Return: %{y:.2f}%<extra></extra>',
             },
-          ] as any}
+          ]}
           layout={{
             height: 500,
             xaxis: {
