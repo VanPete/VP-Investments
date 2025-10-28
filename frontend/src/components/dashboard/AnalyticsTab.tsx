@@ -1,20 +1,81 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScoreBucketChart } from '@/components/analytics/ScoreBucketChart';
 import { CorrelationHeatmap } from '@/components/analytics/CorrelationHeatmap';
 import { BacktestChart } from '@/components/analytics/BacktestChart';
 import { supabase } from '@/lib/supabase';
-import { TrendingUp, Activity, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, BarChart3 } from 'lucide-react';
+
+interface SectorData {
+  avg_return: number;
+  count: number;
+  win_rate: number;
+}
 
 interface AnalyticsData {
+  // JSONB columns from Phase 7
   score_bucket_performance: Record<string, unknown> | null;
   factor_correlations: Record<string, unknown> | null;
   factor_contributions: Record<string, unknown> | null;
   group_performance: Record<string, unknown> | null;
   backtest_cumulative_returns: Record<string, unknown> | null;
+  
+  // Aggregate metrics
+  total_signals: number;
+  avg_overall_score: number;
+  
+  // Win rates
+  win_rate_1d: number | null;
+  win_rate_3d: number | null;
+  win_rate_7d: number | null;
+  win_rate_10d: number | null;
+  win_rate_14d: number | null;
+  win_rate_30d: number | null;
+  win_rate_90d: number | null;
+  
+  // Sharpe ratios
+  sharpe_ratio_1d: number | null;
+  sharpe_ratio_3d: number | null;
+  sharpe_ratio_7d: number | null;
+  sharpe_ratio_10d: number | null;
+  sharpe_ratio_14d: number | null;
+  sharpe_ratio_30d: number | null;
+  sharpe_ratio_90d: number | null;
+  
+  // Max drawdowns
+  max_drawdown_1d: number | null;
+  max_drawdown_3d: number | null;
+  max_drawdown_7d: number | null;
+  max_drawdown_10d: number | null;
+  max_drawdown_14d: number | null;
+  max_drawdown_30d: number | null;
+  max_drawdown_90d: number | null;
+  
+  // Returns & alpha
+  avg_return_1d: number | null;
+  avg_return_30d: number | null;
+  avg_alpha_1d: number | null;
+  avg_alpha_30d: number | null;
+  
+  // Sector analysis
+  top_sector: string | null;
+  top_sector_avg_return: number | null;
+  top_sector_count: number | null;
+  worst_sector: string | null;
+  worst_sector_avg_return: number | null;
+  worst_sector_count: number | null;
+  sector_performance: Record<string, SectorData> | null;
+  
+  // Signal group scores
+  avg_technical_score: number | null;
+  avg_fundamental_score: number | null;
+  avg_news_macro_score: number | null;
+  avg_social_alternative_score: number | null;
+  avg_risk_stability_score: number | null;
+  avg_institutional_score: number | null;
 }
 
 interface AnalyticsTabProps {
@@ -36,10 +97,10 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
       setLoading(true);
       setError(null);
       
-      // Fetch latest analytics record
+      // Fetch latest analytics record with all columns
       const { data, error: fetchError } = await supabase
         .from('analytics')
-        .select('score_bucket_performance, factor_correlations, factor_contributions, group_performance, backtest_cumulative_returns')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
@@ -52,7 +113,7 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
         throw new Error('No analytics data found');
       }
 
-      setAnalyticsData(data);
+      setAnalyticsData(data as AnalyticsData);
     } catch (err) {
       console.error('Error fetching analytics:', err);
       setError(err instanceof Error ? err.message : 'Failed to load analytics');
@@ -100,8 +161,197 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
     );
   }
 
+  const intervals = [
+    { key: '1d', label: '1 Day' },
+    { key: '3d', label: '3 Days' },
+    { key: '7d', label: '1 Week' },
+    { key: '14d', label: '2 Weeks' },
+    { key: '30d', label: '1 Month' },
+    { key: '90d', label: '3 Months' },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* Overview Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Signals
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analyticsData.total_signals || 0}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Avg Score
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {analyticsData.avg_overall_score?.toFixed(3) || 'N/A'}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Top Sector
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analyticsData.top_sector || 'N/A'}</div>
+            {analyticsData.top_sector_count && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {analyticsData.top_sector_count} signals
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              30d Avg Return
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold">
+                {analyticsData.avg_return_30d !== null && analyticsData.avg_return_30d !== undefined
+                  ? `${(analyticsData.avg_return_30d * 100).toFixed(2)}%`
+                  : 'N/A'}
+              </span>
+              {analyticsData.avg_return_30d !== null && analyticsData.avg_return_30d !== undefined && (
+                analyticsData.avg_return_30d > 0 ? (
+                  <TrendingUp className="h-5 w-5 text-green-500" />
+                ) : (
+                  <TrendingDown className="h-5 w-5 text-red-500" />
+                )
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Performance Metrics Grids */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Win Rates */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Win Rates</CardTitle>
+            <CardDescription>
+              Percentage of signals with positive returns
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              {intervals.map(({ key, label }) => {
+                const winRate = analyticsData[`win_rate_${key}` as keyof AnalyticsData] as number | null;
+                return (
+                  <div key={key} className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{label}</p>
+                    <p className="text-xl font-bold">
+                      {winRate !== null ? `${winRate.toFixed(1)}%` : 'N/A'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Sharpe Ratios */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Sharpe Ratios</CardTitle>
+            <CardDescription>
+              Risk-adjusted returns (higher is better)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              {intervals.map(({ key, label }) => {
+                const sharpe = analyticsData[`sharpe_ratio_${key}` as keyof AnalyticsData] as number | null;
+                return (
+                  <div key={key} className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{label}</p>
+                    <p className="text-xl font-bold">
+                      {sharpe !== null ? sharpe.toFixed(2) : 'N/A'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Max Drawdowns */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Maximum Drawdowns</CardTitle>
+          <CardDescription>
+            Largest peak-to-trough decline (lower is better)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {intervals.map(({ key, label }) => {
+              const drawdown = analyticsData[`max_drawdown_${key}` as keyof AnalyticsData] as number | null;
+              return (
+                <div key={key} className="space-y-1">
+                  <p className="text-sm text-muted-foreground">{label}</p>
+                  <p className="text-xl font-bold text-red-500">
+                    {drawdown !== null ? `${(drawdown * 100).toFixed(2)}%` : 'N/A'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Signal Group Scores */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Average Signal Group Scores</CardTitle>
+          <CardDescription>
+            Average normalized scores across all signal groups
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {[
+              { key: 'technical', label: 'Technical', icon: Activity },
+              { key: 'fundamental', label: 'Fundamental', icon: BarChart3 },
+              { key: 'news_macro', label: 'News & Macro', icon: TrendingUp },
+              { key: 'social_alternative', label: 'Social', icon: Activity },
+              { key: 'risk_stability', label: 'Risk', icon: Activity },
+              { key: 'institutional', label: 'Institutional', icon: BarChart3 },
+            ].map(({ key, label, icon: Icon }) => {
+              const score = analyticsData[`avg_${key}_score` as keyof AnalyticsData] as number | null;
+              return (
+                <div key={key} className="flex items-center gap-3 p-3 rounded-lg border">
+                  <Icon className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">{label}</p>
+                    <p className="text-lg font-bold">
+                      {score !== null ? score.toFixed(3) : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Interval Selector */}
       <Card className="p-4">
         <div className="flex items-center justify-between">
@@ -186,6 +436,40 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Sector Performance */}
+      {analyticsData.sector_performance && Object.keys(analyticsData.sector_performance).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sector Performance</CardTitle>
+            <CardDescription>
+              Performance breakdown by sector
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(analyticsData.sector_performance).map(([sector, data]: [string, unknown]) => {
+                const sectorData = data as SectorData;
+                return (
+                  <div key={sector} className="flex items-center justify-between p-3 rounded-lg border">
+                    <span className="font-medium">{sector}</span>
+                    <div className="text-right">
+                      <p className="font-bold">
+                        {sectorData.avg_return !== undefined
+                          ? `${(sectorData.avg_return * 100).toFixed(2)}%`
+                          : 'N/A'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {sectorData.count || 0} signals • {sectorData.win_rate !== undefined ? `${sectorData.win_rate.toFixed(1)}%` : 'N/A'} win rate
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Additional Insights Section */}
       <Card className="p-6 bg-blue-50 dark:bg-blue-900/10">
