@@ -135,30 +135,36 @@ factor_weights_fundamental:
   net_debt_to_ebitda: 0.012
   shares_change_1y: 0.004
 
-# NEWS/MACRO GROUP (6% of overall) - Only implemented factors
-# NOTE: 16 unimplemented factors moved to docs/FUTURE_SIGNALS.md
+# NEWS/MACRO GROUP (15% of overall) - 9 implemented factors (7 + 2 flags)
+# Restored working factors that were incorrectly moved to FUTURE_SIGNALS
 factor_weights_news_macro:
-  # Earnings events (50% - only implemented factors)
-  pre_earnings_flag: 0.25
-  post_earnings_flag: 0.25
+  # News sentiment (20%)
+  news_sentiment: 0.12
+  news_sentiment_consensus: 0.08
   
-  # UNIMPLEMENTED - Moved to docs/FUTURE_SIGNALS.md:
-  # news_sentiment: 0.12
-  # news_sentiment_consensus: 0.11
-  # days_to_earnings: 0.05
-  # earnings_surprise_last: 0.08
-  # earnings_beat_streak: 0.07
-  # market_regime: 0.09
-  # spy_correlation_60d: 0.05
-  # sector_momentum_30d: 0.05
-  # sector_relative_strength: 0.04
-  # vix_level: 0.05
-  # treasury_yield_10y: 0.04
-  # credit_spread: 0.03
-  # earnings_revision_3m: 0.02
-  # eps_surprise_std_4q: 0.02
-  # post_earnings_drift_21d: 0.02
-  # price_target_dispersion_ratio: 0.02
+  # Earnings timing & events (35%)
+  days_to_earnings: 0.10
+  pre_earnings_flag: 0.12
+  post_earnings_flag: 0.13
+  
+  # Earnings performance (25%)
+  earnings_surprise_last: 0.14
+  earnings_beat_streak: 0.11
+  
+  # Market correlation (20%)
+  spy_correlation_60d: 0.09
+  sector_relative_strength: 0.11
+  
+  # UNIMPLEMENTED - Require external APIs (moved to docs/FUTURE_SIGNALS.md):
+  # market_regime: 0.09            # Needs regime detection algorithm
+  # sector_momentum_30d: 0.05      # Needs sector ETF data
+  # vix_level: 0.05                # Needs CBOE VIX data
+  # treasury_yield_10y: 0.04       # Needs FRED API
+  # credit_spread: 0.03            # Needs credit market data
+  # earnings_revision_3m: 0.02     # Needs analyst revision data
+  # eps_surprise_std_4q: 0.02      # Calculated but not meaningful
+  # post_earnings_drift_21d: 0.02  # Needs historical tracking
+  # price_target_dispersion_ratio: 0.02  # Needs analyst target data
 
 # SOCIAL/ALTERNATIVE GROUP (10% of overall) - 10 factors total
 factor_weights_social_alternative:
