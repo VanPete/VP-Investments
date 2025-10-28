@@ -40,6 +40,7 @@ export function SignalsTable({
     rank: true,
     ticker: true,
     companyName: true,
+    sector: true,  // Added sector column visibility
     currentPrice: true,
     overallScore: true,
     coverage: true,
