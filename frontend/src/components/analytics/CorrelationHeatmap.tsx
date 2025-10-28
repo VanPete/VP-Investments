@@ -69,7 +69,7 @@ export const CorrelationHeatmap: React.FC<CorrelationHeatmapProps> = ({ data }) 
                 zmin: -1,
                 zmax: 1,
                 text: matrix.map(row => 
-                  row.map(val => val.toFixed(2))
+                  row.map(val => val !== null && val !== undefined ? val.toFixed(2) : 'N/A')
                 ),
                 texttemplate: '%{text}',
                 textfont: {
@@ -118,17 +118,23 @@ export const CorrelationHeatmap: React.FC<CorrelationHeatmapProps> = ({ data }) 
                 Top Positive Correlations
               </h3>
               <div className="space-y-2">
-                {data.top_positive_pairs.slice(0, 5).map((pair, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
-                    <span className="text-sm">
-                      {GROUP_DISPLAY_NAMES[pair.factor1] || pair.factor1} ↔{' '}
-                      {GROUP_DISPLAY_NAMES[pair.factor2] || pair.factor2}
-                    </span>
-                    <span className="font-mono font-bold text-blue-600">
-                      {pair.correlation.toFixed(3)}
-                    </span>
-                  </div>
-                ))}
+                {data.top_positive_pairs.slice(0, 5).map((pair, idx) => {
+                  // Skip pairs with null correlations
+                  if (pair.correlation === null || pair.correlation === undefined) {
+                    return null;
+                  }
+                  return (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
+                      <span className="text-sm">
+                        {GROUP_DISPLAY_NAMES[pair.factor1] || pair.factor1} ↔{' '}
+                        {GROUP_DISPLAY_NAMES[pair.factor2] || pair.factor2}
+                      </span>
+                      <span className="font-mono font-bold text-blue-600">
+                        {pair.correlation.toFixed(3)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -140,17 +146,23 @@ export const CorrelationHeatmap: React.FC<CorrelationHeatmapProps> = ({ data }) 
                 Top Negative Correlations
               </h3>
               <div className="space-y-2">
-                {data.top_negative_pairs.slice(0, 5).map((pair, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-2 bg-red-50 dark:bg-red-900/20 rounded">
-                    <span className="text-sm">
-                      {GROUP_DISPLAY_NAMES[pair.factor1] || pair.factor1} ↔{' '}
-                      {GROUP_DISPLAY_NAMES[pair.factor2] || pair.factor2}
-                    </span>
-                    <span className="font-mono font-bold text-red-600">
-                      {pair.correlation.toFixed(3)}
-                    </span>
-                  </div>
-                ))}
+                {data.top_negative_pairs.slice(0, 5).map((pair, idx) => {
+                  // Skip pairs with null correlations
+                  if (pair.correlation === null || pair.correlation === undefined) {
+                    return null;
+                  }
+                  return (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-red-50 dark:bg-red-900/20 rounded">
+                      <span className="text-sm">
+                        {GROUP_DISPLAY_NAMES[pair.factor1] || pair.factor1} ↔{' '}
+                        {GROUP_DISPLAY_NAMES[pair.factor2] || pair.factor2}
+                      </span>
+                      <span className="font-mono font-bold text-red-600">
+                        {pair.correlation.toFixed(3)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
