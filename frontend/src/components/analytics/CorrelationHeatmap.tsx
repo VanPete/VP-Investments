@@ -55,6 +55,7 @@ export const CorrelationHeatmap: React.FC<CorrelationHeatmapProps> = ({ data }) 
           Factor Group Correlation Matrix
         </h3>
         <div className="flex justify-center">
+          {/* @ts-expect-error - Plotly.js has complex type definitions */}
           <Plot
             data={[
               {

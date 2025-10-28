@@ -47,6 +47,7 @@ export const BacktestChart: React.FC<BacktestChartProps> = ({ data }) => {
         <h3 className="text-lg font-semibold mb-3">
           Cumulative Returns: VP Strategy vs Benchmarks
         </h3>
+        {/* @ts-expect-error - Plotly.js has complex type definitions */}
         <Plot
           data={[
             {

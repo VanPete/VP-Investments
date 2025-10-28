@@ -96,6 +96,7 @@ export const ScoreBucketChart: React.FC<ScoreBucketChartProps> = ({
           <h3 className="text-lg font-semibold mb-2">
             Average Return by Score Bucket ({interval})
           </h3>
+          {/* @ts-expect-error - Plotly.js has complex type definitions */}
           <Plot
             data={[
               {
@@ -133,6 +134,7 @@ export const ScoreBucketChart: React.FC<ScoreBucketChartProps> = ({
           <h3 className="text-lg font-semibold mb-2">
             Win Rate by Score Bucket ({interval})
           </h3>
+          {/* @ts-expect-error - Plotly.js has complex type definitions */}
           <Plot
             data={[
               {
