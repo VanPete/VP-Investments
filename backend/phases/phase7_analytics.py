@@ -27,8 +27,29 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 import numpy as np
 from collections import defaultdict
+import math
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_for_json(obj):
+    """
+    Recursively sanitize NaN/Inf values for JSON serialization.
+    Converts NaN/Inf to None (null in JSON).
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, np.floating):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    return obj
 
 
 class AnalyticsEngine:
@@ -451,9 +472,9 @@ class AnalyticsEngine:
         return start, end
     
     async def _persist_analytics(self, metrics: Dict[str, Any]) -> None:
-        """Save analytics to analytics table."""
+        """Save analytics to analytics table using UPSERT."""
         try:
-            # Insert into analytics table
+            # UPSERT into analytics table (v3.3: prevent duplicates with unique constraint)
             result = await self.db.execute_query("""
                 INSERT INTO analytics (
                     period_start, period_end, period_type,
@@ -483,6 +504,67 @@ class AnalyticsEngine:
                     $48, $49, $50, $51, $52, $53, $54, $55, $56,
                     $57, $58, $59, $60, $61
                 )
+                ON CONFLICT (period_type, period_start, period_end)
+                DO UPDATE SET
+                    total_signals = EXCLUDED.total_signals,
+                    avg_overall_score = EXCLUDED.avg_overall_score,
+                    win_rate_1d = EXCLUDED.win_rate_1d,
+                    win_rate_3d = EXCLUDED.win_rate_3d,
+                    win_rate_7d = EXCLUDED.win_rate_7d,
+                    win_rate_10d = EXCLUDED.win_rate_10d,
+                    win_rate_14d = EXCLUDED.win_rate_14d,
+                    win_rate_30d = EXCLUDED.win_rate_30d,
+                    win_rate_90d = EXCLUDED.win_rate_90d,
+                    sharpe_ratio_1d = EXCLUDED.sharpe_ratio_1d,
+                    sharpe_ratio_3d = EXCLUDED.sharpe_ratio_3d,
+                    sharpe_ratio_7d = EXCLUDED.sharpe_ratio_7d,
+                    sharpe_ratio_10d = EXCLUDED.sharpe_ratio_10d,
+                    sharpe_ratio_14d = EXCLUDED.sharpe_ratio_14d,
+                    sharpe_ratio_30d = EXCLUDED.sharpe_ratio_30d,
+                    sharpe_ratio_90d = EXCLUDED.sharpe_ratio_90d,
+                    max_drawdown_1d = EXCLUDED.max_drawdown_1d,
+                    max_drawdown_3d = EXCLUDED.max_drawdown_3d,
+                    max_drawdown_7d = EXCLUDED.max_drawdown_7d,
+                    max_drawdown_10d = EXCLUDED.max_drawdown_10d,
+                    max_drawdown_14d = EXCLUDED.max_drawdown_14d,
+                    max_drawdown_30d = EXCLUDED.max_drawdown_30d,
+                    max_drawdown_90d = EXCLUDED.max_drawdown_90d,
+                    avg_return_1d = EXCLUDED.avg_return_1d,
+                    avg_return_3d = EXCLUDED.avg_return_3d,
+                    avg_return_7d = EXCLUDED.avg_return_7d,
+                    avg_return_10d = EXCLUDED.avg_return_10d,
+                    avg_return_14d = EXCLUDED.avg_return_14d,
+                    avg_return_30d = EXCLUDED.avg_return_30d,
+                    avg_return_90d = EXCLUDED.avg_return_90d,
+                    avg_alpha_1d = EXCLUDED.avg_alpha_1d,
+                    avg_alpha_3d = EXCLUDED.avg_alpha_3d,
+                    avg_alpha_7d = EXCLUDED.avg_alpha_7d,
+                    avg_alpha_10d = EXCLUDED.avg_alpha_10d,
+                    avg_alpha_14d = EXCLUDED.avg_alpha_14d,
+                    avg_alpha_30d = EXCLUDED.avg_alpha_30d,
+                    avg_alpha_90d = EXCLUDED.avg_alpha_90d,
+                    top_sector = EXCLUDED.top_sector,
+                    top_sector_avg_return = EXCLUDED.top_sector_avg_return,
+                    top_sector_count = EXCLUDED.top_sector_count,
+                    worst_sector = EXCLUDED.worst_sector,
+                    worst_sector_avg_return = EXCLUDED.worst_sector_avg_return,
+                    worst_sector_count = EXCLUDED.worst_sector_count,
+                    sector_performance = EXCLUDED.sector_performance,
+                    avg_technical_score = EXCLUDED.avg_technical_score,
+                    avg_fundamental_score = EXCLUDED.avg_fundamental_score,
+                    avg_news_macro_score = EXCLUDED.avg_news_macro_score,
+                    avg_social_alternative_score = EXCLUDED.avg_social_alternative_score,
+                    avg_risk_stability_score = EXCLUDED.avg_risk_stability_score,
+                    avg_institutional_score = EXCLUDED.avg_institutional_score,
+                    top_factors = EXCLUDED.top_factors,
+                    signals_analyzed = EXCLUDED.signals_analyzed,
+                    performance_records_used = EXCLUDED.performance_records_used,
+                    score_bucket_performance = EXCLUDED.score_bucket_performance,
+                    factor_correlations = EXCLUDED.factor_correlations,
+                    factor_contributions = EXCLUDED.factor_contributions,
+                    group_performance = EXCLUDED.group_performance,
+                    backtest_cumulative_returns = EXCLUDED.backtest_cumulative_returns,
+                    updated_at = NOW()
                 RETURNING id
             """, [
                 metrics['period_start'], metrics['period_end'], metrics['period_type'],
@@ -499,16 +581,16 @@ class AnalyticsEngine:
                 metrics.get('avg_alpha_10d'), metrics.get('avg_alpha_14d'), metrics.get('avg_alpha_30d'), metrics.get('avg_alpha_90d'),
                 metrics.get('top_sector'), metrics.get('top_sector_avg_return'), metrics.get('top_sector_count'),
                 metrics.get('worst_sector'), metrics.get('worst_sector_avg_return'), metrics.get('worst_sector_count'),
-                json.dumps(metrics.get('sector_performance')) if metrics.get('sector_performance') else None,
+                json.dumps(sanitize_for_json(metrics.get('sector_performance'))) if metrics.get('sector_performance') else None,
                 metrics.get('avg_technical_score'), metrics.get('avg_fundamental_score'), metrics.get('avg_news_macro_score'),
                 metrics.get('avg_social_alternative_score'), metrics.get('avg_risk_stability_score'), metrics.get('avg_institutional_score'),
-                json.dumps(metrics.get('top_factors')) if metrics.get('top_factors') else None,
+                json.dumps(sanitize_for_json(metrics.get('top_factors'))) if metrics.get('top_factors') else None,
                 metrics['signals_analyzed'], metrics['performance_records_used'],
-                json.dumps(metrics.get('score_bucket_performance')) if metrics.get('score_bucket_performance') else None,
-                json.dumps(metrics.get('factor_correlations')) if metrics.get('factor_correlations') else None,
-                json.dumps(metrics.get('factor_contributions')) if metrics.get('factor_contributions') else None,
-                json.dumps(metrics.get('group_performance')) if metrics.get('group_performance') else None,
-                json.dumps(metrics.get('backtest_cumulative_returns')) if metrics.get('backtest_cumulative_returns') else None
+                json.dumps(sanitize_for_json(metrics.get('score_bucket_performance'))) if metrics.get('score_bucket_performance') else None,
+                json.dumps(sanitize_for_json(metrics.get('factor_correlations'))) if metrics.get('factor_correlations') else None,
+                json.dumps(sanitize_for_json(metrics.get('factor_contributions'))) if metrics.get('factor_contributions') else None,
+                json.dumps(sanitize_for_json(metrics.get('group_performance'))) if metrics.get('group_performance') else None,
+                json.dumps(sanitize_for_json(metrics.get('backtest_cumulative_returns'))) if metrics.get('backtest_cumulative_returns') else None
             ])
             
             self.logger.info(f"[SUCCESS] Analytics persisted to database")
