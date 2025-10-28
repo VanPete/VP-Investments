@@ -145,8 +145,7 @@ async def run_pipeline(tickers=None):
         # Persist complete pipeline run to database
         logger.info(f"[STATS] Persisting {len(phase4_list)} signals to database...")
         run_id = await p5.persist_pipeline_run(
-            phase4_results=phase4_list,
-            phase1_cache=raw_cache
+            phase4_results=phase4_list
         )
         
         phase5_duration = (datetime.now() - phase5_start).total_seconds()

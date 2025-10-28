@@ -112,8 +112,9 @@ export function AnalyticsTab({ loading: parentLoading }: AnalyticsTabProps) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Time Interval:</span>
+            <label htmlFor="interval-selector" className="text-sm text-gray-600">Time Interval:</label>
             <select
+              id="interval-selector"
               value={selectedInterval}
               onChange={(e) => setSelectedInterval(e.target.value)}
               className="px-3 py-1.5 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
