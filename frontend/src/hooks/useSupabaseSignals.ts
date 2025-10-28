@@ -98,7 +98,7 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
             spy_return_30d,
             spy_return_90d,
             status,
-            last_update
+            last_updated
           )
         `)
         .eq('run_id', selectedRunId)
@@ -166,7 +166,7 @@ export function useSupabaseSignals(): UseSupabaseSignalsResult {
           spy_return_30d: perf?.spy_return_30d ?? undefined,
           spy_return_90d: perf?.spy_return_90d ?? undefined,
           backtest_status: perf?.status || undefined,
-          backtest_last_update: perf?.last_update || undefined,
+          backtest_last_update: perf?.last_updated || undefined,
         };
       });
 
