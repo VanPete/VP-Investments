@@ -1020,6 +1020,16 @@ class Phase1FetcherOptimized(Phase1Fetcher):
         super().__init__()
         self.max_concurrent_tickers = max_concurrent_tickers
         self.semaphore = asyncio.Semaphore(max_concurrent_tickers)
+        
+        # Error tracking for improved logging
+        self.error_summary = {
+            'timeout_tickers': [],
+            'delisted_tickers': [],
+            'missing_data_tickers': [],
+            'http_errors': [],
+            'other_errors': []
+        }
+        
         self.logger.info(f"[OPTIMIZED] Phase1Fetcher initialized with {max_concurrent_tickers} concurrent workers")
     
     async def _fetch_comprehensive_yfinance_data(self, tickers: List[str]) -> Dict[str, Any]:
@@ -1055,7 +1065,7 @@ class Phase1FetcherOptimized(Phase1Fetcher):
         self.logger.info(f"[OPTIMIZED] Split into {len(batches)} batches of ~{batch_size} tickers each")
         
         # Process all batches concurrently with semaphore limiting
-        tasks = [self._fetch_batch_with_semaphore(batch) for batch in batches]
+        tasks = [self._fetch_batch_with_semaphore(batch, idx+1, len(batches)) for idx, batch in enumerate(batches)]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Merge results from all batches
@@ -1077,6 +1087,28 @@ class Phase1FetcherOptimized(Phase1Fetcher):
         self.logger.info(f"   [SUCCESS] Optimized fetch complete: {success_count}/{len(tickers)} tickers "
                         f"({success_rate:.1f}% success, {len(errors)} batch errors)")
         
+        # Log error summary
+        total_errors = sum([
+            len(self.error_summary['timeout_tickers']),
+            len(self.error_summary['delisted_tickers']),
+            len(self.error_summary['missing_data_tickers']),
+            len(self.error_summary['other_errors'])
+        ])
+        
+        if total_errors > 0:
+            self.logger.warning(f"[ERROR SUMMARY] {total_errors} total errors encountered:")
+            if self.error_summary['timeout_tickers']:
+                self.logger.warning(f"   Timeouts: {len(self.error_summary['timeout_tickers'])} tickers - "
+                                  f"{self.error_summary['timeout_tickers'][:5]}{' ...' if len(self.error_summary['timeout_tickers']) > 5 else ''}")
+            if self.error_summary['delisted_tickers']:
+                self.logger.warning(f"   Delisted/404: {len(self.error_summary['delisted_tickers'])} tickers - "
+                                  f"{self.error_summary['delisted_tickers'][:5]}{' ...' if len(self.error_summary['delisted_tickers']) > 5 else ''}")
+            if self.error_summary['missing_data_tickers']:
+                self.logger.warning(f"   Missing data: {len(self.error_summary['missing_data_tickers'])} tickers - "
+                                  f"{self.error_summary['missing_data_tickers'][:5]}{' ...' if len(self.error_summary['missing_data_tickers']) > 5 else ''}")
+            if self.error_summary['other_errors']:
+                self.logger.warning(f"   Other errors: {len(self.error_summary['other_errors'])} - {self.error_summary['other_errors'][:2]}")
+        
         # Log endpoint success statistics
         if raw_cache:
             sample_ticker = list(raw_cache.keys())[0]
@@ -1086,7 +1118,7 @@ class Phase1FetcherOptimized(Phase1Fetcher):
         
         return raw_cache
     
-    async def _fetch_batch_with_semaphore(self, batch_tickers: List[str]) -> Dict[str, Any]:
+    async def _fetch_batch_with_semaphore(self, batch_tickers: List[str], batch_num: int = 0, total_batches: int = 0) -> Dict[str, Any]:
         """
         Fetch a batch of tickers with semaphore-based rate limiting.
         
@@ -1094,12 +1126,17 @@ class Phase1FetcherOptimized(Phase1Fetcher):
         
         Args:
             batch_tickers: Batch of ticker symbols to fetch
+            batch_num: Current batch number (for progress logging)
+            total_batches: Total number of batches (for progress logging)
             
         Returns:
             Dict mapping ticker -> RawYFinanceData for this batch
         """
         async with self.semaphore:
-            self.logger.debug(f"[BATCH] Processing {len(batch_tickers)} tickers: {batch_tickers[:3]}...")
+            if batch_num > 0:
+                self.logger.info(f"[PROGRESS] Batch {batch_num}/{total_batches} starting - {len(batch_tickers)} tickers")
+            else:
+                self.logger.debug(f"[BATCH] Processing {len(batch_tickers)} tickers: {batch_tickers[:3]}...")
             
             # Run the synchronous yfinance fetch_batch in executor
             loop = asyncio.get_event_loop()
@@ -1109,9 +1146,26 @@ class Phase1FetcherOptimized(Phase1Fetcher):
                     self.yfinance_fetcher.fetch_batch,
                     batch_tickers
                 )
+                
+                # Track errors from this batch
+                if batch_result:
+                    for ticker, bundle in batch_result.items():
+                        if not bundle.is_valid:
+                            if 'timeout' in str(bundle.errors).lower():
+                                self.error_summary['timeout_tickers'].append(ticker)
+                            elif 'delisted' in str(bundle.errors).lower() or '404' in str(bundle.errors):
+                                self.error_summary['delisted_tickers'].append(ticker)
+                            elif bundle.price_history is None or len(bundle.price_history) == 0:
+                                self.error_summary['missing_data_tickers'].append(ticker)
+                
+                if batch_num > 0:
+                    success = len(batch_result) if batch_result else 0
+                    self.logger.info(f"[PROGRESS] Batch {batch_num}/{total_batches} complete - {success}/{len(batch_tickers)} successful")
+                
                 return batch_result
             except Exception as e:
                 self.logger.error(f"[BATCH] Error fetching batch: {e}")
+                self.error_summary['other_errors'].append(f"Batch {batch_num}: {str(e)}")
                 return {}
     
     async def _fetch_news_data(self, tickers: List[str]) -> Dict[str, Any]:

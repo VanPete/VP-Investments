@@ -370,6 +370,21 @@ class Phase2Calculator:
         elapsed = (datetime.now() - batch_start).total_seconds()
         self.logger.info(f"[SUCCESS] Batch calculation complete: {len(results)} tickers in {elapsed:.2f}s")
         
+        # Calculate and log factor quality metrics in real-time
+        total_calculations = sum(self.monitor.attempts.values()) if hasattr(self.monitor, 'attempts') else 0
+        successful_calculations = sum(self.monitor.successes.values()) if hasattr(self.monitor, 'successes') else 0
+        overall_success_rate = (successful_calculations / total_calculations * 100) if total_calculations > 0 else 0
+        
+        self.logger.info(f"[QUALITY] Factor Coverage: {successful_calculations}/{total_calculations} "
+                        f"({overall_success_rate:.1f}% success rate)")
+        
+        # Identify low-performing factors
+        if hasattr(self.monitor, 'get_problematic_factors'):
+            problematic = self.monitor.get_problematic_factors(threshold=0.7)
+            if problematic:
+                low_coverage_factors = [f['factor'] for f in problematic[:5]]
+                self.logger.warning(f"[QUALITY] Low coverage factors (<70%): {', '.join(low_coverage_factors)}")
+        
         # Generate monitoring report
         self.logger.info("\n")
         monitoring_report = self.monitor.report(min_success_rate=0.7)

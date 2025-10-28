@@ -339,12 +339,12 @@ class PerformanceUpdater:
             
             # Try exact date first
             if target_ts in df.index:
-                return float(df.loc[target_ts, price_col])
+                return float(df.loc[target_ts, price_col].iloc[0] if hasattr(df.loc[target_ts, price_col], 'iloc') else df.loc[target_ts, price_col])
             
             # Forward fill - find next available date
             available_dates = [d for d in df.index if d >= target_ts]
             if available_dates:
-                return float(df.loc[available_dates[0], price_col])
+                return float(df.loc[available_dates[0], price_col].iloc[0] if hasattr(df.loc[available_dates[0], price_col], 'iloc') else df.loc[available_dates[0], price_col])
             
             return None
             

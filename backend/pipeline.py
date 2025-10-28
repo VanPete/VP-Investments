@@ -5,8 +5,10 @@ import os
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', message='.*Calling float on.*')
 from backend.utils.logger import setup_logging, get_logger
 setup_logging(log_level="INFO", log_dir="logs", console_output=True)
 logger = get_logger(__name__)
@@ -233,6 +235,8 @@ async def run_pipeline(tickers=None):
     }
     _print_results(phase4_results, total_duration, phase_timings)
     _export_json(phase4_results, phase1_results)
+    _export_performance_metrics(phase_timings, total_duration, phase1_results, phase2_results, phase4_results, run_id if 'run_id' in locals() else None)
+    _compare_with_previous_run(phase_timings, total_duration, phase1_results, phase4_results)
     
     return phase4_results
 
@@ -324,6 +328,180 @@ def _export_json(results: dict, phase1_results: dict) -> None:
         
     except Exception as e:
         logger.error(f"Failed to export JSON: {e}")
+
+def _export_performance_metrics(
+    phase_timings: Dict[str, float], 
+    total_duration: float,
+    phase1_results: dict,
+    phase2_results: dict,
+    phase4_results: dict,
+    run_id: Optional[str] = None
+) -> None:
+    """Export structured performance metrics to JSON for analysis."""
+    try:
+        # Create logs directory if it doesn't exist
+        logs_dir = Path("logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Calculate phase percentages
+        phase_percentages = {
+            phase: (duration / total_duration * 100) if total_duration > 0 else 0
+            for phase, duration in phase_timings.items()
+        }
+        
+        # Identify bottlenecks (phases > 10% of total time)
+        bottlenecks = []
+        for phase, pct in phase_percentages.items():
+            if pct > 10:
+                recommendation = ""
+                if phase == "phase1":
+                    recommendation = "Consider caching market data or increasing concurrent workers"
+                elif phase == "phase2":
+                    recommendation = "Review factor calculation efficiency"
+                elif phase == "phase5":
+                    recommendation = "Database bulk INSERT already optimized"
+                elif phase == "phase6":
+                    recommendation = "Limit performance record updates or batch more efficiently"
+                
+                bottlenecks.append({
+                    "phase": phase,
+                    "duration_seconds": phase_timings[phase],
+                    "percent_of_total": round(pct, 1),
+                    "recommendation": recommendation
+                })
+        
+        # Extract Phase 1 metrics
+        all_tickers = phase1_results.get('all_tickers', [])
+        reddit_tickers = phase1_results.get('discovered_tickers', [])
+        news_tickers = phase1_results.get('news_discovered_tickers', [])
+        
+        # Extract Phase 2 factor metrics
+        total_factors_calculated = 0
+        successful_factors = 0
+        if phase2_results:
+            for ticker_data in phase2_results.values():
+                for group_data in ticker_data.__dict__.values():
+                    if hasattr(group_data, '__dict__'):
+                        for factor_value in group_data.__dict__.values():
+                            total_factors_calculated += 1
+                            if factor_value is not None and not (isinstance(factor_value, float) and (factor_value != factor_value)):  # Check for NaN
+                                successful_factors += 1
+        
+        factor_success_rate = (successful_factors / total_factors_calculated * 100) if total_factors_calculated > 0 else 0
+        
+        # Build performance metrics
+        performance_metrics = {
+            "run_id": run_id,
+            "timestamp": datetime.now().isoformat(),
+            "total_duration_seconds": round(total_duration, 2),
+            "phases": {
+                phase: {
+                    "duration_seconds": round(duration, 2),
+                    "percent_of_total": round(phase_percentages[phase], 1)
+                }
+                for phase, duration in phase_timings.items()
+            },
+            "bottlenecks": bottlenecks,
+            "ticker_metrics": {
+                "total_discovered": len(all_tickers),
+                "reddit_discovered": len(reddit_tickers),
+                "news_discovered": len(news_tickers),
+                "signals_generated": len(phase4_results)
+            },
+            "factor_metrics": {
+                "total_calculations": total_factors_calculated,
+                "successful_calculations": successful_factors,
+                "success_rate_percent": round(factor_success_rate, 1)
+            },
+            "top_signals": [
+                {
+                    "ticker": ticker,
+                    "score": round(result.overall_score, 4)
+                }
+                for ticker, result in sorted(phase4_results.items(), key=lambda x: x[1].overall_score, reverse=True)[:10]
+            ]
+        }
+        
+        # Save with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = logs_dir / f"performance_{timestamp}.json"
+        
+        with open(filepath, 'w') as f:
+            json.dump(performance_metrics, f, indent=2)
+        
+        logger.info(f"[METRICS] Performance metrics saved: {filepath}")
+        
+        # Log bottlenecks
+        if bottlenecks:
+            logger.warning(f"[PERFORMANCE] {len(bottlenecks)} bottlenecks identified:")
+            for bn in bottlenecks:
+                logger.warning(f"   {bn['phase']}: {bn['percent_of_total']}% ({bn['duration_seconds']}s) - {bn['recommendation']}")
+        
+    except Exception as e:
+        logger.error(f"Failed to export performance metrics: {e}")
+
+def _compare_with_previous_run(
+    phase_timings: Dict[str, float],
+    total_duration: float,
+    phase1_results: dict,
+    phase4_results: dict
+) -> None:
+    """Compare current run metrics with the most recent previous run."""
+    try:
+        # Find the most recent performance metrics file
+        logs_dir = Path("logs")
+        if not logs_dir.exists():
+            return
+        
+        performance_files = sorted(logs_dir.glob("performance_*.json"), reverse=True)
+        if len(performance_files) < 2:  # Need at least 2 runs to compare
+            return
+        
+        # Load previous run (second most recent, since most recent is current run being saved)
+        previous_file = performance_files[1] if len(performance_files) > 1 else None
+        if not previous_file:
+            return
+        
+        with open(previous_file, 'r') as f:
+            previous_metrics = json.load(f)
+        
+        # Compare key metrics
+        prev_duration = previous_metrics.get('total_duration_seconds', 0)
+        prev_tickers = previous_metrics.get('ticker_metrics', {}).get('total_discovered', 0)
+        prev_signals = previous_metrics.get('ticker_metrics', {}).get('signals_generated', 0)
+        
+        curr_tickers = len(phase1_results.get('all_tickers', []))
+        curr_signals = len(phase4_results)
+        
+        # Calculate changes
+        duration_change = ((total_duration - prev_duration) / prev_duration * 100) if prev_duration > 0 else 0
+        ticker_change = ((curr_tickers - prev_tickers) / prev_tickers * 100) if prev_tickers > 0 else 0
+        signal_change = ((curr_signals - prev_signals) / prev_signals * 100) if prev_signals > 0 else 0
+        
+        # Log comparison
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("RUN COMPARISON vs. Previous Run")
+        logger.info("=" * 80)
+        logger.info(f"  Runtime:           {total_duration:.1f}s vs {prev_duration:.1f}s "
+                   f"({duration_change:+.1f}%)")
+        logger.info(f"  Tickers discovered: {curr_tickers} vs {prev_tickers} "
+                   f"({ticker_change:+.1f}%)")
+        logger.info(f"  Signals generated:  {curr_signals} vs {prev_signals} "
+                   f"({signal_change:+.1f}%)")
+        
+        # Highlight significant changes
+        if abs(duration_change) > 20:
+            logger.warning(f"  [ALERT] Runtime changed by {duration_change:+.1f}% - investigate performance")
+        if ticker_change < -30:
+            logger.warning(f"  [ALERT] Ticker discovery dropped {abs(ticker_change):.1f}% - check data sources")
+        elif ticker_change > 50:
+            logger.info(f"  [POSITIVE] Ticker discovery increased {ticker_change:.1f}%")
+        
+        logger.info("=" * 80)
+        
+    except Exception as e:
+        logger.debug(f"Could not compare with previous run: {e}")
 
 if __name__ == "__main__":
     import sys

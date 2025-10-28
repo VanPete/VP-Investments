@@ -453,12 +453,9 @@ class ComprehensiveYFinanceFetcher:
             bundle=bundle
         ))
         
-        # Earnings
-        bundle.earnings = self._safe_dataframe(self._safe_fetch(
-            lambda: stock.earnings,
-            endpoint='get_earnings',
-            bundle=bundle
-        ))
+        # Earnings (DEPRECATED as of yfinance 0.2.50+)
+        # Use income_stmt "Net Income" instead - skipping deprecated earnings property
+        bundle.earnings = None  # Deprecated endpoint, data available in income_stmt
         
         bundle.quarterly_earnings = self._safe_dataframe(self._safe_fetch(
             lambda: stock.quarterly_earnings,

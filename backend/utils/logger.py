@@ -187,6 +187,7 @@ def setup_logging(
     logging.getLogger('asyncpraw').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('yfinance').setLevel(logging.CRITICAL)  # Suppress 404 errors and delisting warnings
     
     return root_logger
 

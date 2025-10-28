@@ -12,9 +12,10 @@ import { SignalsTable } from './SignalsTable';
 import { DashboardHeader } from './DashboardHeader';
 import { QuickStats } from './QuickStats';
 import { PerformanceTab } from './PerformanceTab';
+import { AnalyticsTab } from './AnalyticsTab';
 import { usePersistedColumnVisibility } from '@/hooks/usePersistedState';
 import { useSupabaseSignals } from '@/hooks/useSupabaseSignals';
-import { BarChart3, Table } from 'lucide-react';
+import { BarChart3, Table, TrendingUp, BookOpen } from 'lucide-react';
 
 interface SignalsDashboardProps {
   weightsConfig: WeightsConfig | null;
@@ -154,11 +155,19 @@ export function SignalsDashboard({
           <TabsList className="mb-6">
             <TabsTrigger value="signals" className="flex items-center gap-2">
               <Table className="h-4 w-4" />
-              Signals
+              Dashboard
             </TabsTrigger>
             <TabsTrigger value="performance" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Performance
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              Analysis
+            </TabsTrigger>
+            <TabsTrigger value="methodology" className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              Methodology
             </TabsTrigger>
           </TabsList>
 
@@ -202,6 +211,106 @@ export function SignalsDashboard({
 
           <TabsContent value="performance">
             <PerformanceTab signals={signals} loading={loading} />
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <AnalyticsTab loading={loading} />
+          </TabsContent>
+
+          <TabsContent value="methodology">
+            <Card className="p-8">
+              <div className="prose max-w-none dark:prose-invert">
+                <h2 className="text-2xl font-bold mb-4">VP Investments Methodology</h2>
+                
+                <section className="mb-8">
+                  <h3 className="text-xl font-semibold mb-3">Overview</h3>
+                  <p className="text-gray-700 dark:text-gray-300">
+                    The VP Investments system analyzes stocks using 158 individual factors across 6 major categories,
+                    combining quantitative metrics with alternative data to generate comprehensive investment signals.
+                  </p>
+                </section>
+
+                <section className="mb-8">
+                  <h3 className="text-xl font-semibold mb-3">Factor Groups</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                      <h4 className="font-semibold text-blue-700 dark:text-blue-400 mb-2">Technical Analysis</h4>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Price momentum, trend indicators, volume analysis, and technical patterns
+                      </p>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                      <h4 className="font-semibold text-green-700 dark:text-green-400 mb-2">Fundamental Analysis</h4>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Financial metrics, valuation ratios, profitability, and growth indicators
+                      </p>
+                    </div>
+                    <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                      <h4 className="font-semibold text-purple-700 dark:text-purple-400 mb-2">News & Macro</h4>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Market sentiment, economic indicators, and macroeconomic trends
+                      </p>
+                    </div>
+                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                      <h4 className="font-semibold text-orange-700 dark:text-orange-400 mb-2">Social & Alternative</h4>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Reddit mentions, social sentiment, and alternative data sources
+                      </p>
+                    </div>
+                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                      <h4 className="font-semibold text-red-700 dark:text-red-400 mb-2">Risk & Stability</h4>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Volatility measures, downside protection, and risk-adjusted metrics
+                      </p>
+                    </div>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                      <h4 className="font-semibold text-indigo-700 dark:text-indigo-400 mb-2">Institutional & Smart Money</h4>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        Institutional ownership, insider activity, and smart money flows
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="mb-8">
+                  <h3 className="text-xl font-semibold mb-3">Scoring Process</h3>
+                  <ol className="list-decimal list-inside space-y-2 text-gray-700 dark:text-gray-300">
+                    <li>Individual factors are calculated from raw market data</li>
+                    <li>Factors are normalized using robust z-scores (removes outliers)</li>
+                    <li>Normalized factors are weighted within their groups</li>
+                    <li>Group scores are combined using configurable weights</li>
+                    <li>Final score ranges from -1.0 (strong sell) to +1.0 (strong buy)</li>
+                  </ol>
+                </section>
+
+                <section className="mb-8">
+                  <h3 className="text-xl font-semibold mb-3">Performance Tracking</h3>
+                  <p className="text-gray-700 dark:text-gray-300 mb-3">
+                    All signals are tracked across multiple time horizons to validate predictive power:
+                  </p>
+                  <div className="grid grid-cols-7 gap-2">
+                    {['1d', '3d', '7d', '10d', '14d', '30d', '90d'].map((interval) => (
+                      <div key={interval} className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-center">
+                        <span className="font-mono font-semibold">{interval}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-3">
+                    Returns are compared against SPY (S&P 500) and sector-specific ETFs to calculate alpha.
+                  </p>
+                </section>
+
+                <section>
+                  <h3 className="text-xl font-semibold mb-3">Data Sources</h3>
+                  <ul className="list-disc list-inside space-y-1 text-gray-700 dark:text-gray-300">
+                    <li>Yahoo Finance: Price data, fundamentals, analyst estimates</li>
+                    <li>Reddit: Social sentiment from 12+ investment subreddits</li>
+                    <li>Technical Indicators: Calculated from price/volume data</li>
+                    <li>Market Data: SPY, VIX, Treasury yields for context</li>
+                  </ul>
+                </section>
+              </div>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

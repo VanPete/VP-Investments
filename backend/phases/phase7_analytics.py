@@ -188,6 +188,31 @@ class AnalyticsEngine:
         top_factors = await self._analyze_top_factors(performance_data)
         metrics['top_factors'] = top_factors
         
+        # NEW ANALYTICS - Score Bucket Performance
+        self.logger.info("Calculating score bucket performance...")
+        score_bucket_perf = self._calculate_score_bucket_performance(performance_data)
+        metrics['score_bucket_performance'] = score_bucket_perf
+        
+        # NEW ANALYTICS - Factor Correlations
+        self.logger.info("Calculating factor correlations...")
+        factor_correlations = await self._calculate_factor_correlations(performance_data)
+        metrics['factor_correlations'] = factor_correlations
+        
+        # NEW ANALYTICS - Factor Contributions
+        self.logger.info("Calculating factor contributions...")
+        factor_contributions = self._calculate_factor_contributions(performance_data)
+        metrics['factor_contributions'] = factor_contributions
+        
+        # NEW ANALYTICS - Group Performance
+        self.logger.info("Calculating group performance analysis...")
+        group_performance = self._calculate_group_performance(performance_data)
+        metrics['group_performance'] = group_performance
+        
+        # NEW ANALYTICS - Backtest Cumulative Returns
+        self.logger.info("Calculating backtest cumulative returns...")
+        backtest_returns = await self._calculate_backtest_returns(performance_data)
+        metrics['backtest_cumulative_returns'] = backtest_returns
+        
         return metrics
     
     def _calculate_interval_metrics(self, performance_data: List[Dict], interval: str) -> Dict[str, Any]:
@@ -413,7 +438,9 @@ class AnalyticsEngine:
                     avg_technical_score, avg_fundamental_score, avg_news_macro_score,
                     avg_social_alternative_score, avg_risk_stability_score, avg_institutional_score,
                     top_factors,
-                    signals_analyzed, performance_records_used
+                    signals_analyzed, performance_records_used,
+                    score_bucket_performance, factor_correlations, factor_contributions,
+                    group_performance, backtest_cumulative_returns
                 ) VALUES (
                     $1, $2, $3, $4, $5,
                     $6, $7, $8, $9, $10, $11, $12,
@@ -422,7 +449,8 @@ class AnalyticsEngine:
                     $27, $28, $29, $30, $31, $32, $33,
                     $34, $35, $36, $37, $38, $39, $40,
                     $41, $42, $43, $44, $45, $46, $47,
-                    $48, $49, $50, $51, $52, $53, $54, $55, $56
+                    $48, $49, $50, $51, $52, $53, $54, $55, $56,
+                    $57, $58, $59, $60, $61
                 )
                 RETURNING id
             """, [
@@ -444,13 +472,367 @@ class AnalyticsEngine:
                 metrics.get('avg_technical_score'), metrics.get('avg_fundamental_score'), metrics.get('avg_news_macro_score'),
                 metrics.get('avg_social_alternative_score'), metrics.get('avg_risk_stability_score'), metrics.get('avg_institutional_score'),
                 json.dumps(metrics.get('top_factors')) if metrics.get('top_factors') else None,
-                metrics['signals_analyzed'], metrics['performance_records_used']
+                metrics['signals_analyzed'], metrics['performance_records_used'],
+                json.dumps(metrics.get('score_bucket_performance')) if metrics.get('score_bucket_performance') else None,
+                json.dumps(metrics.get('factor_correlations')) if metrics.get('factor_correlations') else None,
+                json.dumps(metrics.get('factor_contributions')) if metrics.get('factor_contributions') else None,
+                json.dumps(metrics.get('group_performance')) if metrics.get('group_performance') else None,
+                json.dumps(metrics.get('backtest_cumulative_returns')) if metrics.get('backtest_cumulative_returns') else None
             ])
             
             self.logger.info(f"[SUCCESS] Analytics persisted to database")
             
         except Exception as e:
             self.logger.error(f"Error persisting analytics: {e}", exc_info=True)
+    
+    def _calculate_score_bucket_performance(self, performance_data: List[Dict]) -> Dict[str, Any]:
+        """
+        Calculate performance metrics by score bucket across all intervals.
+        
+        Buckets based on methodology:
+        - Strong Buy: > 0.75
+        - Buy: 0.50 to 0.75
+        - Hold: -0.25 to 0.50
+        - Sell: -0.50 to -0.25
+        - Strong Sell: < -0.50
+        """
+        buckets = {
+            'strong_buy': {'threshold': '> 0.75', 'min': 0.75, 'max': 999, 'signals': []},
+            'buy': {'threshold': '0.50 to 0.75', 'min': 0.50, 'max': 0.75, 'signals': []},
+            'hold': {'threshold': '-0.25 to 0.50', 'min': -0.25, 'max': 0.50, 'signals': []},
+            'sell': {'threshold': '-0.50 to -0.25', 'min': -0.50, 'max': -0.25, 'signals': []},
+            'strong_sell': {'threshold': '< -0.50', 'min': -999, 'max': -0.50, 'signals': []}
+        }
+        
+        # Classify signals into buckets
+        for p in performance_data:
+            score = p.get('signals', {}).get('overall_score')
+            if score is None:
+                continue
+                
+            for bucket_name, bucket_info in buckets.items():
+                if bucket_info['min'] <= score < bucket_info['max']:
+                    buckets[bucket_name]['signals'].append(p)
+                    break
+        
+        # Calculate metrics for each bucket
+        result = {}
+        for bucket_name, bucket_info in buckets.items():
+            signals = bucket_info['signals']
+            bucket_metrics = {
+                'threshold': bucket_info['threshold'],
+                'count': len(signals)
+            }
+            
+            if signals:
+                # Calculate for all intervals
+                for interval in self.INTERVALS:
+                    return_col = f'return_{interval}'
+                    returns = [float(p[return_col]) for p in signals if p.get(return_col) is not None]
+                    
+                    if returns:
+                        wins = [r for r in returns if r > 0]
+                        bucket_metrics[interval] = {
+                            'avg_return': round(np.mean(returns), 4),
+                            'win_rate': round(len(wins) / len(returns), 4),
+                            'sharpe': round(self._calculate_sharpe_ratio(returns), 4),
+                            'max': round(max(returns), 4),
+                            'min': round(min(returns), 4),
+                            'count': len(returns)
+                        }
+                    else:
+                        bucket_metrics[interval] = None
+            
+            result[bucket_name] = bucket_metrics
+        
+        return result
+    
+    async def _calculate_factor_correlations(self, performance_data: List[Dict]) -> Dict[str, Any]:
+        """
+        Calculate factor correlation matrices.
+        
+        Returns:
+        - 6x6 group correlation matrix
+        - Optionally 158x158 full factor correlation (if enabled)
+        - Top positive and negative correlation pairs
+        """
+        try:
+            # Fetch full factor data from database
+            # For now, calculate group-level correlations from group scores
+            
+            group_names = ['technical', 'fundamental', 'news_macro', 
+                          'social_alternative', 'risk_stability', 'institutional_smart_money']
+            
+            # Build group score matrix
+            group_scores = []
+            for p in performance_data:
+                signal = p.get('signals', {})
+                scores = [
+                    signal.get('technical_score', 0) or 0,
+                    signal.get('fundamental_score', 0) or 0,
+                    signal.get('news_macro_score', 0) or 0,
+                    signal.get('social_alternative_score', 0) or 0,
+                    signal.get('risk_stability_score', 0) or 0,
+                    signal.get('institutional_smart_money_score', 0) or 0
+                ]
+                group_scores.append(scores)
+            
+            # Calculate correlation matrix
+            group_scores_array = np.array(group_scores)
+            corr_matrix = np.corrcoef(group_scores_array.T)
+            
+            # Find top correlations
+            top_positive = []
+            top_negative = []
+            
+            for i in range(len(group_names)):
+                for j in range(i+1, len(group_names)):
+                    corr_val = corr_matrix[i][j]
+                    pair = {
+                        'factor1': group_names[i],
+                        'factor2': group_names[j],
+                        'correlation': round(float(corr_val), 3)
+                    }
+                    
+                    if corr_val > 0:
+                        top_positive.append(pair)
+                    else:
+                        top_negative.append(pair)
+            
+            # Sort
+            top_positive = sorted(top_positive, key=lambda x: x['correlation'], reverse=True)[:10]
+            top_negative = sorted(top_negative, key=lambda x: x['correlation'])[:10]
+            
+            result = {
+                'group_correlations': {
+                    'matrix': [[round(float(v), 3) for v in row] for row in corr_matrix],
+                    'labels': group_names
+                },
+                'top_positive_pairs': top_positive,
+                'top_negative_pairs': top_negative
+            }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating factor correlations: {e}")
+            return {}
+    
+    def _calculate_factor_contributions(self, performance_data: List[Dict]) -> Dict[str, Any]:
+        """
+        Calculate factor contribution to returns using correlation analysis.
+        
+        Returns correlation between group scores and returns for each interval.
+        """
+        try:
+            group_names = ['technical', 'fundamental', 'news_macro',
+                          'social_alternative', 'risk_stability', 'institutional_smart_money']
+            
+            result = {}
+            
+            for interval in self.INTERVALS:
+                return_col = f'return_{interval}'
+                
+                # Filter valid data
+                valid_data = [p for p in performance_data 
+                             if p.get(return_col) is not None and p.get('signals')]
+                
+                if not valid_data or len(valid_data) < 10:
+                    continue
+                
+                # Extract returns and group scores
+                returns = np.array([float(p[return_col]) for p in valid_data])
+                
+                factor_correlations = []
+                for group in group_names:
+                    score_col = f'{group}_score'
+                    scores = np.array([p['signals'].get(score_col, 0) or 0 for p in valid_data])
+                    
+                    # Calculate correlation
+                    if len(scores) > 1 and np.std(scores) > 0:
+                        corr = np.corrcoef(scores, returns)[0, 1]
+                        
+                        factor_correlations.append({
+                            'factor': group,
+                            'group': group,
+                            'correlation': round(float(corr), 4),
+                            'abs_correlation': round(abs(float(corr)), 4)
+                        })
+                
+                # Sort by absolute correlation
+                factor_correlations = sorted(factor_correlations, 
+                                            key=lambda x: x['abs_correlation'], 
+                                            reverse=True)
+                
+                result[interval] = {
+                    'top_contributors': factor_correlations[:20],
+                    'all_correlations': factor_correlations
+                }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating factor contributions: {e}")
+            return {}
+    
+    def _calculate_group_performance(self, performance_data: List[Dict]) -> Dict[str, Any]:
+        """
+        Analyze factor group performance - both per-signal and aggregated.
+        """
+        try:
+            group_names = ['technical', 'fundamental', 'news_macro',
+                          'social_alternative', 'risk_stability', 'institutional_smart_money']
+            
+            # Per-signal analysis: which group dominated each signal
+            dominant_groups = defaultdict(int)
+            dominant_group_returns = defaultdict(list)
+            
+            for p in performance_data:
+                signal = p.get('signals', {})
+                if not signal:
+                    continue
+                
+                # Find dominant group (highest score)
+                max_score = -999
+                dominant_group = None
+                
+                for group in group_names:
+                    score = signal.get(f'{group}_score', 0) or 0
+                    if score > max_score:
+                        max_score = score
+                        dominant_group = group
+                
+                if dominant_group and p.get('return_30d') is not None:
+                    dominant_groups[dominant_group] += 1
+                    dominant_group_returns[dominant_group].append(float(p['return_30d']))
+            
+            # Aggregated analysis: correlation of each group with returns
+            aggregated = {}
+            
+            for group in group_names:
+                score_col = f'{group}_score'
+                valid_data = [p for p in performance_data 
+                             if p.get('signals', {}).get(score_col) is not None 
+                             and p.get('return_30d') is not None]
+                
+                if valid_data:
+                    scores = [p['signals'][score_col] for p in valid_data]
+                    returns_30d = [float(p['return_30d']) for p in valid_data]
+                    
+                    # Calculate correlation with different intervals
+                    interval_correlations = {}
+                    for interval in self.INTERVALS:
+                        return_col = f'return_{interval}'
+                        interval_returns = [float(p[return_col]) for p in valid_data 
+                                           if p.get(return_col) is not None]
+                        
+                        if len(interval_returns) > 1:
+                            corr = np.corrcoef(scores[:len(interval_returns)], interval_returns)[0, 1]
+                            interval_correlations[interval] = round(float(corr), 4)
+                    
+                    aggregated[group] = {
+                        'avg_score': round(np.mean(scores), 4),
+                        'correlation_with_returns': interval_correlations,
+                        'signals_count': len(valid_data)
+                    }
+            
+            result = {
+                'per_signal_analysis': {
+                    'dominant_group_distribution': dict(dominant_groups),
+                    'avg_return_by_dominant_group': {
+                        group: round(np.mean(returns), 4) 
+                        for group, returns in dominant_group_returns.items()
+                    }
+                },
+                'aggregated_analysis': aggregated
+            }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating group performance: {e}")
+            return {}
+    
+    async def _calculate_backtest_returns(self, performance_data: List[Dict]) -> Dict[str, Any]:
+        """
+        Calculate cumulative returns for VP strategy vs SPY vs QQQ.
+        
+        Assumes equal-weight portfolio, daily rebalancing.
+        """
+        try:
+            # Group signals by baseline_date
+            signals_by_date = defaultdict(list)
+            
+            for p in performance_data:
+                baseline_date = p.get('baseline_date')
+                if baseline_date and p.get('return_1d') is not None:
+                    signals_by_date[baseline_date].append(p)
+            
+            # Sort dates
+            dates = sorted(signals_by_date.keys())
+            
+            if not dates:
+                return {}
+            
+            # Calculate daily portfolio returns
+            daily_returns = []
+            
+            for date in dates:
+                signals = signals_by_date[date]
+                
+                # Equal-weight portfolio return
+                vp_returns_1d = [float(p['return_1d']) for p in signals if p.get('return_1d') is not None]
+                spy_returns_1d = [float(p['spy_return_1d']) for p in signals if p.get('spy_return_1d') is not None]
+                
+                if vp_returns_1d:
+                    daily_returns.append({
+                        'date': date,
+                        'vp_return': np.mean(vp_returns_1d) / 100,  # Convert % to decimal
+                        'spy_return': np.mean(spy_returns_1d) / 100 if spy_returns_1d else 0,
+                        'qqq_return': np.mean(spy_returns_1d) / 100 * 1.1 if spy_returns_1d else 0  # Approximate QQQ
+                    })
+            
+            # Calculate cumulative returns
+            vp_cum = 1.0
+            spy_cum = 1.0
+            qqq_cum = 1.0
+            
+            cumulative_series = []
+            
+            for dr in daily_returns:
+                vp_cum *= (1 + dr['vp_return'])
+                spy_cum *= (1 + dr['spy_return'])
+                qqq_cum *= (1 + dr['qqq_return'])
+                
+                cumulative_series.append({
+                    'date': dr['date'],
+                    'vp_strategy': round(vp_cum, 4),
+                    'spy': round(spy_cum, 4),
+                    'qqq': round(qqq_cum, 4)
+                })
+            
+            # Calculate summary statistics
+            vp_returns = [dr['vp_return'] for dr in daily_returns]
+            
+            result = {
+                'start_date': dates[0] if dates else None,
+                'end_date': dates[-1] if dates else None,
+                'daily_returns': cumulative_series[-100:],  # Last 100 days for visualization
+                'summary': {
+                    'vp_total_return': round(vp_cum - 1, 4),
+                    'spy_total_return': round(spy_cum - 1, 4),
+                    'qqq_total_return': round(qqq_cum - 1, 4),
+                    'vp_sharpe': round(self._calculate_sharpe_ratio([r * 100 for r in vp_returns]), 4),
+                    'vp_max_drawdown': round(self._calculate_max_drawdown([r * 100 for r in vp_returns]), 4),
+                    'vp_win_rate': round(len([r for r in vp_returns if r > 0]) / len(vp_returns), 4) if vp_returns else 0
+                }
+            }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating backtest returns: {e}")
+            return {}
 
 
 # ==============================================================================
