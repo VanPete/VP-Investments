@@ -522,9 +522,14 @@ export function SignalsTable({
                   )}
                   {columnVisibility.ticker && (
                     <TableCell>
-                      <span className="font-mono font-medium text-gray-900 dark:text-gray-100 tracking-wide">
+                      <a 
+                        href={`https://finance.yahoo.com/quote/${ranking.ticker}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono font-medium text-blue-600 dark:text-blue-400 tracking-wide hover:underline hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                      >
                         {ranking.ticker}
-                      </span>
+                      </a>
                     </TableCell>
                   )}
                   {columnVisibility.companyName && (
