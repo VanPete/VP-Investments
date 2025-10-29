@@ -52,9 +52,12 @@ async def main(args):
             print(f"Running pipeline for {len(tickers)} tickers...\n")
     
     try:
-        # Run pipeline
-        # TODO: In next step, we'll modify the pipeline itself to use progress bars
-        results = await run_pipeline(tickers=tickers)
+        # Run pipeline with progress display
+        results = await run_pipeline(
+            tickers=tickers,
+            show_progress=not args.quiet,
+            verbose_level=verbose_level
+        )
         
         duration = (datetime.now() - start_time).total_seconds()
         
