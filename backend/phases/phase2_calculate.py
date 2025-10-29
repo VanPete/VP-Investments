@@ -1397,7 +1397,7 @@ class Phase2Calculator:
                 factors['sector_relative_strength'] = np.nan
             
             # Market regime and correlation indicators (from market_data)
-            if market_data and market_data.is_valid():
+            if market_data and market_data.is_valid:
                 try:
                     from backend.integrations.yfinance import calculate_market_regime, calculate_spy_correlation
                     
@@ -1422,7 +1422,7 @@ class Phase2Calculator:
                 factors['spy_correlation_60d'] = np.nan
             
             # Macro indicators (from market_data)
-            if market_data and market_data.is_valid():
+            if market_data and market_data.is_valid:
                 try:
                     # VIX level (volatility index)
                     if market_data.vix_current is not None:
