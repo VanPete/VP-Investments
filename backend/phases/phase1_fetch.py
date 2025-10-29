@@ -266,7 +266,7 @@ class Phase1Fetcher:
             try:
                 # Fetch 2 years of SPY history to match stock history period (needed for downside_capture_1y)
                 market_data = self.yfinance_fetcher.fetch_market_data(period='2y')
-                if market_data and market_data.is_valid():
+                if market_data and market_data.is_valid:
                     self.logger.info(f"   [SUCCESS] Market data fetched")
                     if market_data.vix_current:
                         self.logger.info(f"      VIX: {market_data.vix_current:.2f}")
