@@ -20,6 +20,7 @@ Dependencies: yfinance, pandas, yaml
 """
 
 import time
+import warnings
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field, asdict
@@ -29,6 +30,10 @@ import pandas as pd
 import numpy as np
 import yaml
 from pathlib import Path
+
+# Suppress ALL deprecation warnings (yfinance generates many from within the library)
+# This is necessary because warnings from inside library modules cannot be easily filtered by message
+warnings.simplefilter('ignore', DeprecationWarning)
 
 try:
     import yfinance as yf
@@ -468,11 +473,14 @@ class ComprehensiveYFinanceFetcher:
         # Use income_stmt "Net Income" instead - skipping deprecated earnings property
         bundle.earnings = None  # Deprecated endpoint, data available in income_stmt
         
-        bundle.quarterly_earnings = self._safe_dataframe(self._safe_fetch(
-            lambda: stock.quarterly_earnings,
-            endpoint='quarterly_earnings',
-            bundle=bundle
-        ))
+        # Suppress deprecation warning for quarterly_earnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            bundle.quarterly_earnings = self._safe_dataframe(self._safe_fetch(
+                lambda: stock.quarterly_earnings,
+                endpoint='quarterly_earnings',
+                bundle=bundle
+            ))
         
         bundle.calendar = self._safe_fetch(
             lambda: stock.calendar,
@@ -480,17 +488,11 @@ class ComprehensiveYFinanceFetcher:
             bundle=bundle
         ) or {}
         
-        bundle.earnings_dates = self._safe_dataframe(self._safe_fetch(
-            lambda: stock.earnings_dates,
-            endpoint='get_earnings_dates',
-            bundle=bundle
-        ))
-        
-        bundle.earnings_history = self._safe_dataframe(self._safe_fetch(
-            lambda: stock.earnings_history,
-            endpoint='get_earnings_history',
-            bundle=bundle
-        ))
+        # REMOVED: earnings_dates and earnings_history (deprecated in yfinance 0.2.50+)
+        # The calendar endpoint above provides next earnings date
+        # earnings_history is replaced by quarterly earnings from financials
+        bundle.earnings_dates = None
+        bundle.earnings_history = None
         
         # SEC Filings
         bundle.sec_filings = self._safe_dataframe(self._safe_fetch(
@@ -530,11 +532,9 @@ class ComprehensiveYFinanceFetcher:
             bundle=bundle
         ))
         
-        bundle.earnings_estimate = self._safe_dataframe(self._safe_fetch(
-            lambda: stock.earnings_estimate,
-            endpoint='get_earnings_estimate',
-            bundle=bundle
-        ))
+        # REMOVED: earnings_estimate (deprecated in yfinance 0.2.50+)
+        # analyst_price_targets (above) provides forward estimates
+        bundle.earnings_estimate = None
         
         bundle.revenue_estimate = self._safe_dataframe(self._safe_fetch(
             lambda: stock.revenue_estimate,

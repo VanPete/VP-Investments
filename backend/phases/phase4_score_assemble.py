@@ -157,12 +157,14 @@ class Phase4ScoreAssembler:
         self.missing_penalty = self.scoring_params.get('missing_factor_penalty', 0.0)
     
     def score_all_tickers(self, 
-                          normalized_by_ticker: Dict[str, NormalizedGroupFactors]) -> Dict[str, ScoreResult]:
+                          normalized_by_ticker: Dict[str, NormalizedGroupFactors],
+                          progress=None) -> Dict[str, ScoreResult]:
         """
         Main entry point: Calculate scores for all tickers.
         
         Args:
             normalized_by_ticker: Dict[ticker, NormalizedGroupFactors] from Phase 3
+            progress: Optional PipelineProgress instance for progress tracking
         
         Returns:
             Dict[ticker, ScoreResult] with group scores and overall score
@@ -177,10 +179,14 @@ class Phase4ScoreAssembler:
         
         # Score each ticker
         results = {}
-        for ticker, normalized_factors in normalized_by_ticker.items():
+        for idx, (ticker, normalized_factors) in enumerate(normalized_by_ticker.items(), 1):
             try:
                 score_result = self._score_ticker(ticker, normalized_factors)
                 results[ticker] = score_result
+                
+                # Update progress if provided
+                if progress:
+                    progress.update_phase("phase4", advance=1, status=f"✓ {ticker} ({idx}/{len(normalized_by_ticker)})")
                 
                 emit_metric("phase4.ticker_scored", 1, {"ticker": ticker})
             except Exception as e:

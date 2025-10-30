@@ -318,7 +318,8 @@ class Phase2Calculator:
                        raw_cache_by_ticker: Dict[str, RawYFinanceData],
                        reddit_data: Optional[Dict] = None,
                        news_data_by_ticker: Optional[Dict] = None,
-                       market_data: Optional[Any] = None) -> Dict[str, GroupFactors]:
+                       market_data: Optional[Any] = None,
+                       progress=None) -> Dict[str, GroupFactors]:
         """
         Calculate factors for multiple tickers in batch.
         
@@ -327,6 +328,7 @@ class Phase2Calculator:
             reddit_data: Optional reddit data with ticker_mentions
             news_data_by_ticker: Optional dict mapping ticker -> NewsBundle
             market_data: Optional market-wide data (SPY, VIX, Treasuries)
+            progress: Optional PipelineProgress instance for progress tracking
             
         Returns:
             Dict mapping ticker -> GroupFactors
@@ -343,7 +345,7 @@ class Phase2Calculator:
         
         results = {}
         
-        for ticker, raw_data in raw_cache_by_ticker.items():
+        for idx, (ticker, raw_data) in enumerate(raw_cache_by_ticker.items(), 1):
             # Get ticker-specific context data
             ticker_reddit = None
             if reddit_data and 'ticker_mentions' in reddit_data:
@@ -366,6 +368,10 @@ class Phase2Calculator:
             self._track_factors_in_monitor(group_factors)
             
             results[ticker] = group_factors
+            
+            # Update progress if provided
+            if progress:
+                progress.update_phase("phase2", advance=1, status=f"✓ {ticker} ({idx}/{len(raw_cache_by_ticker)})")
         
         elapsed = (datetime.now() - batch_start).total_seconds()
         self.logger.info(f"[SUCCESS] Batch calculation complete: {len(results)} tickers in {elapsed:.2f}s")

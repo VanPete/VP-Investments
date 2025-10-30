@@ -48,7 +48,6 @@ DEFAULT_SUBREDDITS = [
     'SwingTrading',       # Medium-term technical
     
     # Sector-Specific
-    'technologystock',    # Tech sector analysis
     'biotech_stocks',     # Biotech/pharma
     'RenewableEnergy',    # ESG/clean energy
 ]
@@ -176,7 +175,8 @@ class Phase1Fetcher:
     async def fetch_all_data(self, 
                             tickers: Optional[List[str]] = None,
                             subreddits: Optional[List[str]] = None,
-                            post_limit: int = 100) -> Dict[str, Any]:
+                            post_limit: int = 100,
+                            progress = None) -> Dict[str, Any]:
         """
         Phase 1: Fetch & Cache - Main entry point (v3.1)
         
@@ -190,6 +190,7 @@ class Phase1Fetcher:
             tickers: Optional pre-defined ticker list (if None, discovers from Reddit)
             subreddits: List of subreddits to scrape (default: stocks, investing, wallstreetbets)
             post_limit: Number of posts to fetch per subreddit
+            progress: Optional progress tracker for UI updates
         
         Returns:
             Dict containing:
@@ -211,7 +212,7 @@ class Phase1Fetcher:
         
         # STEP 1: Fetch Reddit data to discover tickers
         self.logger.info(f"\n[REDDIT] Step 1.1: Fetching Reddit data from {len(subreddits)} subreddits...")
-        reddit_data = await self._fetch_reddit_data(subreddits, post_limit)
+        reddit_data = await self._fetch_reddit_data(subreddits, post_limit, progress)
         
         # Extract discovered tickers from Reddit (sorted by mentions)
         discovered_tickers = []
@@ -230,6 +231,9 @@ class Phase1Fetcher:
         self.logger.info(f"\n[NEWS] Step 1.2: Discovering trending tickers from news...")
         news_tickers = await self._discover_tickers_from_news()
         
+        if progress:
+            progress.update_phase("phase1", advance=1, status="✓ News discovery")
+        
         if news_tickers:
             self.logger.info(f"   [SUCCESS] Discovered {len(news_tickers)} trending tickers from news")
             # Merge news-discovered tickers with Reddit tickers
@@ -247,6 +251,7 @@ class Phase1Fetcher:
             all_tickers = combined_discovered
         
         # STEP 2: Fetch news sentiment for all tickers
+        # Note: This step is lightweight, included in news discovery progress
         self.logger.info(f"\n[NEWS] Step 1.3: Fetching news sentiment for {len(all_tickers)} tickers...")
         news_data = await self._fetch_news_data(all_tickers)
         
@@ -258,6 +263,9 @@ class Phase1Fetcher:
         self.logger.info(f"   - Analysis/Holdings: recommendations, estimates, ownership, insiders")
         
         raw_cache_by_ticker = await self._fetch_comprehensive_yfinance_data(all_tickers)
+        
+        if progress:
+            progress.update_phase("phase1", advance=1, status=f"✓ YFinance ({len(raw_cache_by_ticker)} tickers)")
         
         # STEP 4: Fetch market-wide data (SPY, VIX, Treasury yields, etc.)
         self.logger.info(f"\n[MARKET] Step 1.4: Fetching market-wide data (SPY, VIX, Treasuries)...")
@@ -281,10 +289,16 @@ class Phase1Fetcher:
         else:
             self.logger.warning("   [WARNING] YFinance fetcher not initialized")
         
+        if progress:
+            progress.update_phase("phase1", advance=1, status="✓ Market data")
+        
         # STEP 5: Fetch sector ETF data for sector-relative performance tracking
         self.logger.info(f"\n[BENCHMARKS] Step 1.5: Fetching benchmark & sector ETF data (SPY, QQQ, sector ETFs)...")
         sector_etf_data = await self._fetch_sector_etf_data(raw_cache_by_ticker)
         self.logger.info(f"   [SUCCESS] Fetched {len(sector_etf_data)} benchmark ETFs")
+        
+        if progress:
+            progress.update_phase("phase1", advance=1, status=f"✓ Benchmarks ({len(sector_etf_data)} ETFs)")
         
         # VALIDATION: Validate fetched data before returning
         validated_cache = self._validate_fetched_data(raw_cache_by_ticker)
@@ -549,7 +563,7 @@ class Phase1Fetcher:
         
         return list(unique_matches.values())
     
-    async def _fetch_reddit_data(self, subreddits: List[str], post_limit: int) -> Dict[str, Any]:
+    async def _fetch_reddit_data(self, subreddits: List[str], post_limit: int, progress=None) -> Dict[str, Any]:
         """
         Fetch Reddit data by scraping subreddits for ticker mentions.
         
@@ -606,6 +620,7 @@ class Phase1Fetcher:
             total_posts = 0
             total_mentions = 0
             filtered_spam = 0
+            filtered_old_posts = 0
             
             # Ticker pattern: 2-5 uppercase letters (not 1, to avoid single letter words)
             ticker_pattern = re.compile(r'\b[A-Z]{2,5}\b')
@@ -701,15 +716,21 @@ class Phase1Fetcher:
                 # Normalize to -1 to 1 range
                 return max(-1.0, min(1.0, sentiment))
             
-            for subreddit_name in subreddits:
+            # Helper function to scrape a single subreddit
+            async def scrape_single_subreddit(subreddit_name: str, idx: int) -> Dict[str, Any]:
+                """Scrape a single subreddit and return ticker data."""
+                local_ticker_data = {}
+                local_total_mentions = 0
+                local_filtered_spam = 0
+                local_filtered_old_posts = 0
+                posts_processed = 0
+                
                 try:
                     subreddit = self.reddit.subreddit(subreddit_name)
-                    posts_processed = 0
                     
                     self.logger.debug(f"Scraping r/{subreddit_name}...")
                     
                     # Get hot posts from subreddit
-                    filtered_old_posts = 0
                     for post in subreddit.hot(limit=post_limit):
                         try:
                             # Filter by age: Skip posts older than MAX_POST_AGE_HOURS
@@ -718,12 +739,12 @@ class Phase1Fetcher:
                                 post_age_hours = (current_time - post_time).total_seconds() / 3600
                                 
                                 if post_age_hours > MAX_POST_AGE_HOURS:
-                                    filtered_old_posts += 1
+                                    local_filtered_old_posts += 1
                                     continue
                             
                             # Filter spam: Skip low-score posts
                             if post.score < MIN_POST_SCORE:
-                                filtered_spam += 1
+                                local_filtered_spam += 1
                                 continue
                             
                             # Combine title and selftext
@@ -802,8 +823,8 @@ class Phase1Fetcher:
                                 
                                 # Store ticker mentions
                                 for ticker in set(tickers):  # Unique tickers per post
-                                    if ticker not in ticker_data:
-                                        ticker_data[ticker] = {
+                                    if ticker not in local_ticker_data:
+                                        local_ticker_data[ticker] = {
                                             'mentions': 0,
                                             'sentiment': 0.0,
                                             'upvotes': 0,
@@ -811,16 +832,16 @@ class Phase1Fetcher:
                                             'avg_post_score': 0
                                         }
                                     
-                                    ticker_data[ticker]['mentions'] += 1
-                                    ticker_data[ticker]['sentiment'] += sentiment_value
-                                    ticker_data[ticker]['upvotes'] += post.score
-                                    ticker_data[ticker]['posts'].append({
+                                    local_ticker_data[ticker]['mentions'] += 1
+                                    local_ticker_data[ticker]['sentiment'] += sentiment_value
+                                    local_ticker_data[ticker]['upvotes'] += post.score
+                                    local_ticker_data[ticker]['posts'].append({
                                         'title': post.title[:100],
                                         'score': post.score,
                                         'comments': post.num_comments,
                                         'subreddit': subreddit_name
                                     })
-                                    total_mentions += 1
+                                    local_total_mentions += 1
                             
                             posts_processed += 1
                             
@@ -828,12 +849,81 @@ class Phase1Fetcher:
                             self.logger.warning(f"Error processing post: {e}")
                             continue
                     
-                    total_posts += posts_processed
                     self.logger.debug(f"  Processed {posts_processed} posts from r/{subreddit_name}")
                     
+                    # Update progress after each subreddit completes
+                    if progress:
+                        progress.update_phase("phase1", advance=1, status=f"✓ r/{subreddit_name} ({idx}/{len(subreddits)})")
+                    
+                    return {
+                        'ticker_data': local_ticker_data,
+                        'posts_processed': posts_processed,
+                        'total_mentions': local_total_mentions,
+                        'filtered_spam': local_filtered_spam,
+                        'filtered_old_posts': local_filtered_old_posts,
+                        'success': True
+                    }
+                    
                 except Exception as e:
-                    self.logger.error(f"Error scraping r/{subreddit_name}: {e}")
+                    # Subreddit access issues are expected (private/banned/doesn't exist) - use WARNING not ERROR
+                    self.logger.warning(f"Skipping r/{subreddit_name}: {e}")
+                    # Update progress even on failure
+                    if progress:
+                        progress.update_phase("phase1", advance=1, status=f"✗ r/{subreddit_name} skipped")
+                    return {
+                        'ticker_data': {},
+                        'posts_processed': 0,
+                        'total_mentions': 0,
+                        'filtered_spam': 0,
+                        'filtered_old_posts': 0,
+                        'success': False
+                    }
+            
+            # Process all subreddits in parallel with rate limiting (max 3 concurrent)
+            semaphore = asyncio.Semaphore(3)
+            
+            async def scrape_with_rate_limit(subreddit_name: str, idx: int):
+                """Scrape with semaphore-based rate limiting."""
+                async with semaphore:
+                    result = await scrape_single_subreddit(subreddit_name, idx)
+                    # Add small delay between requests
+                    await asyncio.sleep(0.5)
+                    return result
+            
+            # Create tasks for all subreddits
+            tasks = [scrape_with_rate_limit(sub, idx) for idx, sub in enumerate(subreddits, 1)]
+            
+            # Execute all tasks in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Merge results from all subreddits
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.error(f"Subreddit task failed with exception: {result}")
                     continue
+                
+                if result['success']:
+                    # Merge ticker data
+                    for ticker, data in result['ticker_data'].items():
+                        if ticker not in ticker_data:
+                            ticker_data[ticker] = {
+                                'mentions': 0,
+                                'sentiment': 0.0,
+                                'upvotes': 0,
+                                'posts': [],
+                                'avg_post_score': 0
+                            }
+                        
+                        ticker_data[ticker]['mentions'] += data['mentions']
+                        ticker_data[ticker]['sentiment'] += data['sentiment']
+                        ticker_data[ticker]['upvotes'] += data['upvotes']
+                        ticker_data[ticker]['posts'].extend(data['posts'])
+                    
+                    # Accumulate totals
+                    total_posts += result['posts_processed']
+                    total_mentions += result['total_mentions']
+                    filtered_spam += result['filtered_spam']
+                    filtered_old_posts += result['filtered_old_posts']
             
             # Calculate averages per ticker
             for ticker in ticker_data:
@@ -872,6 +962,83 @@ class Phase1Fetcher:
                 },
                 'metadata': {'error': str(e), 'fallback': True}
             }
+    
+    async def _discover_tickers_from_news(self, 
+                                         top_n: int = 30, 
+                                         min_mentions: int = 2) -> Dict[str, int]:
+        """
+        Discover trending tickers from news articles.
+        
+        Expands the ticker universe beyond Reddit by analyzing news mentions.
+        
+        Args:
+            top_n: Number of top trending tickers to discover
+            min_mentions: Minimum mentions required
+        
+        Returns:
+            Dict of ticker -> mention_count
+        """
+        try:
+            from backend.integrations.news import NewsFetcher
+            
+            news_fetcher = NewsFetcher()
+            
+            if not news_fetcher.enabled:
+                self.logger.debug("News fetcher disabled - skipping ticker discovery")
+                return {}
+            
+            # Discover tickers from news
+            news_tickers = await news_fetcher.get_trending_tickers_from_news(
+                top_n=top_n, 
+                min_mentions=min_mentions
+            )
+            
+            return news_tickers
+            
+        except ImportError:
+            self.logger.debug("News integration not available - skipping ticker discovery")
+            return {}
+        except Exception as e:
+            self.logger.warning(f"News ticker discovery failed: {e}")
+            return {}
+    
+    async def _fetch_news_data(self, tickers: List[str]) -> Dict[str, Any]:
+        """
+        Fetch news sentiment data for tickers.
+        
+        Gracefully handles if news integration is not available.
+        
+        Returns:
+            Dict mapping ticker -> NewsBundle (from news.py)
+        """
+        news_data = {}
+        
+        try:
+            # Try to use news integration if available
+            from backend.integrations.news import NewsFetcher
+            
+            news_fetcher = NewsFetcher()
+            
+            if not news_fetcher.enabled:
+                self.logger.info("ℹ️  News fetcher disabled - skipping")
+                return {}
+            
+            for ticker in tickers:
+                try:
+                    news_bundle = await news_fetcher.fetch_news_bundle(ticker, lookback_days=7)
+                    if news_bundle.available:
+                        news_data[ticker] = news_bundle
+                except Exception as e:
+                    self.logger.debug(f"News fetch failed for {ticker}: {e}")
+            
+            self.logger.info(f"   [SUCCESS] News fetch complete: {len(news_data)}/{len(tickers)} tickers with news")
+            
+        except ImportError as e:
+            self.logger.info(f"[INFO]  News integration not available - skipping ({e})")
+        except Exception as e:
+            self.logger.warning(f"[WARNING]  News fetch failed: {e}")
+        
+        return news_data
     
     async def _fetch_comprehensive_yfinance_data(self, tickers: List[str]) -> Dict[str, Any]:
         """
@@ -915,89 +1082,6 @@ class Phase1Fetcher:
                            f"{len(sample_bundle.endpoints_succeeded)}/{len(sample_bundle.endpoints_attempted)} endpoints succeeded")
         
         return raw_cache
-    
-    # ============================================================================
-    # DEPRECATED METHODS (v3.0) - Replaced by ComprehensiveYFinanceFetcher (v3.1)
-    # ============================================================================
-    # These methods are kept for reference but are no longer used in v3.1
-    # The new _fetch_comprehensive_yfinance_data() method replaces all of this
-    
-    async def _fetch_news_data(self, tickers: List[str]) -> Dict[str, Any]:
-        """
-        Fetch news sentiment data for tickers.
-        
-        Gracefully handles if news integration is not available.
-        
-        Returns:
-            Dict mapping ticker -> NewsBundle (from news.py)
-        """
-        news_data = {}
-        
-        try:
-            # Try to use news integration if available
-            from backend.integrations.news import NewsFetcher
-            
-            news_fetcher = NewsFetcher()
-            
-            if not news_fetcher.enabled:
-                self.logger.info("ℹ️  News fetcher disabled - skipping")
-                return {}
-            
-            for ticker in tickers:
-                try:
-                    news_bundle = await news_fetcher.fetch_news_bundle(ticker, lookback_days=7)
-                    if news_bundle.available:
-                        news_data[ticker] = news_bundle
-                except Exception as e:
-                    self.logger.debug(f"News fetch failed for {ticker}: {e}")
-            
-            self.logger.info(f"   [SUCCESS] News fetch complete: {len(news_data)}/{len(tickers)} tickers with news")
-            
-        except ImportError as e:
-            self.logger.info(f"[INFO]  News integration not available - skipping ({e})")
-        except Exception as e:
-            self.logger.warning(f"[WARNING]  News fetch failed: {e}")
-        
-        return news_data
-    
-    async def _discover_tickers_from_news(self, 
-                                         top_n: int = 30, 
-                                         min_mentions: int = 2) -> Dict[str, int]:
-        """
-        Discover trending tickers from news articles.
-        
-        Expands the ticker universe beyond Reddit by analyzing news mentions.
-        
-        Args:
-            top_n: Number of top trending tickers to discover
-            min_mentions: Minimum mentions required
-        
-        Returns:
-            Dict of ticker -> mention_count
-        """
-        try:
-            from backend.integrations.news import NewsFetcher
-            
-            news_fetcher = NewsFetcher()
-            
-            if not news_fetcher.enabled:
-                self.logger.debug("News fetcher disabled - skipping ticker discovery")
-                return {}
-            
-            # Discover tickers from news
-            news_tickers = await news_fetcher.get_trending_tickers_from_news(
-                top_n=top_n, 
-                min_mentions=min_mentions
-            )
-            
-            return news_tickers
-            
-        except ImportError:
-            self.logger.debug("News integration not available - skipping ticker discovery")
-            return {}
-        except Exception as e:
-            self.logger.warning(f"News ticker discovery failed: {e}")
-            return {}
 
 
 # ============================================================================

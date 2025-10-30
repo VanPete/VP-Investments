@@ -448,6 +448,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+from .admin import router as admin_router
+from .auth import router as auth_router
+from .monitoring import router as monitoring_router
+app.include_router(admin_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(monitoring_router)
+
 
 # ================================================================================
 # API ENDPOINTS

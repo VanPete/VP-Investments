@@ -13,15 +13,23 @@ Usage:
 import asyncio
 import sys
 import argparse
+import warnings
 from pathlib import Path
 from datetime import datetime
+
+# Suppress ALL warnings globally BEFORE importing any other modules
+# This is necessary because yfinance issues DeprecationWarnings at runtime
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.simplefilter('ignore')  # Catch-all for any remaining warnings
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from backend.pipeline import run_pipeline
 from backend.utils.log_config import configure_pipeline_logging
-from backend.utils.progress_display import PipelineProgress
+from backend.utils.progress_display import PipelineProgress, show_error_summary
+from backend.utils.error_buffer import ErrorBuffer
 
 # Will be configured based on CLI args
 logger = None
@@ -36,20 +44,24 @@ async def main(args):
     """
     global logger
     
+    # Create error buffer for consolidating errors
+    error_buffer = ErrorBuffer()
+    
     # Configure logging based on verbosity
+    # Pass error_buffer to capture ERROR logs for end-of-run summary
     verbose_level = args.verbose if not args.quiet else -1
-    logger = configure_pipeline_logging(verbose=verbose_level, quiet=args.quiet)
+    logger = configure_pipeline_logging(
+        verbose=verbose_level, 
+        quiet=args.quiet,
+        error_buffer=error_buffer if not args.quiet else None  # Only capture errors in normal mode
+    )
     
     # Use a small set of high-quality tickers for testing
     tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'JPM', 'V', 'WMT']
     
     start_time = datetime.now()
     
-    # Show clean header (unless quiet)
-    if not args.quiet:
-        with PipelineProgress(verbose=(verbose_level > 0)) as progress:
-            progress.show_header()
-            print(f"Running pipeline for {len(tickers)} tickers...\n")
+    # Header will be shown by PipelineProgress when pipeline starts
     
     try:
         # Run pipeline with progress display
@@ -61,17 +73,25 @@ async def main(args):
         
         duration = (datetime.now() - start_time).total_seconds()
         
+        # Show error summary if any errors were captured
+        if not args.quiet and error_buffer.has_errors():
+            show_error_summary(error_buffer)
+        
         # Show summary
         if not args.quiet:
             from rich.console import Console
             from rich.panel import Panel
             console = Console()
             
+            # Get actual ticker count from results
+            actual_tickers = len(results) if results else len(tickers)
+            
             console.print()
             console.print(Panel(
                 f"[bold green]✅ Pipeline Complete[/]\n\n"
                 f"Duration: {duration:.1f}s\n"
-                f"Tickers: {len(tickers)}\n"
+                f"Tickers Processed: {actual_tickers}\n"
+                f"Signals Generated: {len(results) if results else 0}\n"
                 f"Results: frontend/public/results/latest.json",
                 style="bold green",
                 title="Success"
@@ -98,6 +118,20 @@ async def main(args):
             ))
         
         raise
+    
+    finally:
+        # Clean up any pending async tasks to prevent SSL errors
+        try:
+            # Cancel any remaining tasks in the current event loop
+            tasks = [t for t in asyncio.all_tasks() if not t.done()]
+            for task in tasks:
+                task.cancel()
+            
+            # Give tasks a moment to cancel
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception:
+            pass  # Ignore cleanup errors
 
 
 if __name__ == "__main__":
@@ -129,5 +163,18 @@ Examples:
     
     args = parser.parse_args()
     
-    # Run pipeline
-    asyncio.run(main(args))
+    # Run pipeline with proper cleanup
+    try:
+        # Use asyncio.run() which handles cleanup automatically in Python 3.10+
+        asyncio.run(main(args))
+    except KeyboardInterrupt:
+        print("\n⚠️  Pipeline interrupted by user")
+        sys.exit(130)
+    finally:
+        # Force cleanup of any remaining async resources
+        try:
+            # Wait a moment for pending SSL shutdowns
+            import time
+            time.sleep(0.1)
+        except:
+            pass

@@ -135,7 +135,8 @@ class Phase3Normalizer:
             }
     
     def normalize_all_factors(self, 
-                             calculated_by_ticker: Dict[str, GroupFactors]) -> Dict[str, NormalizedGroupFactors]:
+                             calculated_by_ticker: Dict[str, GroupFactors],
+                             progress=None) -> Dict[str, NormalizedGroupFactors]:
         """
         Main entry point for Phase 3.
         
@@ -143,6 +144,7 @@ class Phase3Normalizer:
         
         Args:
             calculated_by_ticker: Dict mapping ticker -> GroupFactors from Phase 2
+            progress: Optional PipelineProgress instance for progress tracking
         
         Returns:
             Dict mapping ticker -> NormalizedGroupFactors
@@ -162,14 +164,20 @@ class Phase3Normalizer:
         
         # Step 1: Extract all factors into cross-sectional DataFrames (one per group)
         self.logger.info("Step 3.1: Extracting factors into cross-sectional DataFrames...")
+        if progress:
+            progress.update_phase("phase3", advance=1, status="Extracting factors...")
         group_dataframes = self._build_cross_sectional_dataframes(calculated_by_ticker)
         
         # Step 2: Normalize each group's factors using robust z-score
         self.logger.info("Step 3.2: Applying robust z-score normalization...")
+        if progress:
+            progress.update_phase("phase3", advance=1, status="Applying z-scores...")
         normalized_dataframes = self._normalize_cross_sectional(group_dataframes)
         
         # Step 3: Reconstruct NormalizedGroupFactors for each ticker
         self.logger.info("Step 3.3: Reconstructing normalized factors by ticker...")
+        if progress:
+            progress.update_phase("phase3", advance=1, status="Reconstructing factors...")
         normalized_by_ticker = self._reconstruct_by_ticker(
             normalized_dataframes, 
             list(calculated_by_ticker.keys())
@@ -189,9 +197,10 @@ class Phase3Normalizer:
         return normalized_by_ticker
     
     def normalize_batch(self, 
-                       calculated_by_ticker: Dict[str, GroupFactors]) -> Dict[str, NormalizedGroupFactors]:
+                       calculated_by_ticker: Dict[str, GroupFactors],
+                       progress=None) -> Dict[str, NormalizedGroupFactors]:
         """Alias for normalize_all_factors (for consistency with Phase 2 API)"""
-        return self.normalize_all_factors(calculated_by_ticker)
+        return self.normalize_all_factors(calculated_by_ticker, progress=progress)
     
     def _build_cross_sectional_dataframes(self, 
                                          calculated_by_ticker: Dict[str, GroupFactors]) -> Dict[str, pd.DataFrame]:

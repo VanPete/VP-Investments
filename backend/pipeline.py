@@ -12,8 +12,9 @@ warnings.filterwarnings('ignore', message='.*Calling float on.*')
 from backend.utils.logger import setup_logging, get_logger
 from backend.utils.progress_display import PipelineProgress
 
-# Set up logging - will be reconfigured by run_pipeline_and_push.py if using CLI args
-setup_logging(log_level="INFO", log_dir="logs", console_output=True)
+# Set up minimal logging initially - will be reconfigured by run_pipeline_and_push.py
+# Use ERROR level to suppress INFO logs during module imports
+setup_logging(log_level="ERROR", log_dir="logs", console_output=True)
 logger = get_logger(__name__)
 
 from backend.phases.phase1_fetch import Phase1Fetcher
@@ -80,8 +81,12 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
         # ========================================================================
         phase1_start = datetime.now()
         
+        # Phase 1 progress: subreddits + news discovery + yfinance fetch + market + benchmarks
+        # Default: 11 subreddits + 1 news + 1 yfinance + 1 market + 1 benchmarks = 15 steps
+        phase1_steps = 15
+        
         if progress:
-            progress.start_phase("phase1", total_items=100, description="[bold blue]Phase 1:[/] Fetch Data")
+            progress.start_phase("phase1", total_items=phase1_steps, description="[bold blue]Phase 1:[/] Fetch Data")
         else:
             logger.info("")
             logger.info("=" * 80)
@@ -89,10 +94,10 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
             logger.info("=" * 80)
         
         if tickers:
-            phase1_results = await p1.fetch_all_data(tickers=tickers)
+            phase1_results = await p1.fetch_all_data(tickers=tickers, progress=progress)
         else:
             # Increased post limit from 100 → 150 for better ticker discovery
-            phase1_results = await p1.fetch_all_data(post_limit=150)
+            phase1_results = await p1.fetch_all_data(post_limit=150, progress=progress)
         
         phase1_duration = (datetime.now() - phase1_start).total_seconds()
         
@@ -125,7 +130,8 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
             raw_cache, 
             reddit_data=reddit_data, 
             news_data_by_ticker=news_data, 
-            market_data=market_data
+            market_data=market_data,
+            progress=progress
         )
         
         phase2_duration = (datetime.now() - phase2_start).total_seconds()
@@ -149,7 +155,7 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
             logger.info("PHASE 3: NORMALIZE SCORES")
             logger.info("=" * 80)
         
-        phase3_results = p3.normalize_batch(phase2_results)
+        phase3_results = p3.normalize_batch(phase2_results, progress=progress)
         
         phase3_duration = (datetime.now() - phase3_start).total_seconds()
         
@@ -172,7 +178,7 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
             logger.info("PHASE 4: ASSEMBLE SCORES")
             logger.info("=" * 80)
         
-        phase4_results = p4.score_all_tickers(phase3_results)
+        phase4_results = p4.score_all_tickers(phase3_results, progress=progress)
         
         phase4_duration = (datetime.now() - phase4_start).total_seconds()
         
@@ -188,7 +194,7 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
         phase5_duration = 0
         
         if progress:
-            progress.start_phase("phase5", total_items=5,
+            progress.start_phase("phase5", total_items=4,
                                description="[bold cyan]Phase 5:[/] Save to Database")
         else:
             logger.info("")
