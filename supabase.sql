@@ -66,8 +66,31 @@ CREATE TABLE public.analytics (
   factor_contributions jsonb,
   group_performance jsonb,
   backtest_cumulative_returns jsonb,
-  CONSTRAINT analytics_pkey PRIMARY KEY (id)
+  run_id uuid UNIQUE,
+  ic_series jsonb,
+  ic_mean numeric,
+  ic_std numeric,
+  hit_rate_top_decile numeric,
+  profit_factor numeric,
+  win_loss_ratio numeric,
+  cagr numeric,
+  volatility numeric,
+  sortino_ratio numeric,
+  calmar_ratio numeric,
+  max_drawdown numeric,
+  total_return numeric,
+  backtest_start timestamp with time zone,
+  backtest_end timestamp with time zone,
+  signal_correlation_matrix jsonb,
+  top_correlated_signals jsonb,
+  low_correlated_signals jsonb,
+  predictive_strength numeric,
+  ic_consistency numeric,
+  CONSTRAINT analytics_pkey PRIMARY KEY (id),
+  CONSTRAINT analytics_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.signal_runs(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_analytics_run_id ON public.analytics(run_id);
 CREATE TABLE public.performance (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   signal_id uuid NOT NULL UNIQUE,
