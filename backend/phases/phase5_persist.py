@@ -646,6 +646,8 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             - risk_stability_coverage: float (optional)
             - institutional_smart_money_coverage: float (optional)
             - sector: str (optional, v3.3)
+            - market_cap: int (optional, v3.4 - for VanPiQ Performance Tab)
+            - beta: float (optional, v3.4 - for VanPiQ Performance Tab)
             
     Returns:
         List of signal IDs created
@@ -659,7 +661,7 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
     param_count = 1
     
     for signal in signals:
-        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 20)])
+        placeholders = ', '.join([f'${i}' for i in range(param_count, param_count + 22)])
         query_parts.append(f"({placeholders})")
         
         params.extend([
@@ -682,9 +684,11 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
             signal.get('institutional_smart_money_coverage'),
             signal.get('company_name'),
             signal.get('current_price'),
-            signal.get('sector')  # v3.3: Sector column
+            signal.get('sector'),  # v3.3: Sector column
+            signal.get('market_cap'),  # v3.4: Market cap for VanPiQ Performance Tab
+            signal.get('beta')  # v3.4: Beta for VanPiQ Performance Tab
         ])
-        param_count += 20
+        param_count += 22
     
     query = f"""
     INSERT INTO signals (
@@ -704,7 +708,9 @@ async def insert_signals_batch(self, run_id: str, signals: List[Dict[str, Any]])
         institutional_smart_money_coverage,
         company_name,
         current_price,
-        sector
+        sector,
+        market_cap,
+        beta
     ) VALUES {', '.join(query_parts)}
     RETURNING id
     """
@@ -1413,18 +1419,22 @@ class Phase5PersistOptimized(Phase5Persist):
                 # Get total coverage from Phase 4
                 total_coverage = ticker_data.get('total_coverage', 0.0)
                 
-                # Extract company name, current price, and sector from phase1_cache
+                # Extract company name, current price, sector, market_cap, and beta from phase1_cache
                 company_name = None
                 current_price = None
                 sector = None  # v3.3: Extract sector for signals table
+                market_cap = None  # v3.4: Extract market cap for VanPiQ Performance Tab
+                beta = None  # v3.4: Extract beta for VanPiQ Performance Tab
                 
                 if phase1_cache and ticker in phase1_cache:
                     ticker_raw_data = phase1_cache[ticker]  # This is a RawYFinanceData object
                     
-                    # Get company name and sector from info (direct attribute access)
+                    # Get company name, sector, market_cap, and beta from info (direct attribute access)
                     if ticker_raw_data.info:
                         company_name = ticker_raw_data.info.get('longName') or ticker_raw_data.info.get('shortName')
                         sector = ticker_raw_data.info.get('sector')  # v3.3: Extract sector
+                        market_cap = ticker_raw_data.info.get('marketCap')  # v3.4: Extract market cap
+                        beta = ticker_raw_data.info.get('beta')  # v3.4: Extract beta (3Y monthly vs SPY)
                     
                     # Get current price from fast_info or history (direct attribute access)
                     if ticker_raw_data.fast_info:
@@ -1458,7 +1468,9 @@ class Phase5PersistOptimized(Phase5Persist):
                     'institutional_smart_money_coverage': institutional_coverage,
                     'company_name': company_name,
                     'current_price': current_price,
-                    'sector': sector  # v3.3: Add sector to signals table
+                    'sector': sector,  # v3.3: Add sector to signals table
+                    'market_cap': market_cap,  # v3.4: Add market cap for VanPiQ Performance Tab
+                    'beta': beta  # v3.4: Add beta for VanPiQ Performance Tab
                 }
                 
                 signals_to_insert.append(signal_record)

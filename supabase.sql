@@ -192,6 +192,8 @@ CREATE TABLE public.signals (
   company_name text,
   current_price numeric,
   sector text,
+  market_cap bigint,
+  beta real,
   CONSTRAINT signals_pkey PRIMARY KEY (id),
   CONSTRAINT fk_signals_run FOREIGN KEY (run_id) REFERENCES public.signal_runs(id)
 );
