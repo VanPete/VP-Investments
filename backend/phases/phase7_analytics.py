@@ -82,17 +82,17 @@ class AnalyticsEngine:
     
     async def calculate_and_persist_analytics(
         self, 
-        period_type: str = 'all_time',
-        run_id: Optional[str] = None
+        run_id: str,
+        period_type: str = 'all_time'
     ) -> Dict[str, Any]:
         """
-        Calculate all analytics and persist to analytics table.
+        Calculate all analytics and persist to analytics table (v3.4: run-based).
         
         This is the main method called by the pipeline.
         
         Args:
-            period_type: 'daily', 'weekly', 'monthly', 'all_time'
-            run_id: Optional signal run ID to analyze specific run
+            run_id: Signal run ID to link analytics to (REQUIRED for v3.4+)
+            period_type: 'daily', 'weekly', 'monthly', 'all_time' (deprecated, kept for compatibility)
             
         Returns:
             Dict with analytics results
@@ -101,19 +101,20 @@ class AnalyticsEngine:
             await self.set_database()
             
             self.logger.info("=" * 100)
-            self.logger.info(f"PHASE 7: ANALYTICS ({period_type.upper()})")
+            self.logger.info(f"PHASE 7: ANALYTICS (Run-Based v3.4)")
+            self.logger.info(f"  Run ID: {run_id}")
             self.logger.info("=" * 100)
             
-            # Determine time period
-            period_start, period_end = self._get_period_bounds(period_type)
+            # v3.4: Use all_time for period bounds (run-based analytics doesn't use periods)
+            period_start, period_end = self._get_period_bounds('all_time')
             
-            self.logger.info(f"Analyzing period: {period_start} to {period_end}")
+            self.logger.info(f"Analyzing all signals from run: {run_id}")
             
-            # Fetch all performance data
+            # Fetch all performance data for this run
             performance_data = await self._fetch_performance_data(period_start, period_end, run_id)
             
             if not performance_data:
-                self.logger.warning("No performance data found for analytics")
+                self.logger.warning(f"No performance data found for run {run_id}")
                 return {'error': 'No data'}
             
             self.logger.info(f"Fetched {len(performance_data)} performance records")
@@ -121,15 +122,13 @@ class AnalyticsEngine:
             # Calculate all metrics
             metrics = await self._calculate_all_metrics(performance_data)
             
-            # Add period info
-            metrics['period_start'] = period_start
-            metrics['period_end'] = period_end
-            metrics['period_type'] = period_type
+            # Add run linkage (v3.4: critical for run-based analytics)
+            metrics['run_id'] = run_id
             metrics['signals_analyzed'] = len(performance_data)
             metrics['performance_records_used'] = len(performance_data)
             
-            # Persist to analytics table
-            await self._persist_analytics(metrics)
+            # Persist to analytics table (v3.4: UPSERT on run_id)
+            await self._persist_analytics(metrics, run_id)
             
             self.logger.info("=" * 100)
             self.logger.info(f"[SUCCESS] Phase 7 analytics complete")
@@ -471,78 +470,43 @@ class AnalyticsEngine:
         
         return start, end
     
-    async def _persist_analytics(self, metrics: Dict[str, Any]) -> None:
-        """Save analytics to analytics table using UPSERT."""
+    async def _persist_analytics(self, metrics: Dict[str, Any], run_id: str) -> None:
+        """
+        Save analytics to analytics table using run-based UPSERT (v3.4).
+        
+        Args:
+            metrics: Calculated analytics metrics
+            run_id: Signal run ID to link analytics to
+        """
         try:
-            # UPSERT into analytics table (v3.3: prevent duplicates with unique constraint)
+            # v3.4: Run-based UPSERT - one row per pipeline run (not period-based)
             result = await self.db.execute_query("""
                 INSERT INTO analytics (
-                    period_start, period_end, period_type,
+                    run_id,
                     total_signals, avg_overall_score,
-                    win_rate_1d, win_rate_3d, win_rate_7d, win_rate_10d, win_rate_14d, win_rate_30d, win_rate_90d,
-                    sharpe_ratio_1d, sharpe_ratio_3d, sharpe_ratio_7d, sharpe_ratio_10d, sharpe_ratio_14d, sharpe_ratio_30d, sharpe_ratio_90d,
-                    max_drawdown_1d, max_drawdown_3d, max_drawdown_7d, max_drawdown_10d, max_drawdown_14d, max_drawdown_30d, max_drawdown_90d,
-                    avg_return_1d, avg_return_3d, avg_return_7d, avg_return_10d, avg_return_14d, avg_return_30d, avg_return_90d,
-                    avg_alpha_1d, avg_alpha_3d, avg_alpha_7d, avg_alpha_10d, avg_alpha_14d, avg_alpha_30d, avg_alpha_90d,
-                    top_sector, top_sector_avg_return, top_sector_count,
-                    worst_sector, worst_sector_avg_return, worst_sector_count,
-                    sector_performance,
                     avg_technical_score, avg_fundamental_score, avg_news_macro_score,
                     avg_social_alternative_score, avg_risk_stability_score, avg_institutional_score,
-                    top_factors,
+                    top_sector, top_sector_avg_return, top_sector_count,
+                    worst_sector, worst_sector_avg_return, worst_sector_count,
+                    sector_performance, top_factors,
                     signals_analyzed, performance_records_used,
                     score_bucket_performance, factor_correlations, factor_contributions,
                     group_performance, backtest_cumulative_returns
                 ) VALUES (
-                    $1, $2, $3, $4, $5,
-                    $6, $7, $8, $9, $10, $11, $12,
-                    $13, $14, $15, $16, $17, $18, $19,
-                    $20, $21, $22, $23, $24, $25, $26,
-                    $27, $28, $29, $30, $31, $32, $33,
-                    $34, $35, $36, $37, $38, $39, $40,
-                    $41, $42, $43, $44, $45, $46, $47,
-                    $48, $49, $50, $51, $52, $53, $54, $55, $56,
-                    $57, $58, $59, $60, $61
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                    $10, $11, $12, $13, $14, $15, $16,
+                    $17, $18, $19, $20, $21, $22, $23, $24
                 )
-                ON CONFLICT (period_type, period_start, period_end)
+                ON CONFLICT (run_id)
                 DO UPDATE SET
                     total_signals = EXCLUDED.total_signals,
                     avg_overall_score = EXCLUDED.avg_overall_score,
-                    win_rate_1d = EXCLUDED.win_rate_1d,
-                    win_rate_3d = EXCLUDED.win_rate_3d,
-                    win_rate_7d = EXCLUDED.win_rate_7d,
-                    win_rate_10d = EXCLUDED.win_rate_10d,
-                    win_rate_14d = EXCLUDED.win_rate_14d,
-                    win_rate_30d = EXCLUDED.win_rate_30d,
-                    win_rate_90d = EXCLUDED.win_rate_90d,
-                    sharpe_ratio_1d = EXCLUDED.sharpe_ratio_1d,
-                    sharpe_ratio_3d = EXCLUDED.sharpe_ratio_3d,
-                    sharpe_ratio_7d = EXCLUDED.sharpe_ratio_7d,
-                    sharpe_ratio_10d = EXCLUDED.sharpe_ratio_10d,
-                    sharpe_ratio_14d = EXCLUDED.sharpe_ratio_14d,
-                    sharpe_ratio_30d = EXCLUDED.sharpe_ratio_30d,
-                    sharpe_ratio_90d = EXCLUDED.sharpe_ratio_90d,
-                    max_drawdown_1d = EXCLUDED.max_drawdown_1d,
-                    max_drawdown_3d = EXCLUDED.max_drawdown_3d,
-                    max_drawdown_7d = EXCLUDED.max_drawdown_7d,
-                    max_drawdown_10d = EXCLUDED.max_drawdown_10d,
-                    max_drawdown_14d = EXCLUDED.max_drawdown_14d,
-                    max_drawdown_30d = EXCLUDED.max_drawdown_30d,
-                    max_drawdown_90d = EXCLUDED.max_drawdown_90d,
-                    avg_return_1d = EXCLUDED.avg_return_1d,
-                    avg_return_3d = EXCLUDED.avg_return_3d,
-                    avg_return_7d = EXCLUDED.avg_return_7d,
-                    avg_return_10d = EXCLUDED.avg_return_10d,
-                    avg_return_14d = EXCLUDED.avg_return_14d,
-                    avg_return_30d = EXCLUDED.avg_return_30d,
-                    avg_return_90d = EXCLUDED.avg_return_90d,
-                    avg_alpha_1d = EXCLUDED.avg_alpha_1d,
-                    avg_alpha_3d = EXCLUDED.avg_alpha_3d,
-                    avg_alpha_7d = EXCLUDED.avg_alpha_7d,
-                    avg_alpha_10d = EXCLUDED.avg_alpha_10d,
-                    avg_alpha_14d = EXCLUDED.avg_alpha_14d,
-                    avg_alpha_30d = EXCLUDED.avg_alpha_30d,
-                    avg_alpha_90d = EXCLUDED.avg_alpha_90d,
+                    avg_technical_score = EXCLUDED.avg_technical_score,
+                    avg_fundamental_score = EXCLUDED.avg_fundamental_score,
+                    avg_news_macro_score = EXCLUDED.avg_news_macro_score,
+                    avg_social_alternative_score = EXCLUDED.avg_social_alternative_score,
+                    avg_risk_stability_score = EXCLUDED.avg_risk_stability_score,
+                    avg_institutional_score = EXCLUDED.avg_institutional_score,
                     top_sector = EXCLUDED.top_sector,
                     top_sector_avg_return = EXCLUDED.top_sector_avg_return,
                     top_sector_count = EXCLUDED.top_sector_count,
@@ -550,12 +514,6 @@ class AnalyticsEngine:
                     worst_sector_avg_return = EXCLUDED.worst_sector_avg_return,
                     worst_sector_count = EXCLUDED.worst_sector_count,
                     sector_performance = EXCLUDED.sector_performance,
-                    avg_technical_score = EXCLUDED.avg_technical_score,
-                    avg_fundamental_score = EXCLUDED.avg_fundamental_score,
-                    avg_news_macro_score = EXCLUDED.avg_news_macro_score,
-                    avg_social_alternative_score = EXCLUDED.avg_social_alternative_score,
-                    avg_risk_stability_score = EXCLUDED.avg_risk_stability_score,
-                    avg_institutional_score = EXCLUDED.avg_institutional_score,
                     top_factors = EXCLUDED.top_factors,
                     signals_analyzed = EXCLUDED.signals_analyzed,
                     performance_records_used = EXCLUDED.performance_records_used,
@@ -567,23 +525,13 @@ class AnalyticsEngine:
                     updated_at = NOW()
                 RETURNING id
             """, [
-                metrics['period_start'], metrics['period_end'], metrics['period_type'],
+                run_id,
                 metrics['total_signals'], metrics.get('avg_overall_score'),
-                metrics.get('win_rate_1d'), metrics.get('win_rate_3d'), metrics.get('win_rate_7d'), 
-                metrics.get('win_rate_10d'), metrics.get('win_rate_14d'), metrics.get('win_rate_30d'), metrics.get('win_rate_90d'),
-                metrics.get('sharpe_ratio_1d'), metrics.get('sharpe_ratio_3d'), metrics.get('sharpe_ratio_7d'),
-                metrics.get('sharpe_ratio_10d'), metrics.get('sharpe_ratio_14d'), metrics.get('sharpe_ratio_30d'), metrics.get('sharpe_ratio_90d'),
-                metrics.get('max_drawdown_1d'), metrics.get('max_drawdown_3d'), metrics.get('max_drawdown_7d'),
-                metrics.get('max_drawdown_10d'), metrics.get('max_drawdown_14d'), metrics.get('max_drawdown_30d'), metrics.get('max_drawdown_90d'),
-                metrics.get('avg_return_1d'), metrics.get('avg_return_3d'), metrics.get('avg_return_7d'),
-                metrics.get('avg_return_10d'), metrics.get('avg_return_14d'), metrics.get('avg_return_30d'), metrics.get('avg_return_90d'),
-                metrics.get('avg_alpha_1d'), metrics.get('avg_alpha_3d'), metrics.get('avg_alpha_7d'),
-                metrics.get('avg_alpha_10d'), metrics.get('avg_alpha_14d'), metrics.get('avg_alpha_30d'), metrics.get('avg_alpha_90d'),
+                metrics.get('avg_technical_score'), metrics.get('avg_fundamental_score'), metrics.get('avg_news_macro_score'),
+                metrics.get('avg_social_alternative_score'), metrics.get('avg_risk_stability_score'), metrics.get('avg_institutional_score'),
                 metrics.get('top_sector'), metrics.get('top_sector_avg_return'), metrics.get('top_sector_count'),
                 metrics.get('worst_sector'), metrics.get('worst_sector_avg_return'), metrics.get('worst_sector_count'),
                 json.dumps(sanitize_for_json(metrics.get('sector_performance'))) if metrics.get('sector_performance') else None,
-                metrics.get('avg_technical_score'), metrics.get('avg_fundamental_score'), metrics.get('avg_news_macro_score'),
-                metrics.get('avg_social_alternative_score'), metrics.get('avg_risk_stability_score'), metrics.get('avg_institutional_score'),
                 json.dumps(sanitize_for_json(metrics.get('top_factors'))) if metrics.get('top_factors') else None,
                 metrics['signals_analyzed'], metrics['performance_records_used'],
                 json.dumps(sanitize_for_json(metrics.get('score_bucket_performance'))) if metrics.get('score_bucket_performance') else None,

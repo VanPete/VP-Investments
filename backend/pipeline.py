@@ -359,10 +359,10 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
             try:
                 from backend.phases.phase7_analytics import get_analytics_engine
                 
-                # Calculate and persist analytics
+                # Calculate and persist analytics (v3.4: run-based analytics)
                 p7_analytics = get_analytics_engine(db)
                 analytics_result = await p7_analytics.calculate_and_persist_analytics(
-                    period_type='all_time'
+                    run_id=run_id  # Link analytics to this pipeline run
                 )
                 
                 phase7_duration = (datetime.now() - phase7_start).total_seconds()
