@@ -50,7 +50,7 @@ export default function AdminRunsPage() {
     setLoading(true);
     try {
       const token = localStorage.getItem('admin_token');
-      const response = await fetch('/api/admin/runs/list', {
+      const response = await fetch('http://127.0.0.1:8000/api/admin/runs/list', {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       
@@ -102,7 +102,7 @@ export default function AdminRunsPage() {
     
     try {
       const token = localStorage.getItem('admin_token');
-      const response = await fetch('/api/admin/runs/bulk-delete', {
+      const response = await fetch('http://127.0.0.1:8000/api/admin/runs/bulk-delete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,7 +140,7 @@ export default function AdminRunsPage() {
     
     try {
       const token = localStorage.getItem('admin_token');
-      const response = await fetch('/api/admin/runs/bulk-delete', {
+      const response = await fetch('http://127.0.0.1:8000/api/admin/runs/bulk-delete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -234,8 +234,14 @@ export default function AdminRunsPage() {
                 variant="destructive"
                 size="sm"
                 onClick={handleBulkDeleteClick}
+                disabled={isDeleting}
+                className="hover:bg-destructive/90 transition-colors cursor-pointer"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
+                {isDeleting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
                 Delete {selectedRunIds.size} Selected
               </Button>
             )}
@@ -244,8 +250,9 @@ export default function AdminRunsPage() {
               size="sm"
               onClick={fetchRuns}
               disabled={loading}
+              className="hover:bg-accent transition-colors cursor-pointer"
             >
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>

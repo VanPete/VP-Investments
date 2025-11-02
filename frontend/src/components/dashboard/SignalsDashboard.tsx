@@ -13,14 +13,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SignalsTable } from './SignalsTable';
 import { DashboardHeader } from './DashboardHeader';
 import { QuickStats } from './QuickStats';
-import { PerformanceTab } from './PerformanceTab';
 import { AnalyticsTab } from './AnalyticsTab';
 import { WeightsOverview } from '../methodology/WeightsOverview';
 import { ScoringExplainer } from '../methodology/ScoringExplainer';
 import { FactorLibrary } from '../methodology/FactorLibrary';
 import { usePersistedColumnVisibility } from '@/hooks/usePersistedState';
 import { useSupabaseSignals } from '@/hooks/useSupabaseSignals';
-import { BarChart3, Table, TrendingUp, BookOpen } from 'lucide-react';
+import { useSupabaseSignalsWithPerformance } from '@/hooks/useSupabaseSignalsWithPerformance';
+import { Table, TrendingUp, BookOpen } from 'lucide-react';
 
 interface SignalsDashboardProps {
   weightsConfig: WeightsConfig | null;
@@ -35,6 +35,9 @@ export function SignalsDashboard({
 }: SignalsDashboardProps) {
   // Fetch signals from Supabase with run selection
   const { signals, loading, error, refetch, runs, selectedRunId, setSelectedRunId } = useSupabaseSignals();
+  
+  // Fetch signals with performance data for expandable rows
+  const { signals: signalsWithPerf, loading: perfLoading } = useSupabaseSignalsWithPerformance(selectedRunId);
   
   const [showAll, setShowAll] = useState(false);
   const [activeTab, setActiveTab] = useState('signals');
@@ -65,19 +68,15 @@ export function SignalsDashboard({
     social: true,
     risk: true,
     institutional: true,
-    // Performance columns - hidden by default
-    return1d: false,
-    return7d: false,
-    return30d: false,
-    return90d: false,
-    vsSpy: false,
   });
 
-  // Apply filters to rankings (simplified - no manual filters, just show all)
+  // Apply filters to rankings (use performance-enriched data for Dashboard)
   const filteredRankings = useMemo(() => {
-    if (!signals) return [];
-    return [...signals];
-  }, [signals]);
+    // Use signalsWithPerf if available (has performance data), otherwise fall back to signals
+    const dataSource = signalsWithPerf.length > 0 ? signalsWithPerf : signals;
+    if (!dataSource) return [];
+    return [...dataSource];
+  }, [signals, signalsWithPerf]);
 
   // Display only top 10 or all
   const displayedRankings = useMemo(() => {
@@ -89,8 +88,8 @@ export function SignalsDashboard({
     refetch();
   };
 
-  // Loading state
-  if (loading) {
+  // Loading state (wait for both signals and performance data)
+  if (loading || perfLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card className="p-6">
@@ -152,26 +151,22 @@ export function SignalsDashboard({
         displayedCount={displayedRankings.length}
       />
 
-      {/* Quick Stats Cards - Added mt-6 for gap */}
-      <div className="mt-6">
+      {/* Quick Stats Cards - Reduced spacing */}
+      <div className="mt-3">
         <QuickStats results={mockResults} />
       </div>
 
       {/* Main Content with Tabs */}
-      <div className="px-4 py-6">
+      <div className="px-4 py-3">
         <Tabs defaultValue="signals" value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6">
+          <TabsList className="mb-3">
             <TabsTrigger value="signals" className="flex items-center gap-2">
               <Table className="h-4 w-4" />
               Dashboard
             </TabsTrigger>
-            <TabsTrigger value="performance" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Performance
-            </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              Analysis
+              Analytics
             </TabsTrigger>
             <TabsTrigger value="methodology" className="flex items-center gap-2">
               <BookOpen className="h-4 w-4" />
@@ -179,7 +174,7 @@ export function SignalsDashboard({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="signals" className="space-y-6">
+          <TabsContent value="signals" className="space-y-4">
             {/* Signals Table */}
             <SignalsTable
               rankings={displayedRankings}
@@ -217,15 +212,11 @@ export function SignalsDashboard({
             )}
           </TabsContent>
 
-          <TabsContent value="performance">
-            <PerformanceTab signals={signals} loading={loading} />
-          </TabsContent>
-
           <TabsContent value="analytics">
             <AnalyticsTab loading={loading} />
           </TabsContent>
 
-          <TabsContent value="methodology" className="space-y-6">
+          <TabsContent value="methodology" className="space-y-4">
             {weightsConfig && factorToGroup && methodologyConfig ? (
               <>
                 <WeightsOverview 

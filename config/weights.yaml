@@ -3,14 +3,14 @@
 
 # GROUP WEIGHTS (must sum to 1.0)
 # These determine how much each group contributes to the overall signal score
-# UPDATED: Reduced news_macro from 15% to 3% (unimplemented factors removed)
+# UPDATED: Increased news_macro to 10% - 9 solid factors provide valuable signal
 group_weights:
-  technical: 0.24              # 24% (was 20%) - Price momentum, volume, indicators
-  fundamental: 0.29            # 29% (was 25%) - Valuation, profitability, growth
-  news_macro: 0.03             # 3% (was 15%) - Only pre/post earnings flags implemented
-  social_alternative: 0.12     # 12% (was 10%) - Reddit, social media, buzz
-  risk_stability: 0.16         # 16% (was 15%) - Volatility, drawdowns, beta
-  institutional_smart_money: 0.16  # 16% (was 15%) - Ownership, insiders, analysts
+  technical: 0.22              # 22% (reduced from 24%) - Price momentum, volume, indicators
+  fundamental: 0.27            # 27% (reduced from 29%) - Valuation, profitability, growth
+  news_macro: 0.10             # 10% (increased from 3%) - Earnings timing, sentiment, correlation
+  social_alternative: 0.12     # 12% (unchanged) - Reddit, social media, buzz
+  risk_stability: 0.15         # 15% (reduced from 16%) - Volatility, drawdowns, beta
+  institutional_smart_money: 0.14  # 14% (reduced from 16%) - Ownership, insiders, analysts
 
 # FACTOR WEIGHTS (per group, must sum to 1.0 within each group)
 # These determine how much each factor contributes to its group score

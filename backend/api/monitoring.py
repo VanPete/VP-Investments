@@ -365,18 +365,23 @@ async def get_storage_metrics(
 
 @router.get("/dashboard", response_model=DashboardOverview)
 async def get_dashboard_overview(
-    current_user: Annotated[User, Depends(get_current_admin_user)]
+    # Temporarily disabled auth for development
+    # current_user: Annotated[User, Depends(get_current_admin_user)]
 ):
     """
     Get complete dashboard overview with all metrics.
     
-    Requires: Authorization: Bearer <JWT token> with admin role
+    DEV MODE: Authentication temporarily disabled for development
     """
     try:
-        system_health = await get_system_health(current_user)
-        factor_quality = await get_factor_quality(current_user)
-        pipeline_metrics = await get_pipeline_metrics(current_user)
-        storage_metrics = await get_storage_metrics(current_user)
+        # Create a mock user for the internal calls
+        from .auth import User
+        mock_user = User(username="dev", role="admin", full_name="Development User")
+        
+        system_health = await get_system_health(mock_user)
+        factor_quality = await get_factor_quality(mock_user)
+        pipeline_metrics = await get_pipeline_metrics(mock_user)
+        storage_metrics = await get_storage_metrics(mock_user)
         
         return DashboardOverview(
             system_health=system_health,

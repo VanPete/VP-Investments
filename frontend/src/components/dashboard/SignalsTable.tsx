@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, Fragment, useMemo, useEffect } from 'react';
-import type { SignalRanking, WeightsConfig, FactorToGroup, GroupKey, SortDirection } from '@/types/pipeline';
+import type { WeightsConfig, FactorToGroup, GroupKey, SortDirection } from '@/types/pipeline';
 import {
   Table,
   TableBody,
@@ -23,10 +23,13 @@ import { GROUP_DISPLAY_NAMES } from '@/types/pipeline';
 import { CoverageBadge } from './CoverageBadge';
 import { MetricTooltip, METRIC_TOOLTIPS } from './MetricTooltip';
 import { ColumnVisibilityToggle } from './ColumnVisibilityToggle';
+import { SignalPerformanceSection } from './SignalPerformanceSection';
+import { FactorDetails } from './FactorDetails';
 import type { ColumnVisibility } from '@/hooks/usePersistedState';
+import type { SignalWithPerformance } from '@/hooks/useSupabaseSignalsWithPerformance';
 
 interface SignalsTableProps {
-  rankings: SignalRanking[];
+  rankings: SignalWithPerformance[];
   weightsConfig: WeightsConfig | null;
   factorToGroup: FactorToGroup | null;
   columnVisibility?: ColumnVisibility;
@@ -54,6 +57,7 @@ export function SignalsTable({
   onColumnVisibilityChange,
 }: SignalsTableProps) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, Record<string, boolean>>>({});
   const [sortColumn, setSortColumn] = useState<string>('overallScore');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -143,26 +147,6 @@ export function SignalsTable({
         case 'baseline':
           aValue = a.backtest_baseline_price || 0;
           bValue = b.backtest_baseline_price || 0;
-          break;
-        case 'return1d':
-          aValue = a.return_1d || 0;
-          bValue = b.return_1d || 0;
-          break;
-        case 'return7d':
-          aValue = a.return_7d || 0;
-          bValue = b.return_7d || 0;
-          break;
-        case 'return30d':
-          aValue = a.return_30d || 0;
-          bValue = b.return_30d || 0;
-          break;
-        case 'return90d':
-          aValue = a.return_90d || 0;
-          bValue = b.return_90d || 0;
-          break;
-        case 'vsSpy':
-          aValue = (a.return_7d || 0) - (a.spy_return_7d || 0);
-          bValue = (b.return_7d || 0) - (b.spy_return_7d || 0);
           break;
         default:
           return 0;
@@ -443,61 +427,6 @@ export function SignalsTable({
                   </span>
                 </TableHead>
               )}
-              {columnVisibility.return1d && (
-                <TableHead 
-                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => handleSort('return1d')}
-                >
-                  <span className="inline-flex items-center justify-end">
-                    1D Return
-                    <SortIcon column="return1d" />
-                  </span>
-                </TableHead>
-              )}
-              {columnVisibility.return7d && (
-                <TableHead 
-                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => handleSort('return7d')}
-                >
-                  <span className="inline-flex items-center justify-end">
-                    7D Return
-                    <SortIcon column="return7d" />
-                  </span>
-                </TableHead>
-              )}
-              {columnVisibility.return30d && (
-                <TableHead 
-                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => handleSort('return30d')}
-                >
-                  <span className="inline-flex items-center justify-end">
-                    30D Return
-                    <SortIcon column="return30d" />
-                  </span>
-                </TableHead>
-              )}
-              {columnVisibility.return90d && (
-                <TableHead 
-                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => handleSort('return90d')}
-                >
-                  <span className="inline-flex items-center justify-end">
-                    90D Return
-                    <SortIcon column="return90d" />
-                  </span>
-                </TableHead>
-              )}
-              {columnVisibility.vsSpy && (
-                <TableHead 
-                  className="text-right font-semibold cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                  onClick={() => handleSort('vsSpy')}
-                >
-                  <span className="inline-flex items-center justify-end">
-                    vs SPY (7D)
-                    <SortIcon column="vsSpy" />
-                  </span>
-                </TableHead>
-              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -609,41 +538,6 @@ export function SignalsTable({
                       </span>
                     </TableCell>
                   )}
-                  {columnVisibility.return1d && (
-                    <TableCell className="text-right">
-                      <span className={`font-semibold ${ranking.return_1d && ranking.return_1d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_1d && ranking.return_1d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                        {ranking.return_1d !== null && ranking.return_1d !== undefined ? `${(ranking.return_1d * 100).toFixed(2)}%` : '-'}
-                      </span>
-                    </TableCell>
-                  )}
-                  {columnVisibility.return7d && (
-                    <TableCell className="text-right">
-                      <span className={`font-semibold ${ranking.return_7d && ranking.return_7d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_7d && ranking.return_7d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                        {ranking.return_7d !== null && ranking.return_7d !== undefined ? `${(ranking.return_7d * 100).toFixed(2)}%` : '-'}
-                      </span>
-                    </TableCell>
-                  )}
-                  {columnVisibility.return30d && (
-                    <TableCell className="text-right">
-                      <span className={`font-semibold ${ranking.return_30d && ranking.return_30d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_30d && ranking.return_30d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                        {ranking.return_30d !== null && ranking.return_30d !== undefined ? `${(ranking.return_30d * 100).toFixed(2)}%` : '-'}
-                      </span>
-                    </TableCell>
-                  )}
-                  {columnVisibility.return90d && (
-                    <TableCell className="text-right">
-                      <span className={`font-semibold ${ranking.return_90d && ranking.return_90d > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_90d && ranking.return_90d < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                        {ranking.return_90d !== null && ranking.return_90d !== undefined ? `${(ranking.return_90d * 100).toFixed(2)}%` : '-'}
-                      </span>
-                    </TableCell>
-                  )}
-                  {columnVisibility.vsSpy && (
-                    <TableCell className="text-right">
-                      <span className={`font-semibold ${ranking.return_7d && ranking.spy_return_7d && (ranking.return_7d - ranking.spy_return_7d) > 0 ? 'text-green-600 dark:text-green-400' : ranking.return_7d && ranking.spy_return_7d && (ranking.return_7d - ranking.spy_return_7d) < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                        {ranking.return_7d !== null && ranking.spy_return_7d !== null && ranking.return_7d !== undefined && ranking.spy_return_7d !== undefined ? `${((ranking.return_7d - ranking.spy_return_7d) * 100).toFixed(2)}%` : '-'}
-                      </span>
-                    </TableCell>
-                  )}
                 </TableRow>
 
                 {/* Expanded Row */}
@@ -651,8 +545,11 @@ export function SignalsTable({
                   <TableRow>
                     <TableCell colSpan={20} className="bg-gray-50 dark:bg-gray-900/30 p-6">
                       <div className="space-y-6">
-                        {/* Backtest Performance Section */}
-                        {ranking.backtest_baseline_price && (
+                        {/* Performance Tracking Section - Compact Grid */}
+                        <SignalPerformanceSection signal={ranking} />
+
+                        {/* Original Backtest Performance Section - Hidden, replaced by compact version above */}
+                        {false && ranking.backtest_baseline_price && (
                           <div>
                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
                               <TrendingUp className="h-5 w-5 text-blue-600" />
@@ -753,37 +650,44 @@ export function SignalsTable({
                               {(Object.keys(ranking.group_scores) as GroupKey[]).length} Groups
                             </Badge>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          <div className="grid grid-cols-6 gap-3">
                           {(Object.keys(ranking.group_scores) as GroupKey[]).map((groupKey) => {
                             const score = ranking.group_scores[groupKey];
                             const coverage = ranking.group_coverages[groupKey];
                             const weight = weightsConfig ? weightsConfig.group_weights[groupKey] : 0;
-                            const contribution = score * weight;
-                            
-                            // Determine border color class based on score
-                            const borderColorClass = score > 0 
-                              ? 'border-l-green-500' 
-                              : score < 0 
-                              ? 'border-l-red-500' 
-                              : 'border-l-gray-400';
                             
                             return (
                               <Card 
                                 key={groupKey} 
-                                className={`bg-gradient-to-br from-white to-gray-50 dark:from-gray-800/50 dark:to-gray-900/50 shadow-md hover:shadow-lg transition-shadow border-l-4 ${borderColorClass}`}
+                                className={`bg-white dark:bg-gray-800/50 shadow-sm hover:shadow-md transition-all border-t-4 ${
+                                  score > 0 ? 'border-t-green-500' : score < 0 ? 'border-t-red-500' : 'border-t-gray-400'
+                                } cursor-pointer`}
+                                onClick={() => {
+                                  const newExpanded = { ...expandedGroups };
+                                  newExpanded[ranking.ticker] = {
+                                    ...(newExpanded[ranking.ticker] || {}),
+                                    [groupKey]: !newExpanded[ranking.ticker]?.[groupKey]
+                                  };
+                                  setExpandedGroups(newExpanded);
+                                }}
                               >
-                                <CardContent className="p-4">
-                                  {/* Header: Name + Weight */}
-                                  <div className="flex justify-between items-start mb-3">
-                                    <div className="flex-1">
-                                      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                        {GROUP_DISPLAY_NAMES[groupKey]}
-                                      </div>
-                                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                        Weight: {(weight * 100).toFixed(0)}% • Contrib: {contribution.toFixed(2)}
-                                      </div>
-                                    </div>
-                                    <div className={`px-2 py-1 rounded text-xs font-bold ${
+                                <CardContent className="p-3">
+                                  {/* Compact Header */}
+                                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 truncate">
+                                    {GROUP_DISPLAY_NAMES[groupKey]}
+                                  </div>
+                                  
+                                  {/* Large Score */}
+                                  <div className={`text-2xl font-bold mb-1 ${getScoreColorClass(score)}`}>
+                                    {formatScore(score)}
+                                  </div>
+                                  
+                                  {/* Compact Stats */}
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-500 dark:text-gray-400">
+                                      {(weight * 100).toFixed(0)}%
+                                    </span>
+                                    <div className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
                                       coverage >= 0.9 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                                       coverage >= 0.7 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
                                       'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
@@ -792,42 +696,19 @@ export function SignalsTable({
                                     </div>
                                   </div>
 
-                                  {/* Large Score Display */}
-                                  <div className="flex items-center justify-between mb-3">
-                                    <div className="flex-1">
-                                      <div className={`text-3xl font-bold ${getScoreColorClass(score)}`}>
-                                        {formatScore(score)}
+                                  {/* Expanded Factor List */}
+                                  {expandedGroups[ranking.ticker]?.[groupKey] && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                      <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                                        Top Factors
                                       </div>
-                                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                        {score > 0 ? 'Positive Signal' : score < 0 ? 'Negative Signal' : 'Neutral'}
-                                      </div>
+                                      <FactorDetails signalId={ranking.id} groupKey={groupKey} />
                                     </div>
-                                    {/* Score Indicator Icon */}
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                      score > 1 ? 'bg-green-100 dark:bg-green-900/30' :
-                                      score > 0 ? 'bg-blue-100 dark:bg-blue-900/30' :
-                                      score < -1 ? 'bg-red-100 dark:bg-red-900/30' :
-                                      'bg-gray-100 dark:bg-gray-800'
-                                    }`}>
-                                      <span className={`text-lg ${
-                                        score > 0 ? 'text-green-600 dark:text-green-400' :
-                                        score < 0 ? 'text-red-600 dark:text-red-400' :
-                                        'text-gray-500'
-                                      }`}>
-                                        {score > 0 ? '↑' : score < 0 ? '↓' : '→'}
-                                      </span>
-                                    </div>
-                                  </div>
+                                  )}
 
-                                  {/* Score Progress Bar - Centered Scale */}
-                                  <div className="space-y-1">
-                                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                                      <span>-5</span>
-                                      <span>0</span>
-                                      <span>+5</span>
-                                    </div>
-                                    <div className="relative w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                      {/* Center line at 50% */}
+                                  {/* Minimal Score Bar */}
+                                  <div className="mt-2">
+                                    <div className="relative w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                                       <div className="absolute left-1/2 top-0 w-0.5 h-full bg-gray-400 dark:bg-gray-600 z-10"></div>
                                       {/* Score indicator - dynamic inline styles required */}
                                       <div

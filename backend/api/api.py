@@ -637,6 +637,95 @@ async def run_pipeline(
         raise HTTPException(status_code=500, detail=f"Failed to start pipeline: {e}")
 
 
+@app.get("/analytics/global")
+async def get_global_analytics(
+    run_id: Optional[str] = None,
+    bucket: Optional[str] = None,
+    interval: Optional[str] = None
+):
+    """
+    Get global analytics data with optional filtering.
+    
+    Args:
+        run_id: Filter by specific pipeline run (optional, defaults to latest)
+        bucket: Filter score bucket performance ('strong_buy', 'buy', 'hold', 'sell', 'strong_sell')
+        interval: Filter by time interval ('1d', '3d', '7d', '10d', '14d', '30d', '90d')
+        
+    Returns:
+        Complete analytics payload with all subsections
+    """
+    try:
+        db = _app_state['database']
+        
+        # Get analytics record (latest or by run_id)
+        if run_id:
+            query = db.client.table('analytics').select('*').eq('run_id', run_id)
+        else:
+            query = db.client.table('analytics').select('*').order('created_at', desc=True).limit(1)
+        
+        result = query.execute()
+        
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(status_code=404, detail="No analytics data found")
+        
+        analytics = result.data[0]
+        
+        # Build response with all subsections
+        response = {
+            "run_id": analytics['run_id'],
+            "created_at": analytics['created_at'],
+            "total_signals": analytics['total_signals'],
+            "signals_analyzed": analytics.get('signals_analyzed'),
+            
+            # Basic metrics
+            "avg_overall_score": analytics.get('avg_overall_score'),
+            "avg_technical_score": analytics.get('avg_technical_score'),
+            "avg_fundamental_score": analytics.get('avg_fundamental_score'),
+            "avg_news_macro_score": analytics.get('avg_news_macro_score'),
+            "avg_social_alternative_score": analytics.get('avg_social_alternative_score'),
+            "avg_risk_stability_score": analytics.get('avg_risk_stability_score'),
+            "avg_institutional_score": analytics.get('avg_institutional_score'),
+            
+            # Sector performance
+            "top_sector": analytics.get('top_sector'),
+            "top_sector_avg_return": analytics.get('top_sector_avg_return'),
+            "top_sector_count": analytics.get('top_sector_count'),
+            "worst_sector": analytics.get('worst_sector'),
+            "worst_sector_avg_return": analytics.get('worst_sector_avg_return'),
+            "worst_sector_count": analytics.get('worst_sector_count'),
+            "sector_performance": analytics.get('sector_performance'),
+            
+            # Advanced analytics (JSONB columns)
+            "score_bucket_performance": analytics.get('score_bucket_performance'),
+            "factor_correlations": analytics.get('factor_correlations'),
+            "factor_contributions": analytics.get('factor_contributions'),
+            "group_performance": analytics.get('group_performance'),
+            "backtest_cumulative_returns": analytics.get('backtest_cumulative_returns'),
+            "top_factors": analytics.get('top_factors')
+        }
+        
+        # Apply filters if provided
+        if bucket and response.get('score_bucket_performance'):
+            bucket_data = response['score_bucket_performance'].get(bucket)
+            if bucket_data:
+                response['score_bucket_performance'] = {bucket: bucket_data}
+        
+        if interval:
+            # Filter interval-specific data
+            for key in ['win_rate', 'sharpe_ratio', 'max_drawdown', 'avg_return', 'avg_alpha']:
+                full_key = f'{key}_{interval}'
+                if full_key in analytics:
+                    response[full_key] = analytics[full_key]
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching analytics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch analytics: {str(e)}")
+
+
 @app.get("/config")
 async def get_config_info(token: str = Depends(verify_token)):
     """Get current configuration"""

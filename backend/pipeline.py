@@ -581,7 +581,7 @@ def _export_performance_metrics(
         
         # Build performance metrics
         performance_metrics = {
-            "run_id": run_id,
+            "run_id": str(run_id) if run_id else None,
             "timestamp": datetime.now().isoformat(),
             "total_duration_seconds": round(total_duration, 2),
             "phases": {

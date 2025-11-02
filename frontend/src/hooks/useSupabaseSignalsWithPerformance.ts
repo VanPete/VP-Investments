@@ -8,11 +8,37 @@ import { supabase } from '@/lib/supabase';
 import { SignalRanking } from '@/types/pipeline';
 
 export interface SignalWithPerformance extends SignalRanking {
+  // UUID from signals table (needed for performance lookup)
+  id: string;
   // Performance fields from performance table
   baseline_price?: number;
   baseline_date?: string;
   sector?: string;
   market_cap?: number;
+  // Alpha fields (ticker return - benchmark return)
+  alpha_1d?: number;
+  alpha_3d?: number;
+  alpha_7d?: number;
+  alpha_10d?: number;
+  alpha_14d?: number;
+  alpha_30d?: number;
+  alpha_90d?: number;
+  // QQQ benchmark returns
+  qqq_return_1d?: number;
+  qqq_return_3d?: number;
+  qqq_return_7d?: number;
+  qqq_return_10d?: number;
+  qqq_return_14d?: number;
+  qqq_return_30d?: number;
+  qqq_return_90d?: number;
+  // Sector benchmark returns
+  sector_return_1d?: number;
+  sector_return_3d?: number;
+  sector_return_7d?: number;
+  sector_return_10d?: number;
+  sector_return_14d?: number;
+  sector_return_30d?: number;
+  sector_return_90d?: number;
   // Returns already in SignalRanking interface
 }
 
@@ -49,6 +75,7 @@ export function useSupabaseSignalsWithPerformance(
           ticker,
           company_name,
           current_price,
+          market_cap,
           rank,
           overall_score,
           technical_score,
@@ -92,7 +119,6 @@ export function useSupabaseSignalsWithPerformance(
           baseline_price,
           baseline_date,
           sector,
-          market_cap,
           return_1d,
           return_3d,
           return_7d,
@@ -114,16 +140,35 @@ export function useSupabaseSignalsWithPerformance(
           spy_return_14d,
           spy_return_30d,
           spy_return_90d,
-          last_update
+          qqq_return_1d,
+          qqq_return_3d,
+          qqq_return_7d,
+          qqq_return_10d,
+          qqq_return_14d,
+          qqq_return_30d,
+          qqq_return_90d,
+          sector_return_1d,
+          sector_return_3d,
+          sector_return_7d,
+          sector_return_10d,
+          sector_return_14d,
+          sector_return_30d,
+          sector_return_90d
         `)
         .in('signal_id', signalIds);
 
       if (performanceError) {
         console.error('Error fetching performance:', performanceError);
+        console.error('Performance error message:', performanceError.message);
+        console.error('Performance error code:', performanceError.code);
+        console.error('Performance error details:', performanceError.details);
         // Don't throw - continue with signals data only
       }
 
       console.log('Fetched performance records:', performanceData?.length || 0);
+      if (performanceData && performanceData.length > 0) {
+        console.log('Sample performance record:', performanceData[0]);
+      }
 
       // Step 3: Create a map for quick lookup
       const performanceMap = new Map(
@@ -135,6 +180,7 @@ export function useSupabaseSignalsWithPerformance(
         const perf = performanceMap.get(signal.id);
 
         return {
+          id: signal.id, // Add the UUID for performance lookups
           rank: signal.rank || index + 1,
           ticker: signal.ticker,
           company_name: signal.company_name || undefined,
@@ -161,27 +207,59 @@ export function useSupabaseSignalsWithPerformance(
           baseline_price: perf?.baseline_price || undefined,
           baseline_date: perf?.baseline_date || undefined,
           sector: perf?.sector || undefined,
-          market_cap: perf?.market_cap || undefined,
+          market_cap: signal.market_cap || undefined,
           backtest_baseline_price: perf?.baseline_price || undefined,
           backtest_baseline_date: perf?.baseline_date || undefined,
-          return_1d: perf?.return_1d || undefined,
-          return_3d: perf?.return_3d || undefined,
-          return_7d: perf?.return_7d || undefined,
-          return_10d: perf?.return_10d || undefined,
-          return_14d: perf?.return_14d || undefined,
-          return_30d: perf?.return_30d || undefined,
-          return_90d: perf?.return_90d || undefined,
-          spy_return_1d: perf?.spy_return_1d || undefined,
-          spy_return_3d: perf?.spy_return_3d || undefined,
-          spy_return_7d: perf?.spy_return_7d || undefined,
-          spy_return_10d: perf?.spy_return_10d || undefined,
-          spy_return_14d: perf?.spy_return_14d || undefined,
-          spy_return_30d: perf?.spy_return_30d || undefined,
-          spy_return_90d: perf?.spy_return_90d || undefined,
+          return_1d: perf?.return_1d ?? undefined,
+          return_3d: perf?.return_3d ?? undefined,
+          return_7d: perf?.return_7d ?? undefined,
+          return_10d: perf?.return_10d ?? undefined,
+          return_14d: perf?.return_14d ?? undefined,
+          return_30d: perf?.return_30d ?? undefined,
+          return_90d: perf?.return_90d ?? undefined,
+          spy_return_1d: perf?.spy_return_1d ?? undefined,
+          spy_return_3d: perf?.spy_return_3d ?? undefined,
+          spy_return_7d: perf?.spy_return_7d ?? undefined,
+          spy_return_10d: perf?.spy_return_10d ?? undefined,
+          spy_return_14d: perf?.spy_return_14d ?? undefined,
+          spy_return_30d: perf?.spy_return_30d ?? undefined,
+          spy_return_90d: perf?.spy_return_90d ?? undefined,
+          qqq_return_1d: perf?.qqq_return_1d ?? undefined,
+          qqq_return_3d: perf?.qqq_return_3d ?? undefined,
+          qqq_return_7d: perf?.qqq_return_7d ?? undefined,
+          qqq_return_10d: perf?.qqq_return_10d ?? undefined,
+          qqq_return_14d: perf?.qqq_return_14d ?? undefined,
+          qqq_return_30d: perf?.qqq_return_30d ?? undefined,
+          qqq_return_90d: perf?.qqq_return_90d ?? undefined,
+          sector_return_1d: perf?.sector_return_1d ?? undefined,
+          sector_return_3d: perf?.sector_return_3d ?? undefined,
+          sector_return_7d: perf?.sector_return_7d ?? undefined,
+          sector_return_10d: perf?.sector_return_10d ?? undefined,
+          sector_return_14d: perf?.sector_return_14d ?? undefined,
+          sector_return_30d: perf?.sector_return_30d ?? undefined,
+          sector_return_90d: perf?.sector_return_90d ?? undefined,
+          alpha_1d: perf?.alpha_1d ?? undefined,
+          alpha_3d: perf?.alpha_3d ?? undefined,
+          alpha_7d: perf?.alpha_7d ?? undefined,
+          alpha_10d: perf?.alpha_10d ?? undefined,
+          alpha_14d: perf?.alpha_14d ?? undefined,
+          alpha_30d: perf?.alpha_30d ?? undefined,
+          alpha_90d: perf?.alpha_90d ?? undefined,
           backtest_status: perf ? 'completed' : undefined,
-          backtest_last_update: perf?.last_update || undefined,
+          backtest_last_update: undefined,
         };
       });
+
+      console.log('Joined signals count:', joinedSignals.length);
+      if (joinedSignals.length > 0) {
+        console.log('Sample joined signal:', {
+          ticker: joinedSignals[0].ticker,
+          return_1d: joinedSignals[0].return_1d,
+          spy_return_1d: joinedSignals[0].spy_return_1d,
+          alpha_1d: joinedSignals[0].alpha_1d,
+          baseline_date: joinedSignals[0].baseline_date,
+        });
+      }
 
       setSignals(joinedSignals);
     } catch (err) {

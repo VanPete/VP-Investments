@@ -1,0 +1,924 @@
+{
+  "metadata": {
+    "timestamp": "2025-11-01T01:40:32.272710",
+    "total_tickers": 70,
+    "source": "manual",
+    "discovery": {
+      "reddit_tickers": 79,
+      "news_tickers": 7,
+      "total_universe": 93
+    }
+  },
+  "rankings": [
+    {
+      "rank": 1,
+      "ticker": "BE",
+      "overall_score": 1.5167,
+      "group_scores": {
+        "technical": 2.9858,
+        "fundamental": 1.3443,
+        "news_macro": 0.8865,
+        "social_alternative": -0.3491,
+        "risk_stability": 2.4011,
+        "institutional_smart_money": 0.2583
+      }
+    },
+    {
+      "rank": 2,
+      "ticker": "LLY",
+      "overall_score": 1.4821,
+      "group_scores": {
+        "technical": 2.4582,
+        "fundamental": 2.428,
+        "news_macro": 0.1906,
+        "social_alternative": -0.1542,
+        "risk_stability": 0.196,
+        "institutional_smart_money": 1.059
+      }
+    },
+    {
+      "rank": 3,
+      "ticker": "NVDA",
+      "overall_score": 1.3771,
+      "group_scores": {
+        "technical": 1.5173,
+        "fundamental": 2.7983,
+        "news_macro": 0.8909,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.3691,
+        "institutional_smart_money": 0.7581
+      }
+    },
+    {
+      "rank": 4,
+      "ticker": "PLTR",
+      "overall_score": 1.1379,
+      "group_scores": {
+        "technical": 1.6889,
+        "fundamental": 2.0146,
+        "news_macro": 0.9592,
+        "social_alternative": 0.0457,
+        "risk_stability": 0.676,
+        "institutional_smart_money": 0.0374
+      }
+    },
+    {
+      "rank": 5,
+      "ticker": "NET",
+      "overall_score": 0.957,
+      "group_scores": {
+        "technical": 2.4406,
+        "fundamental": 0.4268,
+        "news_macro": 0.3867,
+        "social_alternative": 0.4095,
+        "risk_stability": 0.6508,
+        "institutional_smart_money": 0.5162
+      }
+    },
+    {
+      "rank": 6,
+      "ticker": "TSLA",
+      "overall_score": 0.9357,
+      "group_scores": {
+        "technical": 1.8101,
+        "fundamental": 1.1224,
+        "news_macro": 0.5644,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.7128,
+        "institutional_smart_money": 0.3156
+      }
+    },
+    {
+      "rank": 7,
+      "ticker": "MSFT",
+      "overall_score": 0.9299,
+      "group_scores": {
+        "technical": 1.3282,
+        "fundamental": 1.6299,
+        "news_macro": 1.079,
+        "social_alternative": -0.0472,
+        "risk_stability": -0.1673,
+        "institutional_smart_money": 0.8655
+      }
+    },
+    {
+      "rank": 8,
+      "ticker": "AAPL",
+      "overall_score": 0.9203,
+      "group_scores": {
+        "technical": 1.501,
+        "fundamental": 1.593,
+        "news_macro": 0.9632,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.1966,
+        "institutional_smart_money": 0.2715
+      }
+    },
+    {
+      "rank": 9,
+      "ticker": "AMZN",
+      "overall_score": 0.8322,
+      "group_scores": {
+        "technical": 1.8588,
+        "fundamental": 0.6939,
+        "news_macro": 0.0736,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.3664,
+        "institutional_smart_money": 0.8104
+      }
+    },
+    {
+      "rank": 10,
+      "ticker": "MCO",
+      "overall_score": 0.6851,
+      "group_scores": {
+        "technical": 0.716,
+        "fundamental": 1.5213,
+        "news_macro": -0.6619,
+        "social_alternative": -0.1491,
+        "risk_stability": -0.0581,
+        "institutional_smart_money": 0.7448
+      }
+    },
+    {
+      "rank": 11,
+      "ticker": "HCA",
+      "overall_score": 0.6302,
+      "group_scores": {
+        "technical": 1.7138,
+        "fundamental": 0.2306,
+        "news_macro": 1.7173,
+        "social_alternative": 0.4055,
+        "risk_stability": 0.0091,
+        "institutional_smart_money": 0.3151
+      }
+    },
+    {
+      "rank": 12,
+      "ticker": "BLD",
+      "overall_score": 0.5205,
+      "group_scores": {
+        "technical": 0.7559,
+        "fundamental": 0.5294,
+        "news_macro": 0.1451,
+        "social_alternative": 0.5442,
+        "risk_stability": 0.1637,
+        "institutional_smart_money": 0.5604
+      }
+    },
+    {
+      "rank": 13,
+      "ticker": "HRI",
+      "overall_score": 0.4882,
+      "group_scores": {
+        "technical": 1.2077,
+        "fundamental": 0.1103,
+        "news_macro": -0.1106,
+        "social_alternative": 0.5052,
+        "risk_stability": 0.5398,
+        "institutional_smart_money": 0.1419
+      }
+    },
+    {
+      "rank": 14,
+      "ticker": "SPY",
+      "overall_score": 0.4374,
+      "group_scores": {
+        "technical": 1.8907,
+        "fundamental": 0.0582,
+        "news_macro": 0.4788,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.0488,
+        "institutional_smart_money": -0.311
+      }
+    },
+    {
+      "rank": 15,
+      "ticker": "IVV",
+      "overall_score": 0.4122,
+      "group_scores": {
+        "technical": 1.7882,
+        "fundamental": 0.0582,
+        "news_macro": 0.4283,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.0546,
+        "institutional_smart_money": -0.311
+      }
+    },
+    {
+      "rank": 16,
+      "ticker": "RKT",
+      "overall_score": 0.4109,
+      "group_scores": {
+        "technical": 0.1606,
+        "fundamental": 0.9448,
+        "news_macro": 0.1547,
+        "social_alternative": 0.4095,
+        "risk_stability": 0.4299,
+        "institutional_smart_money": -0.1515
+      }
+    },
+    {
+      "rank": 17,
+      "ticker": "JPM",
+      "overall_score": 0.393,
+      "group_scores": {
+        "technical": 0.929,
+        "fundamental": 0.3213,
+        "news_macro": 0.8892,
+        "social_alternative": -0.0472,
+        "risk_stability": -0.0075,
+        "institutional_smart_money": 0.3566
+      }
+    },
+    {
+      "rank": 18,
+      "ticker": "BB",
+      "overall_score": 0.3632,
+      "group_scores": {
+        "technical": 0.5575,
+        "fundamental": 0.6582,
+        "news_macro": 0.4649,
+        "social_alternative": 0.1138,
+        "risk_stability": 0.3896,
+        "institutional_smart_money": -0.3214
+      }
+    },
+    {
+      "rank": 19,
+      "ticker": "THC",
+      "overall_score": 0.3225,
+      "group_scores": {
+        "technical": 0.7905,
+        "fundamental": 0.3405,
+        "news_macro": 0.9919,
+        "social_alternative": -0.7419,
+        "risk_stability": 0.1777,
+        "institutional_smart_money": 0.4058
+      }
+    },
+    {
+      "rank": 20,
+      "ticker": "PEN",
+      "overall_score": 0.3097,
+      "group_scores": {
+        "technical": -0.4901,
+        "fundamental": 1.0892,
+        "news_macro": 0.0572,
+        "social_alternative": 0.3079,
+        "risk_stability": -0.1808,
+        "institutional_smart_money": 0.6355
+      }
+    },
+    {
+      "rank": 21,
+      "ticker": "MAX",
+      "overall_score": 0.303,
+      "group_scores": {
+        "technical": 0.7111,
+        "fundamental": 0.3378,
+        "news_macro": 0.1164,
+        "social_alternative": -0.7419,
+        "risk_stability": 0.1832,
+        "institutional_smart_money": 0.566
+      }
+    },
+    {
+      "rank": 22,
+      "ticker": "DIA",
+      "overall_score": 0.3005,
+      "group_scores": {
+        "technical": 1.3752,
+        "fundamental": 0.041,
+        "news_macro": 0.6371,
+        "social_alternative": -0.0472,
+        "risk_stability": -0.0323,
+        "institutional_smart_money": -0.311
+      }
+    },
+    {
+      "rank": 23,
+      "ticker": "JNJ",
+      "overall_score": 0.2781,
+      "group_scores": {
+        "technical": 0.4059,
+        "fundamental": 0.7482,
+        "news_macro": -0.1758,
+        "social_alternative": 0.0706,
+        "risk_stability": -0.2952,
+        "institutional_smart_money": 0.0482
+      }
+    },
+    {
+      "rank": 24,
+      "ticker": "AA",
+      "overall_score": 0.2562,
+      "group_scores": {
+        "technical": 0.3833,
+        "fundamental": 0.1108,
+        "news_macro": 0.8766,
+        "social_alternative": 0.1138,
+        "risk_stability": 0.734,
+        "institutional_smart_money": -0.1584
+      }
+    },
+    {
+      "rank": 25,
+      "ticker": "VICI",
+      "overall_score": 0.2524,
+      "group_scores": {
+        "technical": -0.1955,
+        "fundamental": 1.1951,
+        "news_macro": -0.2629,
+        "social_alternative": 0.1929,
+        "risk_stability": -0.631,
+        "institutional_smart_money": 0.2402
+      }
+    },
+    {
+      "rank": 26,
+      "ticker": "PFE",
+      "overall_score": 0.2389,
+      "group_scores": {
+        "technical": 0.36,
+        "fundamental": 0.67,
+        "news_macro": -0.0664,
+        "social_alternative": 0.0872,
+        "risk_stability": -0.1034,
+        "institutional_smart_money": -0.2109
+      }
+    },
+    {
+      "rank": 27,
+      "ticker": "WMT",
+      "overall_score": 0.2373,
+      "group_scores": {
+        "technical": 0.0165,
+        "fundamental": 0.6072,
+        "news_macro": -0.085,
+        "social_alternative": 0.4095,
+        "risk_stability": -0.2873,
+        "institutional_smart_money": 0.3538
+      }
+    },
+    {
+      "rank": 28,
+      "ticker": "ABBV",
+      "overall_score": 0.1886,
+      "group_scores": {
+        "technical": 0.0774,
+        "fundamental": 0.3391,
+        "news_macro": -0.0927,
+        "social_alternative": 0.3521,
+        "risk_stability": -0.031,
+        "institutional_smart_money": 0.2325
+      }
+    },
+    {
+      "rank": 29,
+      "ticker": "FBK",
+      "overall_score": 0.1752,
+      "group_scores": {
+        "technical": -0.0898,
+        "fundamental": 0.4953,
+        "news_macro": 0.1091,
+        "social_alternative": 0.1929,
+        "risk_stability": 0.1421,
+        "institutional_smart_money": 0.0247
+      }
+    },
+    {
+      "rank": 30,
+      "ticker": "XOM",
+      "overall_score": 0.1556,
+      "group_scores": {
+        "technical": 0.4132,
+        "fundamental": 0.0888,
+        "news_macro": -0.1358,
+        "social_alternative": 0.4095,
+        "risk_stability": -0.1717,
+        "institutional_smart_money": 0.0819
+      }
+    },
+    {
+      "rank": 31,
+      "ticker": "MAS",
+      "overall_score": 0.1474,
+      "group_scores": {
+        "technical": -0.3911,
+        "fundamental": 0.6968,
+        "news_macro": -0.107,
+        "social_alternative": 0.5378,
+        "risk_stability": -0.1152,
+        "institutional_smart_money": -0.0234
+      }
+    },
+    {
+      "rank": 32,
+      "ticker": "IWM",
+      "overall_score": 0.1447,
+      "group_scores": {
+        "technical": 0.7451,
+        "fundamental": 0.0259,
+        "news_macro": 0.199,
+        "social_alternative": -0.0472,
+        "risk_stability": 0.0488,
+        "institutional_smart_money": -0.311
+      }
+    },
+    {
+      "rank": 33,
+      "ticker": "NOV",
+      "overall_score": 0.132,
+      "group_scores": {
+        "technical": 0.4158,
+        "fundamental": -0.401,
+        "news_macro": -0.2942,
+        "social_alternative": 0.4095,
+        "risk_stability": 0.3292,
+        "institutional_smart_money": 0.3469
+      }
+    },
+    {
+      "rank": 34,
+      "ticker": "MTG",
+      "overall_score": 0.1203,
+      "group_scores": {
+        "technical": -0.0704,
+        "fundamental": 0.9629,
+        "news_macro": -0.3407,
+        "social_alternative": -0.6356,
+        "risk_stability": -0.2837,
+        "institutional_smart_money": -0.0636
+      }
+    },
+    {
+      "rank": 35,
+      "ticker": "ABT",
+      "overall_score": 0.1092,
+      "group_scores": {
+        "technical": -0.2763,
+        "fundamental": 0.5564,
+        "news_macro": 0.2055,
+        "social_alternative": 0.3079,
+        "risk_stability": -0.3621,
+        "institutional_smart_money": 0.181
+      }
+    },
+    {
+      "rank": 36,
+      "ticker": "RM",
+      "overall_score": 0.1007,
+      "group_scores": {
+        "technical": -0.0815,
+        "fundamental": 0.3215,
+        "news_macro": 0.4032,
+        "social_alternative": -0.1667,
+        "risk_stability": 0.2119,
+        "institutional_smart_money": 0.0068
+      }
+    },
+    {
+      "rank": 37,
+      "ticker": "CAE",
+      "overall_score": 0.0984,
+      "group_scores": {
+        "technical": 0.0742,
+        "fundamental": 0.0738,
+        "news_macro": 0.3399,
+        "social_alternative": 0.4429,
+        "risk_stability": 0.0487,
+        "institutional_smart_money": -0.0745
+      }
+    },
+    {
+      "rank": 38,
+      "ticker": "NKE",
+      "overall_score": 0.0956,
+      "group_scores": {
+        "technical": -0.3004,
+        "fundamental": 0.1744,
+        "news_macro": 0.3588,
+        "social_alternative": 0.4249,
+        "risk_stability": 0.0079,
+        "institutional_smart_money": 0.3385
+      }
+    },
+    {
+      "rank": 39,
+      "ticker": "AES",
+      "overall_score": 0.0806,
+      "group_scores": {
+        "technical": 0.1363,
+        "fundamental": -0.0562,
+        "news_macro": -0.0746,
+        "social_alternative": 0.0989,
+        "risk_stability": 0.4189,
+        "institutional_smart_money": -0.0779
+      }
+    },
+    {
+      "rank": 40,
+      "ticker": "TFII",
+      "overall_score": 0.0465,
+      "group_scores": {
+        "technical": 0.1391,
+        "fundamental": -0.1463,
+        "news_macro": -0.3103,
+        "social_alternative": 0.4055,
+        "risk_stability": 0.0866,
+        "institutional_smart_money": 0.0145
+      }
+    },
+    {
+      "rank": 41,
+      "ticker": "XYF",
+      "overall_score": 0.0434,
+      "group_scores": {
+        "technical": -0.2597,
+        "fundamental": 1.0143,
+        "news_macro": 0.4517,
+        "social_alternative": -1.0212,
+        "risk_stability": 0.1624,
+        "institutional_smart_money": -0.6587
+      }
+    },
+    {
+      "rank": 42,
+      "ticker": "FOUR",
+      "overall_score": 0.0334,
+      "group_scores": {
+        "technical": -0.5384,
+        "fundamental": 0.1414,
+        "news_macro": -0.0526,
+        "social_alternative": 0.1623,
+        "risk_stability": -0.0438,
+        "institutional_smart_money": 0.6922
+      }
+    },
+    {
+      "rank": 43,
+      "ticker": "THO",
+      "overall_score": 0.0246,
+      "group_scores": {
+        "technical": 0.1995,
+        "fundamental": -0.211,
+        "news_macro": 0.2935,
+        "social_alternative": 0.0052,
+        "risk_stability": 0.1949,
+        "institutional_smart_money": -0.017
+      }
+    },
+    {
+      "rank": 44,
+      "ticker": "MDT",
+      "overall_score": 0.0205,
+      "group_scores": {
+        "technical": -0.2934,
+        "fundamental": 0.3492,
+        "news_macro": 0.103,
+        "social_alternative": 0.3079,
+        "risk_stability": -0.3234,
+        "institutional_smart_money": 0.0085
+      }
+    },
+    {
+      "rank": 45,
+      "ticker": "UNH",
+      "overall_score": -0.0025,
+      "group_scores": {
+        "technical": 0.5273,
+        "fundamental": -0.2085,
+        "news_macro": 0.7323,
+        "social_alternative": -1.3922,
+        "risk_stability": 0.0288,
+        "institutional_smart_money": 0.4494
+      }
+    },
+    {
+      "rank": 46,
+      "ticker": "AR",
+      "overall_score": -0.0106,
+      "group_scores": {
+        "technical": -0.1277,
+        "fundamental": -0.2408,
+        "news_macro": -0.2574,
+        "social_alternative": 0.4095,
+        "risk_stability": -0.065,
+        "institutional_smart_money": 0.3679
+      }
+    },
+    {
+      "rank": 47,
+      "ticker": "FCF",
+      "overall_score": -0.019,
+      "group_scores": {
+        "technical": -0.5272,
+        "fundamental": 0.1727,
+        "news_macro": 1.3011,
+        "social_alternative": 0.4249,
+        "risk_stability": -0.1425,
+        "institutional_smart_money": -0.0609
+      }
+    },
+    {
+      "rank": 48,
+      "ticker": "NVO",
+      "overall_score": -0.0352,
+      "group_scores": {
+        "technical": -0.6173,
+        "fundamental": 1.1167,
+        "news_macro": -0.2766,
+        "social_alternative": -0.5934,
+        "risk_stability": -0.1812,
+        "institutional_smart_money": -0.6402
+      }
+    },
+    {
+      "rank": 49,
+      "ticker": "CNC",
+      "overall_score": -0.0429,
+      "group_scores": {
+        "technical": 0.1904,
+        "fundamental": -0.3279,
+        "news_macro": 0.4937,
+        "social_alternative": -0.7419,
+        "risk_stability": 0.4566,
+        "institutional_smart_money": 0.0477
+      }
+    },
+    {
+      "rank": 50,
+      "ticker": "CMSD",
+      "overall_score": -0.0583,
+      "group_scores": {
+        "technical": -0.1437,
+        "fundamental": 0.0,
+        "news_macro": -0.0299,
+        "social_alternative": 0.4876,
+        "risk_stability": -0.1976,
+        "institutional_smart_money": -0.311
+      }
+    },
+    {
+      "rank": 51,
+      "ticker": "ACRE",
+      "overall_score": -0.0813,
+      "group_scores": {
+        "technical": -0.2536,
+        "fundamental": 0.3493,
+        "news_macro": 0.0052,
+        "social_alternative": 0.1929,
+        "risk_stability": -0.166,
+        "institutional_smart_money": -0.7402
+      }
+    },
+    {
+      "rank": 52,
+      "ticker": "PAR",
+      "overall_score": -0.0891,
+      "group_scores": {
+        "technical": -0.5947,
+        "fundamental": -0.4083,
+        "news_macro": -0.2579,
+        "social_alternative": 0.5378,
+        "risk_stability": -0.0296,
+        "institutional_smart_money": 0.7499
+      }
+    },
+    {
+      "rank": 53,
+      "ticker": "EMN",
+      "overall_score": -0.1033,
+      "group_scores": {
+        "technical": -0.2528,
+        "fundamental": -0.2179,
+        "news_macro": -0.0335,
+        "social_alternative": -0.2541,
+        "risk_stability": 0.1501,
+        "institutional_smart_money": 0.1751
+      }
+    },
+    {
+      "rank": 54,
+      "ticker": "EV",
+      "overall_score": -0.1105,
+      "group_scores": {
+        "technical": -0.4988,
+        "fundamental": -0.0072,
+        "news_macro": 0.0016,
+        "social_alternative": 0.1551,
+        "risk_stability": 0.2652,
+        "institutional_smart_money": -0.311
+      }
+    },
+    {
+      "rank": 55,
+      "ticker": "DNOW",
+      "overall_score": -0.1123,
+      "group_scores": {
+        "technical": -0.188,
+        "fundamental": -0.1666,
+        "news_macro": 0.2295,
+        "social_alternative": -0.2228,
+        "risk_stability": 0.1022,
+        "institutional_smart_money": -0.0957
+      }
+    },
+    {
+      "rank": 56,
+      "ticker": "CPA",
+      "overall_score": -0.1239,
+      "group_scores": {
+        "technical": 0.2142,
+        "fundamental": 0.0497,
+        "news_macro": 0.3636,
+        "social_alternative": -1.9797,
+        "risk_stability": 0.0284,
+        "institutional_smart_money": 0.2026
+      }
+    },
+    {
+      "rank": 57,
+      "ticker": "HRL",
+      "overall_score": -0.1375,
+      "group_scores": {
+        "technical": -0.5379,
+        "fundamental": 0.0975,
+        "news_macro": 0.0148,
+        "social_alternative": 0.4114,
+        "risk_stability": -0.3612,
+        "institutional_smart_money": -0.1795
+      }
+    },
+    {
+      "rank": 58,
+      "ticker": "MPX",
+      "overall_score": -0.1551,
+      "group_scores": {
+        "technical": -0.3798,
+        "fundamental": -0.2369,
+        "news_macro": 0.5973,
+        "social_alternative": 0.4429,
+        "risk_stability": 0.072,
+        "institutional_smart_money": -0.4862
+      }
+    },
+    {
+      "rank": 59,
+      "ticker": "ASGN",
+      "overall_score": -0.1689,
+      "group_scores": {
+        "technical": -0.411,
+        "fundamental": -0.2892,
+        "news_macro": -0.1705,
+        "social_alternative": 0.2375,
+        "risk_stability": -0.0637,
+        "institutional_smart_money": 0.0028
+      }
+    },
+    {
+      "rank": 60,
+      "ticker": "CANG",
+      "overall_score": -0.1773,
+      "group_scores": {
+        "technical": -0.2296,
+        "fundamental": -0.4385,
+        "news_macro": 0.2725,
+        "social_alternative": -0.3577,
+        "risk_stability": 0.2387,
+        "institutional_smart_money": 0.0095
+      }
+    },
+    {
+      "rank": 61,
+      "ticker": "FI",
+      "overall_score": -0.221,
+      "group_scores": {
+        "technical": -1.4105,
+        "fundamental": 0.1655,
+        "news_macro": -0.4109,
+        "social_alternative": -1.2343,
+        "risk_stability": 0.7703,
+        "institutional_smart_money": 0.6673
+      }
+    },
+    {
+      "rank": 62,
+      "ticker": "WM",
+      "overall_score": -0.2233,
+      "group_scores": {
+        "technical": -0.4639,
+        "fundamental": 0.5484,
+        "news_macro": -0.894,
+        "social_alternative": -1.677,
+        "risk_stability": -0.6398,
+        "institutional_smart_money": 0.3717
+      }
+    },
+    {
+      "rank": 63,
+      "ticker": "KT",
+      "overall_score": -0.2388,
+      "group_scores": {
+        "technical": -0.207,
+        "fundamental": -0.307,
+        "news_macro": 0.189,
+        "social_alternative": 0.3597,
+        "risk_stability": -0.4416,
+        "institutional_smart_money": -0.4893
+      }
+    },
+    {
+      "rank": 64,
+      "ticker": "PBR",
+      "overall_score": -0.2727,
+      "group_scores": {
+        "technical": -0.227,
+        "fundamental": 0.0477,
+        "news_macro": -0.3096,
+        "social_alternative": -0.6651,
+        "risk_stability": -0.3916,
+        "institutional_smart_money": -0.5015
+      }
+    },
+    {
+      "rank": 65,
+      "ticker": "GLP",
+      "overall_score": -0.2789,
+      "group_scores": {
+        "technical": -0.2384,
+        "fundamental": -0.0516,
+        "news_macro": -0.0036,
+        "social_alternative": -0.9695,
+        "risk_stability": -0.3559,
+        "institutional_smart_money": -0.2083
+      }
+    },
+    {
+      "rank": 66,
+      "ticker": "FND",
+      "overall_score": -0.2831,
+      "group_scores": {
+        "technical": -0.7684,
+        "fundamental": 0.012,
+        "news_macro": -0.22,
+        "social_alternative": -0.9186,
+        "risk_stability": 0.0035,
+        "institutional_smart_money": 0.0884
+      }
+    },
+    {
+      "rank": 67,
+      "ticker": "CAG",
+      "overall_score": -0.2919,
+      "group_scores": {
+        "technical": -0.4817,
+        "fundamental": -0.4073,
+        "news_macro": 0.3841,
+        "social_alternative": 0.4114,
+        "risk_stability": -0.661,
+        "institutional_smart_money": -0.0829
+      }
+    },
+    {
+      "rank": 68,
+      "ticker": "AI",
+      "overall_score": -0.3001,
+      "group_scores": {
+        "technical": -0.2147,
+        "fundamental": -1.264,
+        "news_macro": 0.3556,
+        "social_alternative": 0.3887,
+        "risk_stability": 0.5788,
+        "institutional_smart_money": -0.1996
+      }
+    },
+    {
+      "rank": 69,
+      "ticker": "SKM",
+      "overall_score": -0.3513,
+      "group_scores": {
+        "technical": -0.4785,
+        "fundamental": -0.2952,
+        "news_macro": -0.2716,
+        "social_alternative": 0.3597,
+        "risk_stability": -0.4891,
+        "institutional_smart_money": -0.6723
+      }
+    },
+    {
+      "rank": 70,
+      "ticker": "NOMD",
+      "overall_score": -0.6852,
+      "group_scores": {
+        "technical": -0.7665,
+        "fundamental": -0.3153,
+        "news_macro": -0.3411,
+        "social_alternative": -2.6353,
+        "risk_stability": -0.702,
+        "institutional_smart_money": 0.1813
+      }
+    }
+  ]
+}

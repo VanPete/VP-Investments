@@ -101,10 +101,4 @@ export interface ColumnVisibility {
   social: boolean;
   risk: boolean;
   institutional: boolean;
-  // Performance columns (formerly backtest)
-  return1d?: boolean;
-  return7d?: boolean;
-  return30d?: boolean;
-  return90d?: boolean;
-  vsSpy?: boolean;
 }
