@@ -321,7 +321,7 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
                 
                 if progress:
                     progress.update_phase("phase6", advance=1, 
-                                        status=f"✓ {perf_stats['updated']} records updated")
+                                        status=f"✓ {perf_stats['updated']}/{perf_stats['processed']} updated")
                 else:
                     logger.info(f"  Performance records processed: {perf_stats['processed']}")
                     logger.info(f"  Performance records updated: {perf_stats['updated']}")

@@ -102,12 +102,24 @@ class PerformanceUpdater:
                 self.logger.info("[FETCH] No benchmark cache - will fetch benchmarks as needed")
             
             # Get performance records needing updates
-            self.logger.info(f"[QUERY] Fetching performance records with status in ['pending', 'in_progress'], limit={limit}")
+            # OPTIMIZATION: Use PostgreSQL to filter records that actually need updates
+            # Only fetch records where:
+            # 1. Status is pending/in_progress (not completed)
+            # 2. Signal age >= 1 day (eligible for at least 1-day interval)
+            # 3. Not all intervals are completed yet
+            self.logger.info(f"[QUERY] Fetching performance records needing updates (limit={limit})")
+            
+            # Calculate cutoff date for 1-day eligibility (signals must be at least 1 day old)
+            from datetime import datetime, timezone, timedelta
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+            
             result = self.db.client.table('performance').select(
                 'id, signal_id, baseline_price, baseline_date, intervals_completed, sector, sector_etf, signals!inner(ticker, created_at)'
             ).in_(
                 'status', ['pending', 'in_progress']
-            ).order('baseline_date', desc=False).limit(limit).execute()  # Changed from created_at to baseline_date - prioritize oldest signals
+            ).lte(
+                'baseline_date', cutoff_date  # Only signals at least 1 day old
+            ).order('baseline_date', desc=False).limit(limit).execute()  # Prioritize oldest signals first
             
             performance_records = result.data if result.data else []
             
@@ -127,11 +139,19 @@ class PerformanceUpdater:
             
             self.logger.info(f"[UPDATING] Processing {len(performance_records)} performance records...")
             
-            stats = {'processed': 0, 'updated': 0, 'failed': 0}
+            stats = {'processed': 0, 'updated': 0, 'failed': 0, 'skipped': 0}
+            total_records = len(performance_records)
             
             for perf in performance_records:
                 stats['processed'] += 1
                 ticker = perf['signals']['ticker']
+                
+                # Show progress every 50 records
+                if stats['processed'] % 50 == 0 or stats['processed'] == total_records:
+                    self.logger.info(
+                        f"[PROGRESS] {stats['processed']}/{total_records} records processed "
+                        f"({stats['updated']} updated, {stats['skipped']} skipped, {stats['failed']} failed)"
+                    )
                 
                 try:
                     # Parse dates - handle both string and datetime objects
@@ -178,11 +198,12 @@ class PerformanceUpdater:
                         # All eligible intervals are done
                         if len(completed) == len(self.intervals):
                             # Mark as completed if ALL intervals are done
-                            self.logger.info(f"[{ticker}] All intervals complete ({len(self.intervals)}/{len(self.intervals)}) - marking as completed")
+                            self.logger.debug(f"[{ticker}] All intervals complete ({len(self.intervals)}/{len(self.intervals)}) - marking as completed")
                             await self._update_performance_status(perf['id'], 'completed')
                             stats['updated'] += 1
                         else:
                             self.logger.debug(f"[{ticker}] No new intervals to calculate (waiting for signal to age)")
+                            stats['skipped'] += 1
                         continue
                     
                     # Calculate missing intervals
@@ -235,6 +256,7 @@ class PerformanceUpdater:
             self.logger.info(
                 f"✅ PHASE 6 COMPLETE: "
                 f"{stats['updated']}/{stats['processed']} updated, "
+                f"{stats['skipped']} skipped, "
                 f"{stats['failed']} failed"
             )
             self.logger.info("=" * 80)
@@ -243,7 +265,7 @@ class PerformanceUpdater:
             
         except Exception as e:
             self.logger.error(f"Error updating performance intervals: {e}")
-            return {'processed': 0, 'updated': 0, 'failed': 0}
+            return {'processed': 0, 'updated': 0, 'failed': 0, 'skipped': 0}
     
     async def _calculate_interval_returns(
         self,
