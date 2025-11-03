@@ -315,7 +315,7 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
                 # Update performance intervals for pending signals
                 p6_tracker = get_performance_updater(db)
                 perf_stats = await p6_tracker.update_pending_performance(
-                    limit=200,
+                    limit=500,  # Increased from 200 to catch up faster with pending signals
                     benchmark_cache=benchmark_cache
                 )
                 

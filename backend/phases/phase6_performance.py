@@ -107,7 +107,7 @@ class PerformanceUpdater:
                 'id, signal_id, baseline_price, baseline_date, intervals_completed, sector, sector_etf, signals!inner(ticker, created_at)'
             ).in_(
                 'status', ['pending', 'in_progress']
-            ).order('created_at', desc=False).limit(limit).execute()
+            ).order('baseline_date', desc=False).limit(limit).execute()  # Changed from created_at to baseline_date - prioritize oldest signals
             
             performance_records = result.data if result.data else []
             
