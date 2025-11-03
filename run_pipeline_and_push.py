@@ -120,16 +120,12 @@ async def main(args):
         raise
     
     finally:
-        # Clean up any pending async tasks to prevent SSL errors
+        # Clean up database connections
         try:
-            # Cancel any remaining tasks in the current event loop
-            tasks = [t for t in asyncio.all_tasks() if not t.done()]
-            for task in tasks:
-                task.cancel()
-            
-            # Give tasks a moment to cancel
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            from backend.storage.database import get_database
+            db = get_database()
+            if hasattr(db, 'close'):
+                db.close()
         except Exception:
             pass  # Ignore cleanup errors
 
@@ -170,11 +166,3 @@ Examples:
     except KeyboardInterrupt:
         print("\n⚠️  Pipeline interrupted by user")
         sys.exit(130)
-    finally:
-        # Force cleanup of any remaining async resources
-        try:
-            # Wait a moment for pending SSL shutdowns
-            import time
-            time.sleep(0.1)
-        except:
-            pass
