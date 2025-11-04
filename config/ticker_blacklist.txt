@@ -29,6 +29,16 @@ SC # Missing price history - likely delisted
 MS^L # Preferred share with missing data
 ARES^A # Preferred share with missing data
 MP.WS # Warrant with missing data
+CAI^B # Preferred share with missing data
+
+# Additional Missing Price History (Nov 4 run)
+AFC # Missing price history
+AZEK # Missing price history / delisted
+DM # Missing price history
+GB # Missing price history
+GPX # Missing price history
+IO # Missing price history
+NTP # Missing price history
 
 # =============================================================================
 # WORD FILTER - Common words that match ticker patterns (used in Reddit parsing)
