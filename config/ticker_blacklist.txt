@@ -1,0 +1,299 @@
+# Ticker Blacklist Configuration
+# Two types of blacklist entries:
+# 1. Word Filter - Common words/slang that match ticker patterns but aren't stocks
+# 2. Problematic Tickers - Actual tickers that consistently fail (delisted, data issues)
+# Format: TICKER # reason
+
+# =============================================================================
+# PROBLEMATIC TICKERS - Skip these during data fetching
+# =============================================================================
+
+# Delisted / Missing Price History
+ATH # Missing price history - likely delisted
+STOR # Missing price history - likely delisted  
+DCF # Missing price history - likely delisted
+KAMN # Missing price history - likely delisted
+MSP # Missing price history - likely delisted
+CIXX # Missing price history - likely delisted
+MODN # Missing price history - likely delisted
+BIG # Missing price history - likely delisted
+TTM # Missing price history - likely delisted
+AT # Missing price history - likely delisted
+BEST # Missing price history - likely delisted
+CO # Missing price history - likely delisted
+ORAN # Missing price history - likely delisted
+PGTI # Missing price history - likely delisted
+SC # Missing price history - likely delisted
+
+# Preferred Shares / Warrants / Special Securities (often have data issues)
+MS^L # Preferred share with missing data
+ARES^A # Preferred share with missing data
+MP.WS # Warrant with missing data
+
+# =============================================================================
+# WORD FILTER - Common words that match ticker patterns (used in Reddit parsing)
+# =============================================================================
+
+# Common English Words
+THE
+AND
+FOR
+ARE
+BUT
+NOT
+YOU
+ALL
+CAN
+HER
+WAS
+ONE
+OUR
+OUT
+DAY
+GET
+HAS
+HIM
+HIS
+HOW
+ITS
+MAY
+NEW
+NOW
+ONLY
+SEE
+TWO
+WAY
+WHO
+BOY
+LET
+PUT
+SAY
+SHE
+TOO
+USE
+WANT
+WELL
+VERY
+WHAT
+WHEN
+WHERE
+WHICH
+WILL
+WITH
+WOULD
+MAKE
+BEEN
+GOOD
+MUCH
+SOME
+TIME
+OVER
+JUST
+LIKE
+THINK
+INTO
+YEAR
+YOUR
+KNOW
+TAKE
+THAN
+FIRST
+WATER
+OTHER
+PEOPLE
+COULD
+THESE
+THEIR
+EVERY
+GREAT
+AFTER
+NEVER
+THROUGH
+BEING
+BEFORE
+ANOTHER
+STILL
+SMALL
+FOUND
+PLACE
+WHILE
+ASKED
+GOING
+WORK
+THREE
+WORD
+MUST
+DOES
+PART
+BECAUSE
+EVEN
+BACK
+SAID
+EACH
+TELL
+HAND
+HIGH
+AWAY
+LAST
+NAME
+ALSO
+MADE
+MOST
+READ
+NEXT
+USED
+CITY
+BOTH
+KEEP
+GAVE
+SHOW
+HELP
+CALL
+MOVE
+LIVE
+LINE
+TURN
+SAME
+DIFFERENT
+NEED
+HOUSE
+POINT
+PAGE
+FORM
+CAME
+THIS
+THAT
+FROM
+HAVE
+MORE
+THEY
+THERE
+ABOUT
+SHOULD
+
+# Financial/Trading Terms (not tickers)
+DD
+YOLO
+DTE
+OTM
+ITM
+ATM
+EOD
+AH
+PM
+NAV
+YTD
+MTD
+QTD
+YOY
+MOM
+ROI
+ROE
+EPS
+PE
+PEG
+EBITDA
+GAAP
+SEC
+FINRA
+OTC
+NYSE
+IPO
+SPO
+CEO
+CFO
+CTO
+COO
+CIO
+GDP
+CPI
+PCE
+FOMC
+FED
+
+# Crypto (we want stocks, not crypto)
+BTC
+ETH
+DOGE
+SHIB
+ADA
+SOL
+DOT
+MATIC
+AVAX
+LINK
+UNI
+AAVE
+SUSHI
+CAKE
+XRP
+XLM
+ALGO
+ATOM
+LUNA
+UST
+USDT
+USDC
+DAI
+BUSD
+NFT
+DEFI
+HODL
+
+# Reddit/Internet Slang
+TLDR
+TL
+DR
+IMO
+IMHO
+FYI
+AMA
+NSFW
+SFW
+FAQ
+LMAO
+LMFAO
+ROFL
+LOL
+OMG
+WTF
+TBH
+IDK
+IDC
+EDIT
+UPDATE
+ELI5
+TIL
+PSA
+IIRC
+AFAIK
+FOMO
+FUD
+REKT
+BTFD
+DYOR
+NFA
+APE
+APES
+MOON
+GUH
+
+# Misc
+USA
+UK
+EU
+US
+AM
+EST
+PST
+GMT
+UTC
+COVID
+MOASS
+GME # Meme stock - causes excessive noise
+AMC # Meme stock - causes excessive noise
+WSB
+DRS
+DTCC
+MIGHT
+VERY

@@ -120,12 +120,21 @@ async def main(args):
         raise
     
     finally:
-        # Clean up database connections
+        # Clean up async resources to prevent SSL errors
         try:
-            from backend.storage.database import get_database
-            db = get_database()
-            if hasattr(db, 'close'):
-                db.close()
+            # Close all pending SSL transports
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            # Cancel all pending tasks
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            
+            # Wait for all tasks to complete cancellation
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                
         except Exception:
             pass  # Ignore cleanup errors
 

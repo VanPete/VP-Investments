@@ -93,11 +93,34 @@ async def run_pipeline(tickers=None, show_progress: bool = True, verbose_level: 
             logger.info("PHASE 1: FETCH DATA")
             logger.info("=" * 80)
         
+        # Pre-filter blacklisted tickers before fetching data
+        from backend.utils.ticker_blacklist import filter_blacklisted, get_blacklist_count
+        
         if tickers:
+            original_count = len(tickers)
+            tickers = filter_blacklisted(tickers)
+            filtered_count = original_count - len(tickers)
+            
+            if filtered_count > 0 and not show_progress:
+                logger.info(f"[BLACKLIST] Filtered {filtered_count} blacklisted tickers ({get_blacklist_count()} total in blacklist)")
+            
             phase1_results = await p1.fetch_all_data(tickers=tickers, progress=progress)
         else:
             # Increased post limit from 100 → 150 for better ticker discovery
             phase1_results = await p1.fetch_all_data(post_limit=150, progress=progress)
+            
+            # Filter blacklisted tickers from discovered tickers
+            raw_cache = phase1_results.get('raw_cache_by_ticker', {})
+            original_count = len(raw_cache)
+            
+            filtered_cache = {ticker: data for ticker, data in raw_cache.items() 
+                            if ticker.upper() not in filter_blacklisted([ticker])}
+            
+            filtered_count = original_count - len(filtered_cache)
+            phase1_results['raw_cache_by_ticker'] = filtered_cache
+            
+            if filtered_count > 0 and not show_progress:
+                logger.info(f"[BLACKLIST] Filtered {filtered_count} discovered tickers ({get_blacklist_count()} total in blacklist)")
         
         phase1_duration = (datetime.now() - phase1_start).total_seconds()
         

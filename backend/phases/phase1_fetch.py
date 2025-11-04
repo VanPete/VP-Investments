@@ -625,46 +625,9 @@ class Phase1Fetcher:
             # Ticker pattern: 2-5 uppercase letters (not 1, to avoid single letter words)
             ticker_pattern = re.compile(r'\b[A-Z]{2,5}\b')
             
-            # Enhanced blacklist - common words, crypto, Reddit slang
-            blacklist = {
-                # Common English words
-                'THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HER',
-                'WAS', 'ONE', 'OUR', 'OUT', 'DAY', 'GET', 'HAS', 'HIM', 'HIS', 'HOW',
-                'ITS', 'MAY', 'NEW', 'NOW', 'ONLY', 'SEE', 'TWO', 'WAY', 'WHO', 'BOY',
-                'LET', 'PUT', 'SAY', 'SHE', 'TOO', 'USE', 'WANT', 'WELL', 'VERY',
-                'WHAT', 'WHEN', 'WHERE', 'WHICH', 'WILL', 'WITH', 'WOULD', 'MAKE', 'BEEN',
-                'GOOD', 'MUCH', 'SOME', 'TIME', 'OVER', 'JUST', 'LIKE', 'THINK', 'INTO',
-                'YEAR', 'YOUR', 'KNOW', 'TAKE', 'THAN', 'FIRST', 'WATER', 'OTHER', 'PEOPLE',
-                'COULD', 'THESE', 'THEIR', 'EVERY', 'GREAT', 'AFTER', 'NEVER', 'THROUGH',
-                'BEING', 'BEFORE', 'ANOTHER', 'STILL', 'SMALL', 'FOUND', 'PLACE', 'WHILE',
-                'ASKED', 'GOING', 'WORK', 'THREE', 'WORD', 'MUST', 'DOES', 'PART', 'BECAUSE',
-                'EVEN', 'BACK', 'SAID', 'EACH', 'TELL', 'HAND', 'HIGH', 'AWAY', 'LAST',
-                'NAME', 'ALSO', 'MADE', 'MOST', 'READ', 'NEXT', 'USED', 'CITY', 'BOTH',
-                'KEEP', 'GAVE', 'SHOW', 'HELP', 'CALL', 'MOVE', 'LIVE', 'LINE', 'TURN',
-                'SAME', 'DIFFERENT', 'NEED', 'HOUSE', 'POINT', 'PAGE', 'FORM', 'CAME',
-                'THIS', 'THAT', 'FROM', 'HAVE', 'MORE', 'THEY', 'THERE', 'ABOUT', 'SHOULD',
-                
-                # Financial/Trading terms (not tickers)
-                'DD', 'YOLO', 'DTE', 'OTM', 'ITM', 'ATM', 'EOD', 'AH', 'PM', 'NAV',
-                'YTD', 'MTD', 'QTD', 'YOY', 'MOM', 'ROI', 'ROE', 'EPS', 'PE', 'PEG',
-                'EBITDA', 'GAAP', 'SEC', 'FINRA', 'OTC', 'NYSE', 'IPO', 'SPO', 'CEO',
-                'CFO', 'CTO', 'COO', 'CIO', 'GDP', 'CPI', 'PCE', 'FOMC', 'FED', 'FED',
-                
-                # Crypto (we want stocks, not crypto)
-                'BTC', 'ETH', 'DOGE', 'SHIB', 'ADA', 'SOL', 'DOT', 'MATIC', 'AVAX',
-                'LINK', 'UNI', 'AAVE', 'SUSHI', 'CAKE', 'XRP', 'XLM', 'ALGO', 'ATOM',
-                'LUNA', 'UST', 'USDT', 'USDC', 'DAI', 'BUSD', 'NFT', 'DEFI', 'HODL',
-                
-                # Reddit/Internet slang
-                'TLDR', 'TL', 'DR', 'IMO', 'IMHO', 'FYI', 'AMA', 'NSFW', 'SFW', 'FAQ',
-                'LMAO', 'LMFAO', 'ROFL', 'LOL', 'OMG', 'WTF', 'TBH', 'IDK', 'IDC',
-                'EDIT', 'UPDATE', 'TLDR', 'ELI5', 'TIL', 'PSA', 'IIRC', 'AFAIK', 'FOMO',
-                'FUD', 'REKT', 'BTFD', 'DYOR', 'NFA', 'APE', 'APES', 'MOON', 'GUH',
-                
-                # Misc
-                'USA', 'UK', 'EU', 'US', 'AM', 'PM', 'EST', 'PST', 'GMT', 'UTC',
-                'COVID', 'MOASS', 'GME', 'AMC', 'WSB', 'DRS', 'DTCC', 'MIGHT', 'VERY'
-            }
+            # Load centralized blacklist from config file
+            from backend.utils.ticker_blacklist import load_blacklist
+            blacklist = load_blacklist()
             
             # Minimum post score to avoid spam (adjust as needed)
             MIN_POST_SCORE = 2

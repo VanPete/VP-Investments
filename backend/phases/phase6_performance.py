@@ -102,23 +102,17 @@ class PerformanceUpdater:
                 self.logger.info("[FETCH] No benchmark cache - will fetch benchmarks as needed")
             
             # Get performance records needing updates
-            # OPTIMIZATION: Use PostgreSQL to filter records that actually need updates
-            # Only fetch records where:
-            # 1. Status is pending/in_progress (not completed)
-            # 2. Signal age >= 1 day (eligible for at least 1-day interval)
-            # 3. Not all intervals are completed yet
+            # BACKFILL STRATEGY: Process ALL pending/in_progress records
+            # - Prioritize oldest signals first (baseline_date ASC)
+            # - Process in batches (limit parameter controls batch size)
+            # - Skip records that already have all eligible intervals complete
+            # - This ensures we backfill historical signals while keeping up with new ones
             self.logger.info(f"[QUERY] Fetching performance records needing updates (limit={limit})")
-            
-            # Calculate cutoff date for 1-day eligibility (signals must be at least 1 day old)
-            from datetime import datetime, timezone, timedelta
-            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
             
             result = self.db.client.table('performance').select(
                 'id, signal_id, baseline_price, baseline_date, intervals_completed, sector, sector_etf, signals!inner(ticker, created_at)'
             ).in_(
                 'status', ['pending', 'in_progress']
-            ).lte(
-                'baseline_date', cutoff_date  # Only signals at least 1 day old
             ).order('baseline_date', desc=False).limit(limit).execute()  # Prioritize oldest signals first
             
             performance_records = result.data if result.data else []
